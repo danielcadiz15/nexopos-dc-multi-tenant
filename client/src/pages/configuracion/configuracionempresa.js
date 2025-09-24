@@ -47,7 +47,7 @@ function Modal({ open, title, children, onClose }){
  * Permite configurar todos los datos que aparecerán en las facturas
  */
 const ConfiguracionEmpresa = () => {
-  const { orgId } = useAuth();
+  const { orgId, currentUser } = useAuth();
   const navigate = useNavigate();
 
   const getCompanyId = useCallback(async () => {
@@ -373,8 +373,12 @@ const ConfiguracionEmpresa = () => {
           Configuración Empresarial
         </h1>
         <div className="flex gap-2">
-          <Button color="secondary" onClick={()=>{ cargarLicencia(); setShowLic(true); }}>Licencia</Button>
-          <Button color="primary" icon={<FaCogs/>} onClick={()=>{ cargarModulos(); setShowModulos(true); }}>Gestionar Módulos</Button>
+          { (currentUser?.email||'').toLowerCase() === 'danielcadiz15@gmail.com' && (
+            <>
+              <Button color="secondary" onClick={()=>{ cargarLicencia(); setShowLic(true); }}>Licencia</Button>
+              <Button color="primary" icon={<FaCogs/>} onClick={()=>{ cargarModulos(); setShowModulos(true); }}>Gestionar Módulos</Button>
+            </>
+          )}
         </div>
       </div>
 
