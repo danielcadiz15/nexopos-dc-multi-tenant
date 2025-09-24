@@ -287,10 +287,10 @@ export function AuthProvider({ children }) {
       } else {
         console.log('🔐 [AUTH] Usuario es empleado, asignando permisos básicos');
                // Empleado tiene permisos basicos
-         permisosBase = {
+        permisosBase = {
            productos: { ver: true, crear: true, editar: true, eliminar: false },
            categorias: { ver: true, crear: true, editar: true, eliminar: false },
-           compras: { ver: false, crear: false, editar: false, eliminar: false },
+          compras: { ver: true, crear: false, editar: false, eliminar: false },
            ventas: { ver: true, crear: true, editar: false, eliminar: false },
            stock: { ver: true, crear: false, editar: false, eliminar: false, control: { ver: true, crear: true, editar: false, eliminar: false } },
            reportes: { ver: false, crear: false, editar: false, eliminar: false },
