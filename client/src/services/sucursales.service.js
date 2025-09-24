@@ -51,6 +51,19 @@ class SucursalesService extends FirebaseService {
     return orgId ? { ...params, orgId } : params;
   }
 
+  filterByOrgId(items = [], orgId) {
+    if (!orgId) return items;
+    try {
+      const filtered = (items || []).filter((s) => (s?.orgId || s?.companyId) === orgId);
+      if (filtered.length !== items.length) {
+        console.log(`[SUCURSALES SERVICE] Filtradas por orgId=${orgId}: ${filtered.length}/${items.length}`);
+      }
+      return filtered;
+    } catch {
+      return items;
+    }
+  }
+
   /**
    * Obtiene todas las sucursales
    * @returns {Promise<Array>} Lista de sucursales
@@ -58,9 +71,11 @@ class SucursalesService extends FirebaseService {
   async obtenerTodas() {
     try {
       console.log('[SUCURSALES SERVICE] Obteniendo todas las sucursales…');
-      const response = await this.api.get('', this.getOrgQuery());
+      const orgQuery = this.getOrgQuery();
+      const response = await this.api.get('', orgQuery);
 
-      const sucursalesArray = ensureArrayPayload(response?.data);
+      let sucursalesArray = ensureArrayPayload(response?.data);
+      sucursalesArray = this.filterByOrgId(sucursalesArray, orgQuery?.orgId);
 
       if (sucursalesArray.length === 0) {
         console.log('[SUCURSALES SERVICE] No hay sucursales, usando datos de respaldo');
@@ -84,8 +99,10 @@ class SucursalesService extends FirebaseService {
   async obtenerActivas() {
     try {
       console.log('[SUCURSALES SERVICE] Obteniendo sucursales activas…');
-      const response = await this.api.get('/activas', this.getOrgQuery());
-      const sucursalesArray = ensureArrayPayload(response?.data);
+      const orgQuery = this.getOrgQuery();
+      const response = await this.api.get('/activas', orgQuery);
+      let sucursalesArray = ensureArrayPayload(response?.data);
+      sucursalesArray = this.filterByOrgId(sucursalesArray, orgQuery?.orgId);
 
       if (sucursalesArray.length === 0) {
         const activas = SUCURSALES_RESPALDO.filter(s => s.activa);
@@ -232,9 +249,10 @@ class SucursalesService extends FirebaseService {
   async obtenerPorUsuario(usuarioId) {
     try {
       console.log(`[SUCURSALES SERVICE] Obteniendo sucursales del usuario ${usuarioId}`);
-      const response = await this.api.get(`/usuario/${usuarioId}`, this.getOrgQuery());
+      const orgQuery = this.getOrgQuery();
+      const response = await this.api.get(`/usuario/${usuarioId}`, orgQuery);
 
-      const sucursalesArray = ensureArrayPayload(response?.data);
+      const sucursalesArray = this.filterByOrgId(ensureArrayPayload(response?.data), orgQuery?.orgId);
       console.log(`[SUCURSALES SERVICE] Sucursales del usuario: ${sucursalesArray.length}`);
 
       return sucursalesArray;
