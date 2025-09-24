@@ -20,6 +20,7 @@ import {
 
 // Servicios
 import productosService from '../../services/productos.service';
+import { useAuth } from '../../contexts/AuthContext';
 import categoriasService from '../../services/categorias.service';
 
 
@@ -43,6 +44,7 @@ import { formatCurrency } from '../../utils/format';
 const Productos = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { sucursalSeleccionada } = useAuth();
   // Estados
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
@@ -141,6 +143,24 @@ const Productos = () => {
 	  // Recargar cuando se monte el componente
 	  fetchData();
 	}, []);
+
+  // Recargar productos cuando cambia la sucursal seleccionada
+  useEffect(() => {
+    const cargarPorSucursal = async () => {
+      try {
+        if (!sucursalSeleccionada?.id) return;
+        setLoading(true);
+        console.log('📍 [PRODUCTOS] Sucursal cambiada, recargando productos con stock por sucursal:', sucursalSeleccionada.id);
+        const lista = await productosService.buscarConStockPorSucursal('', sucursalSeleccionada.id);
+        setProductos(Array.isArray(lista) ? lista : []);
+      } catch (e) {
+        console.error('❌ [PRODUCTOS] Error cargando productos por sucursal:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    cargarPorSucursal();
+  }, [sucursalSeleccionada?.id]);
 	  
   /**
    * Búsqueda de productos
