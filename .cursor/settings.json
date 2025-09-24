@@ -1,0 +1,22 @@
+{
+  "cursor.ai.autoApproveCommands": true,
+  "cursor.ai.requireApprovalForTerminalCommands": false,
+  "cursor.ai.allowBackgroundCommands": true,
+  "cursor.ai.autoExecuteCommands": true,
+  "cursor.ai.trustLevel": "high",
+  "cursor.ai.enableAutoMode": true,
+  "cursor.ai.confirmDangerousCommands": false,
+  "cursor.ai.allowFileSystemAccess": true,
+  "cursor.ai.allowNetworkAccess": true,
+  "cursor.ai.maxConcurrentCommands": 5,
+  "cursor.ai.commandTimeout": 30000,
+  "cursor.ai.autoAcceptSuggestions": true,
+  "terminal.integrated.allowWorkspaceConfiguration": true,
+  "terminal.integrated.confirmOnExit": "never",
+  "terminal.integrated.confirmOnKill": "never",
+  "files.autoSave": "onFocusChange",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": true
+  }
+} 

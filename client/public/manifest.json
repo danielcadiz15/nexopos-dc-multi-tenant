@@ -1,0 +1,28 @@
+{
+  "short_name": "NexoPOS DC",
+  "name": "NexoPOS DC",
+  "icons": [
+    {
+      "src": "logo-nexopos-dc.png",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "logo-nexopos-dc.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "logo-nexopos-dc.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#4F46E5",
+  "background_color": "#ffffff",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "es"
+}

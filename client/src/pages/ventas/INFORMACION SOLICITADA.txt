@@ -1,0 +1,25 @@
+1. Sucursales
+
+¿Las sucursales manejarán precios diferentes o los precios serán los mismos en todas? CADA SUCURSAL MANEJARA LISTAS DIFERENTES CON LA OPCION DE MODIFICAR CUAL LISTA USAN
+¿Cada sucursal tendrá su propio stock independiente? SI, CADA SUCURSAL TENDRA SU STOCK Y PODRAN INTERCAMBIARSE ENTRE ELLAS
+¿Las ventas se registrarán por sucursal? (modificar el módulo de ventas existente) LAS VENTAS SE REGISTRARAN POR SUCURSAL, DEBE HABER UNA OPCION DONDE SELECCIONES LA SUCURSAL
+¿Los usuarios estarán asignados a sucursales específicas o podrán acceder a todas? LOS USUARIOS ESTARAN ASIGNADOS A SUCURSALES ESPECIFICAS SALVO QUE SEA ADMINISTRADOR EL CUAL PODRA ACCEDER A CUALQUIERA
+
+2. Transferencias entre Sucursales
+
+¿Necesitas aprobaciones para las transferencias o serán directas?  SERAN APROBADAS POR EL ADMINISTRADOR, SUGIEREME CUAL SERIA LA MEJOR FORMA
+¿Quieres llevar un registro de costos de transferencia (transporte, etc.)? LAS TRANSFERENCIA ME REFIERO A MOVER PRODUCTOS DE UNA SUCURSAL A OTRA
+¿Las transferencias afectarán inmediatamente el stock o habrá estados (pendiente, en tránsito, recibido)? LOS MOVIMIENTOS DE STOCK AFECTARAN AUTOMATICAMENTE A CADA STOCK
+
+3. Listas de Precios
+
+¿Las listas de precios serán por sucursal o generales? LISTA DE PRECIOS SE PODRAN ASIGNAR A CADA SUCURSAL INDEPENDIENTE
+¿Qué información debe contener cada lista? (precio costo, precio venta, márgenes, descuentos?) TE COPIO EL FORMATO QUE NECESITO QUE TENGA PARA PODER IMPORTAR Y EXPORTAR DESDE OTRO SISTEMA
+¿Necesitas manejar diferentes listas para diferentes tipos de clientes (mayoristas, minoristas)? SI
+Para el Excel: ¿tienes un formato específico en mente o creamos uno estándar? CSV
+
+4. Integración con el Sistema Actual
+
+¿El stock actual de productos se asignará a la sucursal principal? DE TODAS MANERAS LOS PRODUCTOS ACTUALES LOS VOY A ELIMINAR, SON SOLO DE PRUEBA
+¿Las compras se harán por sucursal o centralizadas? CENTRALIZADA A LA SUCURSAL PRINCIPAL
+¿Los reportes financieros necesitarán filtros por sucursal? SI

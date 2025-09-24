@@ -1,0 +1,2251 @@
+/**
+ * Página de Punto de Venta con gestión de sucursales y listas de precios
+ * VERSIÓN CORREGIDA - CONTROL DE PAGOS PARCIALES RESTAURADO
+ * 
+ * Interfaz para realizar ventas rápidas con búsqueda de productos,
+ * carrito, aplicación de descuentos, listas de precios diferenciadas
+ * y finalización de venta con pagos parciales.
+ * 
+ * @module pages/ventas/PuntoVenta
+ * @requires react, ../../services/productos.service, ../../services/ventas.service
+ * @related_files ../../components/modules/ventas/*, ../ventas/VentaDetalle.js
+ */
+
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { toast } from 'react-toastify';
+
+// Servicios
+import productosService from '../../services/productos.service';
+import ventasService from '../../services/ventas.service';
+import clientesService from '../../services/clientes.service';
+import promocionesService from '../../services/promociones.service';
+import ClienteDialog from '../../components/modules/ventas/ClienteDialog';
+import ConfiguracionMargenesModal from '../../components/modules/ventas/ConfiguracionMargenesModal';
+import TicketVenta from '../../components/modules/ventas/TicketVenta';
+
+// Hooks
+import { useAuth } from '../../contexts/AuthContext';
+
+// Componentes
+import Spinner from '../../components/common/Spinner';
+import Button from '../../components/common/Button';
+import SearchBar from '../../components/common/SearchBar';
+import ConfirmDialog from '../../components/common/ConfirmDialog';
+
+// Iconos
+import { 
+  FaSearch, FaShoppingCart, FaPlus, FaMinus, FaTrash, 
+  FaUserPlus, FaPercentage, FaCreditCard, FaMoneyBill,
+  FaReceipt, FaSave, FaMobile, FaUniversity, FaCheck, FaClock,
+  FaCalculator, FaStore, FaExclamationTriangle, FaTags, FaPercent,
+  FaEdit, FaUser, FaUserTag
+} from 'react-icons/fa';
+
+// Variable para evitar llamadas duplicadas de promociones
+let isApplyingPromotions = false;
+
+/**
+ * Componente de página para el punto de venta
+ * @returns {JSX.Element} Componente PuntoVenta
+ */
+const PuntoVenta = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { currentUser, sucursalSeleccionada, sucursalesDisponibles, hasPermission } = useAuth();
+
+  const verificarPermisoEditarPrecios = () => {
+	  if (!currentUser) return false;
+	  
+	  // Verificar por rol
+	  if (currentUser.rol === 'admin' || currentUser.rol === 'gerente') return true;
+	  if (currentUser.role === 'admin' || currentUser.role === 'gerente') return true;
+	  if (currentUser.isAdmin === true) return true;
+	  
+	  // Verificar array de permisos si existe
+	  if (Array.isArray(currentUser.permisos)) {
+		return currentUser.permisos.includes('editar_precios');
+	  }
+	  
+	  return false;
+	};
+
+	const puedeEditarPrecios = hasPermission('listas_precios', 'editar') || 
+                          hasPermission('ventas', 'editar') ||
+                          currentUser?.rol === 'Administrador';
+  const searchInputRef = useRef(null);
+  const [showTicket, setShowTicket] = useState(false);
+  const [ventaCreada, setVentaCreada] = useState(null);
+  // Obtener sucursal preseleccionada desde navegación
+  const sucursalPreseleccionada = location.state?.sucursal_preseleccionada;
+  
+  // Estado general
+  const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  
+  // Estado del carrito
+  const [carrito, setCarrito] = useState([]);
+  const [cliente, setCliente] = useState(null);
+  const [metodoPago, setMetodoPago] = useState('efectivo');
+  const [descuentoGeneral, setDescuentoGeneral] = useState(0);
+  const [descuentoGeneralTipo, setDescuentoGeneralTipo] = useState('porcentaje');
+  
+  // ✅ CORREGIDO: Estados de pago con valores por defecto correctos
+  const [estadoPago, setEstadoPago] = useState('pendiente'); // ← CAMBIO: Valor por defecto correcto
+  const [montoPagado, setMontoPagado] = useState(0); // ← CAMBIO: Inicia en 0, no en total
+  
+  // Estado para sucursal
+  const [sucursalVenta, setSucursalVenta] = useState(
+    sucursalPreseleccionada || sucursalSeleccionada?.id || ''
+  );
+  
+  // CAMBIO: Lista por defecto ahora es 'interior'
+  const [listaSeleccionada, setListaSeleccionada] = useState('interior');
+  
+  // Estado de diálogos
+  const [showClienteDialog, setShowClienteDialog] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showConfigMargenesModal, setShowConfigMargenesModal] = useState(false);
+  const [ventaEnProceso, setVentaEnProceso] = useState(false);
+  
+  /**
+   * Establece el foco en el campo de búsqueda al cargar y configura sucursal
+   */
+  useEffect(() => {
+    // Esperar a que el componente se monte completamente
+    const timer = setTimeout(() => {
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
+    }, 100);
+    
+    // Configurar sucursal inicial
+    if (sucursalPreseleccionada) {
+      setSucursalVenta(sucursalPreseleccionada);
+    } else if (sucursalSeleccionada) {
+      setSucursalVenta(sucursalSeleccionada.id);
+    } else if (sucursalesDisponibles && sucursalesDisponibles.length === 1) {
+      setSucursalVenta(sucursalesDisponibles[0].id);
+    }
+    
+    return () => clearTimeout(timer);
+  }, [sucursalPreseleccionada, sucursalSeleccionada, sucursalesDisponibles]);
+  
+  /**
+   * Cambiar lista cuando se selecciona un cliente
+   */
+  useEffect(() => {
+    // Si el cliente tiene una lista predeterminada, seleccionarla automáticamente
+    if (cliente?.lista_precio_default) {
+      setListaSeleccionada(cliente.lista_precio_default);
+      toast.info(`Lista cambiada a "${cliente.lista_precio_default}" (predeterminada para este cliente)`);
+    }
+  }, [cliente]);
+
+  /**
+   * ✅ NUEVO: Efecto para recalcular monto pagado cuando cambia el total
+   */
+  useEffect(() => {
+    const totales = calcularTotales();
+    
+    // Si el estado es "completada", actualizar automáticamente el monto pagado
+    if (estadoPago === 'completada') {
+      setMontoPagado(totales.total);
+    }
+    // Si el estado es "pendiente" y el monto pagado es mayor al total, ajustarlo
+    else if (estadoPago === 'pendiente' && montoPagado > totales.total) {
+      setMontoPagado(totales.total);
+    }
+  }, [carrito, descuentoGeneral, descuentoGeneralTipo, estadoPago, listaSeleccionada]);
+  
+  /**
+   * Función para calcular precio con margen
+   */
+  const calcularPrecioConMargen = (costo, margen) => {
+    return costo * (1 + margen / 100);
+  };
+
+  /**
+   * Función para aplicar márgenes guardados
+   */
+  const aplicarMargenesGuardados = (producto) => {
+    const margenesGuardados = localStorage.getItem('margenes_listas');
+    
+    if (!margenesGuardados || !producto.precio_costo) {
+      return producto.precio_venta || 0;
+    }
+    
+    const margenes = JSON.parse(margenesGuardados);
+    const margenLista = margenes[listaSeleccionada] || margenes.interior || 40;
+    
+    return calcularPrecioConMargen(producto.precio_costo, margenLista);
+  };
+  
+  /**
+   * Busca productos por código o nombre
+   */
+  const buscarProductos = async (termino = null) => {
+    console.log('🔧 MÉTODO USADO:', 'buscarConStockPorSucursal');
+    console.log('🔧 PARÁMETROS:', { termino, sucursalVenta });
+    const terminoBusqueda = termino || searchTerm;
+    
+    if (!terminoBusqueda || terminoBusqueda.length < 3) {
+      return;
+    }
+    
+    // Validar que hay sucursal seleccionada
+    if (!sucursalVenta) {
+      toast.warning('Debe seleccionar una sucursal primero');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      console.log('🔍 Buscando productos con stock por sucursal:', terminoBusqueda, 'en sucursal:', sucursalVenta);
+      
+      const productos = await productosService.buscarConStockPorSucursal(terminoBusqueda, sucursalVenta);
+      console.log('📦 Productos encontrados con stock por sucursal:', productos?.length || 0);
+      
+      const productosArray = Array.isArray(productos) ? productos : [];
+      
+      // Ordenar por stock disponible (descendente)
+      const productosOrdenados = productosArray.sort((a, b) => 
+        (b.stock_actual || 0) - (a.stock_actual || 0)
+      );
+      
+      setSearchResults(productosOrdenados);
+    } catch (error) {
+      console.error('❌ Error al buscar productos con stock por sucursal:', error);
+      // No mostrar toast para no interrumpir al usuario mientras escribe
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  /**
+   * Busca un producto por código exacto
+   */
+  const buscarProductoPorCodigoExacto = async (codigo) => {
+    // Validar que hay sucursal seleccionada
+    if (!sucursalVenta) {
+      toast.warning('Debe seleccionar una sucursal primero');
+      return;
+    }
+    
+    try {
+      console.log('🔍 Buscando producto por código con stock en sucursal:', codigo, 'sucursal:', sucursalVenta);
+      
+      const producto = await productosService.obtenerPorCodigoConStock(codigo, sucursalVenta);
+      
+      if (producto) {
+        // Verificar stock antes de agregar (ya viene con stock de la sucursal)
+        if (producto.stock_actual > 0) {
+          agregarAlCarrito(producto);
+          setSearchTerm('');
+          console.log('✅ Producto agregado al carrito con stock:', producto.stock_actual);
+        } else {
+          toast.warning(`Producto ${producto.nombre} sin stock disponible en esta sucursal`);
+        }
+      } else {
+        toast.warning(`Producto con código ${codigo} no encontrado o sin stock en sucursal`);
+      }
+    } catch (error) {
+      console.error('❌ Error al buscar producto por código con stock:', error);
+      toast.error('Error al buscar producto');
+    }
+  };
+  
+  /**
+   * Manejador para cambio en el campo de búsqueda
+   * @param {Event} e - Evento de cambio
+   */
+  const handleSearchChange = (e) => {
+    const valor = e.target.value;
+    setSearchTerm(valor);
+    
+    // Si el término es menor a 3 caracteres, limpiar resultados
+    if (valor.length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    
+    // Realizar búsqueda automática a partir de 3 caracteres
+    buscarProductos(valor);
+  };
+      
+  /**
+   * Manejador para tecla Enter en el campo de búsqueda
+   * @param {Event} e - Evento de teclado
+   */
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      
+      // Los lectores de códigos de barras suelen enviar el código completo seguido de Enter
+      // Si el término tiene al menos 6 caracteres, probablemente sea un código de barras
+      if (searchTerm.length >= 6 && /^[0-9]+$/.test(searchTerm)) {
+        buscarProductoPorCodigoExacto(searchTerm);
+      } else {
+        // Búsqueda normal para términos cortos o que contienen letras
+        buscarProductos();
+      }
+    }
+  };
+  
+  /**
+   * Agrega un producto al carrito con precio según lista seleccionada
+   * @param {Object} producto - Producto a agregar
+   */
+	const agregarAlCarrito = async (producto) => {
+	  console.log('🛒 [CARRITO] Agregando producto:', {
+		id: producto.id,
+		nombre: producto.nombre,
+		stock_actual: producto.stock_actual,
+		stock_sucursal: producto.stock_sucursal,
+		sucursal_id: producto.sucursal_id,
+		sucursalVenta: sucursalVenta
+	  });
+	  
+	  // VALIDACIÓN: Verificar stock disponible
+	  const stockDisponibleSucursal = parseInt(producto.stock_actual || producto.stock_sucursal || 0);
+	  
+	  console.log('📦 [CARRITO] Stock disponible:', {
+		stock_actual: producto.stock_actual,
+		stock_sucursal: producto.stock_sucursal,
+		stockDisponibleSucursal: stockDisponibleSucursal,
+		sucursal: sucursalVenta
+	  });
+	  
+	  if (stockDisponibleSucursal <= 0) {
+		toast.error(`❌ No hay stock disponible de ${producto.nombre} en esta sucursal`);
+		console.error('❌ [CARRITO] Stock insuficiente:', {
+		  producto: producto.nombre,
+		  stock: stockDisponibleSucursal,
+		  sucursal: sucursalVenta
+		});
+		return;
+	  }
+	  
+	  // PASO 1: Determinar el precio según la lista seleccionada
+	  let precioLista;
+	  
+	  // Verificar si el producto tiene listas de precios definidas
+	  if (producto.listas_precios && typeof producto.listas_precios === 'object') {
+		// Usar el precio de la lista seleccionada
+		precioLista = producto.listas_precios[listaSeleccionada];
+		
+		// Si no existe precio para esa lista, intentar con interior (defecto)
+		if (!precioLista || precioLista === 0) {
+		  precioLista = producto.listas_precios.interior || producto.precio_venta || 0;
+		  
+		  if (precioLista > 0) {
+			console.info(`ℹ️ Usando precio de lista interior para ${producto.nombre}`);
+		  }
+		}
+	  } else {
+		// Si no hay listas de precios, usar precio_venta o calcular con margen
+		console.info(`ℹ️ Producto ${producto.nombre} sin listas configuradas`);
+		
+		// Intentar calcular con margen si hay precio de costo
+		if (producto.precio_costo > 0) {
+		  precioLista = aplicarMargenesGuardados(producto);
+		  console.info(`ℹ️ Aplicando margen automático: $${precioLista}`);
+		} else {
+		  precioLista = producto.precio_venta || 0;
+		}
+	  }
+	  
+	  // Asegurar que el precio sea numérico
+	  precioLista = parseFloat(precioLista) || 0;
+	  
+	  // Si aún no hay precio válido, avisar pero permitir agregar con precio 0 para editarlo después
+	  if (precioLista <= 0) {
+		toast.warning(`⚠️ ${producto.nombre} no tiene precio configurado. Se agregará con precio $0 para que lo edites.`);
+		precioLista = 0;
+	  }
+	  
+	  // PASO 2: Verificar si el producto ya está en el carrito
+	  const productoEnCarrito = carrito.find(item => item.id === producto.id);
+	  
+	  let carritoActualizado;
+	  
+	  if (productoEnCarrito) {
+		// ACTUALIZAR CANTIDAD EN PRODUCTO EXISTENTE
+		const nuevaCantidad = Math.min(
+		  productoEnCarrito.cantidad + 1,
+		  stockDisponibleSucursal
+		);
+		
+		console.log('🔄 [CARRITO] Actualizando cantidad:', {
+		  producto: producto.nombre,
+		  cantidadActual: productoEnCarrito.cantidad,
+		  nuevaCantidad: nuevaCantidad,
+		  stockDisponible: stockDisponibleSucursal
+		});
+		
+		// Verificar si se alcanzó el límite de stock
+		if (nuevaCantidad === productoEnCarrito.cantidad) {
+		  toast.warning(`⚠️ No hay más stock disponible de ${producto.nombre} en esta sucursal (máximo: ${stockDisponibleSucursal})`);
+		  console.warn('⚠️ [CARRITO] Límite de stock alcanzado:', {
+			producto: producto.nombre,
+			stockDisponible: stockDisponibleSucursal,
+			cantidadEnCarrito: productoEnCarrito.cantidad
+		  });
+		  return;
+		}
+		
+		// Actualizar el producto en el carrito
+		carritoActualizado = carrito.map(item => 
+		  item.id === producto.id 
+			? { 
+				...item, 
+				cantidad: nuevaCantidad,
+				precio: precioLista,
+				precio_lista: precioLista,
+				lista_aplicada: listaSeleccionada,
+				subtotal: nuevaCantidad * precioLista,
+				stock_disponible: stockDisponibleSucursal,
+				sucursal_id: sucursalVenta
+			  } 
+			: item
+		);
+		
+		console.log('✅ [CARRITO] Producto actualizado en carrito');
+		
+	  } else {
+		// AGREGAR NUEVO PRODUCTO AL CARRITO
+		
+		console.log('🆕 [CARRITO] Agregando nuevo producto:', {
+		  nombre: producto.nombre,
+		  precio: precioLista,
+		  stock: stockDisponibleSucursal,
+		  lista: listaSeleccionada
+		});
+		
+		carritoActualizado = [
+		  ...carrito,
+		  {
+			// Datos básicos del producto
+			id: producto.id,
+			codigo: producto.codigo || '',
+			nombre: producto.nombre || 'Producto sin nombre',
+			
+			// Precios
+			precio: precioLista,
+			precio_lista: precioLista,
+			precio_original: producto.precio_venta || precioLista,
+			lista_aplicada: listaSeleccionada,
+			precio_base: precioLista, // Precio antes de editar
+			precio_editado: false,    // Bandera de edición
+			precio_original_backup: precioLista, // Precio original antes de cualquier edición
+			precio_editado_manual: false,        // Flag para saber si fue editado
+			editado_por: null,                  // Usuario que editó (opcional)
+			fecha_edicion: null,                // Fecha de edición (opcional)
+			
+			// Cantidades
+			cantidad: 1,
+			subtotal: precioLista,
+			stock_disponible: stockDisponibleSucursal,
+			
+			// Referencias
+			sucursal_id: sucursalVenta,
+			producto_sucursal_id: `${producto.id}_${sucursalVenta}`,
+			
+			// Promociones (vacío inicialmente)
+			promociones: [],
+			
+			// Descuentos (inicialmente 0)
+			descuento: 0,
+			descuento_porcentaje: 0,
+			
+			// Información adicional
+			categoria_id: producto.categoria_id || '',
+			proveedor_id: producto.proveedor_id || ''
+		  }
+		];
+		
+		console.log('✅ [CARRITO] Nuevo producto agregado al carrito');
+	  }
+	  
+	  // PASO 4: Actualizar el estado del carrito
+	  setCarrito(carritoActualizado);
+	  
+	  // PASO 5: Limpiar búsqueda y mantener foco
+	  setSearchTerm('');
+	  setShowSearchResults(false);
+	  
+	  // Volver a enfocar el campo de búsqueda
+	  if (searchInputRef.current) {
+		searchInputRef.current.focus();
+	  }
+	  
+	  console.log('🛒 [CARRITO] Estado actualizado, productos en carrito:', carritoActualizado.length);
+	  
+	  // MOSTRAR MENSAJE DE ÉXITO
+	  toast.success(`✅ ${producto.nombre} agregado al carrito (Stock: ${stockDisponibleSucursal})`);
+	  
+	  // PASO 6: Aplicar promociones automáticamente (si existe el módulo)
+	  if (typeof promocionesService !== 'undefined' && promocionesService.aplicarPromociones) {
+		try {
+		  if (isApplyingPromotions) {
+			console.log('⚠️ Ya se están aplicando promociones, saltando...');
+			return;
+		  }
+		  
+		  isApplyingPromotions = true;
+		  
+		  const itemsFormateados = carritoActualizado.map(item => ({
+			id: item.id,
+			producto_id: item.id,
+			codigo: item.codigo,
+			nombre: item.nombre,
+			precio: Math.round(item.precio * 100) / 100,
+			cantidad: parseInt(item.cantidad),
+			subtotal: Math.round((item.precio * item.cantidad) * 100) / 100,
+			lista_aplicada: item.lista_aplicada,
+			sucursal_id: item.sucursal_id
+		  }));
+		  
+		  console.log('🎁 [CARRITO] Aplicando promociones automáticas...');
+		  
+		  const response = await promocionesService.aplicarPromociones(itemsFormateados);
+		  
+		  if (response.data && Array.isArray(response.data)) {
+			setCarrito(response.data.map(item => ({
+			  ...item,
+			  lista_aplicada: item.lista_aplicada || listaSeleccionada,
+			  sucursal_id: item.sucursal_id || sucursalVenta
+			})));
+			
+			const nuevasPromociones = response.data.some(item => 
+			  item.promociones && item.promociones.length > 0 && item.id === producto.id
+			);
+			
+			if (nuevasPromociones) {
+			  toast.success('🎁 ¡Promoción aplicada automáticamente!');
+			  console.log('✅ [CARRITO] Promociones aplicadas automáticamente');
+			}
+		  }
+		} catch (error) {
+		  console.error('❌ [CARRITO] Error al aplicar promociones automáticas:', error);
+		} finally {
+		  isApplyingPromotions = false;
+		}
+	  }
+	};
+
+  
+  /**
+   * Actualiza la cantidad de un producto en el carrito
+   * @param {string|number} id - ID del producto
+   * @param {number} nuevaCantidad - Nueva cantidad deseada
+   */
+  const actualizarCantidad = async (id, nuevaCantidad) => {
+	  // Buscar el producto en el carrito
+	  const producto = carrito.find(item => item.id === id);
+	  
+	  if (!producto) {
+		console.error('Producto no encontrado en el carrito');
+		return;
+	  }
+	  
+	  // Obtener el stock disponible del producto en el carrito
+	  const stockDisponible = producto.stock_disponible || producto.stock_actual || 0;
+	  
+	  console.log('📦 [ACTUALIZAR CANTIDAD] Verificando stock:', {
+		producto: producto.nombre,
+		stockDisponible: stockDisponible,
+		nuevaCantidad: nuevaCantidad,
+		productoCompleto: producto
+	  });
+	  
+	  // Validar que la cantidad no exceda el stock disponible
+	  if (stockDisponible > 0 && nuevaCantidad > stockDisponible) {
+		toast.warning(`No hay suficiente stock de ${producto.nombre}. Stock disponible: ${stockDisponible}`);
+		return;
+	  }
+	  
+	  // Validar que la cantidad sea al menos 1
+	  if (nuevaCantidad < 1) {
+		// Si se intenta poner 0 o menos, preguntar si quiere eliminar
+		if (window.confirm(`¿Deseas eliminar ${producto.nombre} del carrito?`)) {
+		  eliminarDelCarrito(id);
+		}
+		return;
+	  }
+	  
+	  // Actualizar carrito local primero
+	  const carritoActualizado = carrito.map(item => 
+		item.id === id 
+		  ? { 
+			  ...item, 
+			  cantidad: nuevaCantidad,
+			  subtotal: nuevaCantidad * item.precio
+			} 
+		  : item
+	  );
+	  
+	  setCarrito(carritoActualizado);
+	  
+	  // Aplicar promociones automáticamente (si está disponible el servicio)
+	  if (typeof promocionesService !== 'undefined' && promocionesService.aplicarPromociones && !isApplyingPromotions) {
+		try {
+		  isApplyingPromotions = true;
+		  
+		  // Formatear los datos antes de enviarlos
+		  const itemsFormateados = carritoActualizado.map(item => ({
+			id: item.id,
+			producto_id: item.id,
+			codigo: item.codigo,
+			nombre: item.nombre,
+			precio: Math.round(item.precio * 100) / 100,
+			cantidad: parseInt(item.cantidad),
+			subtotal: Math.round((item.precio * item.cantidad) * 100) / 100,
+			lista_aplicada: item.lista_aplicada || listaSeleccionada,
+			sucursal_id: item.sucursal_id || sucursalVenta // Mantener referencia a sucursal
+		  }));
+		  
+		  const response = await promocionesService.aplicarPromociones(itemsFormateados);
+		  
+		  if (response.data && Array.isArray(response.data)) {
+			// Actualizar carrito con las promociones aplicadas manteniendo el stock_disponible
+			setCarrito(response.data.map((item, index) => ({
+			  ...item,
+			  lista_aplicada: item.lista_aplicada || listaSeleccionada,
+			  stock_disponible: carritoActualizado[index]?.stock_disponible || item.stock_disponible,
+			  sucursal_id: item.sucursal_id || sucursalVenta
+			})));
+		  }
+		} catch (error) {
+		  console.error('Error al actualizar promociones:', error);
+		  // No mostrar toast para no interrumpir la experiencia del usuario
+		} finally {
+		  isApplyingPromotions = false;
+		}
+	  }
+	};
+	/**
+ * Actualiza el precio de un producto en el carrito
+ * @param {string|number} id - ID del producto
+ * @param {number} nuevoPrecio - Nuevo precio
+ */
+	const actualizarPrecio = (id, nuevoPrecio) => {
+	  const precio = parseFloat(nuevoPrecio) || 0;
+	  
+	  if (precio < 0) {
+		toast.error('El precio no puede ser negativo');
+		return;
+	  }
+	  
+	  const carritoActualizado = carrito.map(item => 
+		item.id === id 
+		  ? { 
+			  ...item, 
+			  precio: precio,
+			  precio_editado: true, // Marcar que fue editado manualmente
+			  subtotal: item.cantidad * precio
+			} 
+		  : item
+	  );
+	  
+	  setCarrito(carritoActualizado);
+	  toast.success('Precio actualizado');
+	};
+  
+  /**
+   * Elimina un producto del carrito
+   * @param {string|number} id - ID del producto a eliminar
+   */
+  const eliminarDelCarrito = (id) => {
+    // Buscar el producto para mostrar confirmación con nombre
+    const producto = carrito.find(item => item.id === id);
+    
+    if (producto) {
+      // Actualizar el carrito filtrando el producto eliminado
+      const carritoActualizado = carrito.filter(item => item.id !== id);
+      setCarrito(carritoActualizado);
+      
+      // Mostrar notificación
+      toast.info(`${producto.nombre} eliminado del carrito`);
+      
+      // Si el carrito queda vacío, enfocar el campo de búsqueda
+      if (carritoActualizado.length === 0 && searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
+    }
+  };
+
+  /**
+   * Maneja el cambio de cantidad desde el input numérico
+   * @param {string|number} id - ID del producto
+   * @param {Event} e - Evento del input
+   */
+  const handleCantidadInputChange = (id, e) => {
+    const valor = e.target.value;
+    
+    // Si el campo está vacío, no hacer nada (permitir que el usuario borre y escriba)
+    if (valor === '') {
+      return;
+    }
+    
+    // Convertir a número y validar
+    const nuevaCantidad = parseInt(valor) || 0;
+    
+    // Solo actualizar si es un número válido mayor a 0
+    if (nuevaCantidad > 0) {
+      actualizarCantidad(id, nuevaCantidad);
+    }
+  };
+
+  /**
+   * Maneja cuando el input pierde el foco (para validar valores vacíos)
+   * @param {string|number} id - ID del producto
+   * @param {Event} e - Evento del input
+   */
+  const handleCantidadInputBlur = (id, e) => {
+    const valor = e.target.value;
+    const producto = carrito.find(item => item.id === id);
+    
+    // Si el campo está vacío o es 0, restaurar a 1
+    if (!valor || parseInt(valor) === 0) {
+      const carritoActualizado = carrito.map(item => 
+        item.id === id 
+          ? { ...item, cantidad: 1, subtotal: item.precio } 
+          : item
+      );
+      setCarrito(carritoActualizado);
+    }
+  };
+  
+/**
+ * Actualiza los precios del carrito cuando se cambia la lista - MÉTODO CORREGIDO
+ * @param {string} nuevaLista - Nueva lista seleccionada
+ */
+	const cambiarListaPrecios = async (nuevaLista) => {
+	  console.log(`🔄 [PUNTO VENTA] Cambiando lista de precios a: ${nuevaLista}`);
+	  setListaSeleccionada(nuevaLista);
+	  
+	  // Si hay productos en el carrito, actualizar sus precios
+	  if (carrito.length > 0) {
+		try {
+		  console.log(`📦 [PUNTO VENTA] Actualizando precios de ${carrito.length} productos en carrito`);
+		  
+		  const carritoActualizado = await Promise.all(carrito.map(async item => {
+			try {
+			  // Buscar el producto completo para obtener las listas de precios
+			  console.log(`🔍 [PUNTO VENTA] Obteniendo precios para producto: ${item.nombre}`);
+			  const producto = await productosService.obtenerPorId(item.id);
+			  
+			  let nuevoPrecio = item.precio; // Precio actual como fallback
+			  
+			  if (producto && producto.listas_precios && producto.listas_precios[nuevaLista]) {
+				// Usar precio de la nueva lista
+				nuevoPrecio = parseFloat(producto.listas_precios[nuevaLista]);
+				console.log(`💰 [PUNTO VENTA] Precio actualizado para ${item.nombre}: $${nuevoPrecio} (lista: ${nuevaLista})`);
+			  } else if (producto && producto.precio_costo > 0) {
+				// Si no hay listas de precios, intentar calcular con margen
+				const margenesGuardados = localStorage.getItem('margenes_listas');
+				if (margenesGuardados) {
+				  const margenes = JSON.parse(margenesGuardados);
+				  const margenLista = margenes[nuevaLista] || margenes.interior || 40;
+				  nuevoPrecio = calcularPrecioConMargen(producto.precio_costo, margenLista);
+				  console.log(`📊 [PUNTO VENTA] Precio calculado con margen para ${item.nombre}: $${nuevoPrecio}`);
+				} else {
+				  // Fallback al precio de venta original
+				  nuevoPrecio = producto.precio_venta || item.precio;
+				  console.log(`⚠️ [PUNTO VENTA] Usando precio de venta base para ${item.nombre}: $${nuevoPrecio}`);
+				}
+			  } else {
+				console.log(`⚠️ [PUNTO VENTA] No se pudo actualizar precio para ${item.nombre}, manteniendo actual: $${item.precio}`);
+			  }
+			  
+			  return {
+				...item,
+				precio: nuevoPrecio,
+				precio_lista: nuevoPrecio,
+				lista_aplicada: nuevaLista,
+				subtotal: item.cantidad * nuevoPrecio
+			  };
+			} catch (error) {
+			  console.error(`❌ [PUNTO VENTA] Error al actualizar precio del producto ${item.id}:`, error);
+			  // En caso de error, mantener el producto sin cambios pero actualizar la lista aplicada
+			  return {
+				...item,
+				lista_aplicada: nuevaLista
+			  };
+			}
+		  }));
+		  
+		  setCarrito(carritoActualizado);
+		  
+		  // Mostrar notificación de éxito
+		  const productosActualizados = carritoActualizado.filter(item => item.precio !== carrito.find(original => original.id === item.id)?.precio).length;
+		  
+		  if (productosActualizados > 0) {
+			toast.success(`✅ Precios actualizados para ${productosActualizados} productos (Lista: ${nuevaLista})`);
+		  } else {
+			toast.info(`ℹ️ Lista cambiada a "${nuevaLista}" (precios sin cambios)`);
+		  }
+		  
+		  // Opcional: Aplicar promociones nuevamente con los nuevos precios
+		  if (typeof promocionesService !== 'undefined' && promocionesService.aplicarPromociones) {
+			try {
+			  console.log(`🎁 [PUNTO VENTA] Recalculando promociones con nuevos precios...`);
+			  
+			  // Formatear los datos antes de enviarlos
+			  const itemsFormateados = carritoActualizado.map(item => ({
+				id: item.id,
+				producto_id: item.id,
+				codigo: item.codigo,
+				nombre: item.nombre,
+				precio: Math.round(item.precio * 100) / 100,
+				cantidad: parseInt(item.cantidad),
+				subtotal: Math.round((item.precio * item.cantidad) * 100) / 100,
+				lista_aplicada: nuevaLista,
+				sucursal_id: item.sucursal_id || sucursalVenta
+			  }));
+			  
+			  const response = await promocionesService.aplicarPromociones(itemsFormateados);
+			  
+			  if (response.data && Array.isArray(response.data)) {
+				setCarrito(response.data.map(item => ({
+				  ...item,
+				  lista_aplicada: nuevaLista,
+				  stock_disponible: carritoActualizado.find(c => c.id === item.id)?.stock_disponible || item.stock_disponible,
+				  sucursal_id: item.sucursal_id || sucursalVenta
+				})));
+				
+				console.log(`✅ [PUNTO VENTA] Promociones recalculadas con nueva lista de precios`);
+			  }
+			} catch (promocionError) {
+			  console.error('❌ [PUNTO VENTA] Error al recalcular promociones:', promocionError);
+			  // No mostrar error al usuario, continuar con los precios actualizados
+			}
+		  }
+		  
+		} catch (error) {
+		  console.error('❌ [PUNTO VENTA] Error al actualizar precios del carrito:', error);
+		  toast.error('Error al actualizar precios. Por favor, elimina y vuelve a agregar los productos.');
+		}
+	  } else {
+		// Si el carrito está vacío, solo mostrar notificación
+		toast.info(`ℹ️ Lista de precios cambiada a "${nuevaLista}"`);
+	  }
+	};
+  
+  /**
+   * Aplica promociones a los productos del carrito
+   */
+  const aplicarPromociones = async () => {
+	  toast.info('Aplicando promociones disponibles...');
+	  
+	  try {
+		if (carrito.length === 0) {
+		  toast.warning('No hay productos en el carrito');
+		  return;
+		}
+		
+		// Mostrar un indicador de carga
+		setLoading(true);
+		
+		// Guardar información de stock antes de aplicar promociones
+		const stockPorProducto = {};
+		carrito.forEach(item => {
+		  stockPorProducto[item.id] = item.stock_disponible || item.stock_actual || 0;
+		});
+		
+		// Formatear los datos antes de enviarlos
+		const itemsFormateados = carrito.map(item => ({
+		  id: item.id,
+		  codigo: item.codigo,
+		  nombre: item.nombre,
+		  precio: parseFloat(item.precio),
+		  cantidad: parseInt(item.cantidad),
+		  subtotal: parseFloat(item.subtotal || (item.precio * item.cantidad)),
+		  lista_aplicada: item.lista_aplicada || listaSeleccionada,
+		  stock_disponible: item.stock_disponible || 0,
+		  sucursal_id: item.sucursal_id || sucursalVenta
+		}));
+		
+		// Llamar al servicio de promociones
+		const response = await promocionesService.aplicarPromociones(itemsFormateados);
+		
+		if (response.success === false) {
+		  toast.error('Error del servidor: ' + response.message);
+		  return;
+		}
+		
+		// Actualizar el carrito con las promociones aplicadas
+		if (response.data && Array.isArray(response.data)) {
+		  // Asegurarse de mantener la lista aplicada Y el stock disponible
+		  setCarrito(response.data.map(item => ({
+			...item,
+			lista_aplicada: item.lista_aplicada || listaSeleccionada,
+			stock_disponible: stockPorProducto[item.id] || item.stock_disponible || 0,
+			sucursal_id: item.sucursal_id || sucursalVenta
+		  })));
+		  
+		  // Verificar si se aplicó alguna promoción
+		  const tienePromociones = response.data.some(item => 
+			item.promociones && item.promociones.length > 0
+		  );
+		  
+		  if (tienePromociones) {
+			toast.success('¡Promociones aplicadas correctamente!');
+		  } else {
+			toast.info('No hay promociones disponibles para estos productos');
+		  }
+		}
+	  } catch (error) {
+		console.error('Error al aplicar promociones:', error);
+		toast.error('Error al aplicar promociones: ' + (error.response?.data?.message || error.message));
+	  } finally {
+		setLoading(false);
+	  }
+	};
+  
+  /**
+   * Busca un cliente por nombre, teléfono o email
+   * @param {string} termino - Término de búsqueda
+   */
+  const buscarCliente = async (termino) => {
+    try {
+      const clientes = await clientesService.buscar(termino);
+      return clientes;
+    } catch (error) {
+      console.error('Error al buscar clientes:', error);
+      toast.error('Error al buscar clientes');
+      return [];
+    }
+  };
+  
+  /**
+   * Selecciona un cliente para la venta
+   * @param {Object} clienteSeleccionado - Cliente seleccionado
+   */
+  const seleccionarCliente = (clienteSeleccionado) => {
+    console.log('Cliente seleccionado:', clienteSeleccionado);
+    setCliente(clienteSeleccionado);
+    setShowClienteDialog(false);
+  };
+  
+  /**
+   * Crea un nuevo cliente
+   * @param {Object} nuevoCliente - Datos del nuevo cliente
+   */
+  const crearCliente = async (nuevoCliente) => {
+    try {
+      const clienteCreado = await clientesService.crear(nuevoCliente);
+      seleccionarCliente(clienteCreado);
+      toast.success('Cliente creado correctamente');
+    } catch (error) {
+      console.error('Error al crear cliente:', error);
+      toast.error('Error al crear cliente');
+    }
+  };
+  
+  /**
+   * Calcula el total de la venta con descuentos y precios de lista
+   * @returns {Object} Totales calculados
+   */
+  const calcularTotales = () => {
+    // Calcular subtotal (precio * cantidad, sin descuentos)
+    const subtotalSinDescuento = carrito.reduce(
+      (total, item) => total + (item.precio * item.cantidad), 
+      0
+    );
+    
+    // Calcular descuento de promociones
+    const descuentoPromociones = carrito.reduce(
+      (total, item) => total + (item.descuento || 0), 
+      0
+    );
+    
+    // Calcular subtotal real (con descuentos de promociones aplicados)
+    const subtotalConPromociones = subtotalSinDescuento - descuentoPromociones;
+    
+    // Calcular descuento general
+    let descuentoGeneralValor = 0;
+    if (descuentoGeneralTipo === 'porcentaje') {
+      descuentoGeneralValor = (subtotalConPromociones * descuentoGeneral) / 100;
+    } else {
+      descuentoGeneralValor = Math.min(descuentoGeneral, subtotalConPromociones);
+    }
+    
+    // Descuento total (promociones + general)
+    const descuentoTotal = descuentoPromociones + descuentoGeneralValor;
+    
+    // Calcular total
+    const total = Math.max(subtotalSinDescuento - descuentoTotal, 0);
+    
+    // Calcular diferencia si no es lista interior
+    const diferenciaListaInterior = carrito.reduce((total, item) => {
+      if (item.lista_aplicada !== 'interior' && item.precio_original) {
+        return total + ((item.precio_original - item.precio) * item.cantidad);
+      }
+      return total;
+    }, 0);
+    
+    return {
+      subtotalSinDescuento,
+      descuentoPromociones,
+      descuentoGeneralValor,
+      descuentoTotal,
+      total,
+      diferenciaListaInterior,
+      listaAplicada: listaSeleccionada
+    };
+  };
+  
+  /**
+   * Formatea un número como moneda
+   * @param {number} valor - Valor a formatear
+   * @returns {string} Valor formateado
+   */
+  const formatMoneda = (valor) => {
+    return `$${parseFloat(valor).toFixed(2)}`;
+  };
+  
+  /**
+   * Valida que los datos de la venta sean correctos
+   * @returns {boolean} True si los datos son válidos
+   */
+  const validarVenta = () => {
+    if (carrito.length === 0) {
+      toast.error('Debe agregar al menos un producto al carrito');
+      return false;
+    }
+    
+    return true;
+  };
+  
+  /**
+   * Prepara la confirmación de la venta
+   */
+  const prepararConfirmacion = () => {
+    if (!validarVenta()) return;
+    
+    // NUEVA VALIDACIÓN: Sucursal obligatoria
+    if (!sucursalVenta) {
+      toast.error('Debe seleccionar una sucursal para la venta');
+      return;
+    }
+    
+    setShowConfirmDialog(true);
+  };
+
+  /**
+   * ✅ CORREGIDO: Manejador del estado de pago
+   * @param {string} nuevoEstado - Nuevo estado de pago
+   */
+  const handleEstadoPagoChange = (nuevoEstado) => {
+    const totales = calcularTotales();
+    
+    setEstadoPago(nuevoEstado);
+    
+    if (nuevoEstado === 'completada') {
+      // Si se marca como completada, el monto pagado debe ser el total
+      setMontoPagado(totales.total);
+    } else if (nuevoEstado === 'pendiente') {
+      // Si se marca como pendiente, mantener el monto actual o poner 0 si es mayor al total
+      if (montoPagado > totales.total) {
+        setMontoPagado(0);
+      }
+    }
+  };
+
+  /**
+   * ✅ CORREGIDO: Manejador del cambio de monto pagado
+   * @param {number} nuevoMonto - Nuevo monto pagado
+   */
+  const handleMontoPagadoChange = (nuevoMonto) => {
+    const totales = calcularTotales();
+    const monto = parseFloat(nuevoMonto) || 0;
+    
+    // Limitar el monto al total de la venta
+    const montoLimitado = Math.min(Math.max(0, monto), totales.total);
+    
+    setMontoPagado(montoLimitado);
+    
+    // Actualizar automáticamente el estado según el monto
+    if (montoLimitado >= totales.total) {
+      setEstadoPago('completada');
+    } else if (montoLimitado > 0) {
+      setEstadoPago('pendiente');
+    } else {
+      setEstadoPago('pendiente');
+    }
+  };
+  
+  /**
+   * ✅ CORREGIDO: Procesa la venta final con lógica de pagos correcta
+   */
+  const procesarVenta = async () => {
+	  console.log('🚨 INICIANDO procesarVenta');
+	  console.log('🚨 Validando venta...');
+	  if (!validarVenta()) return;
+
+	  // NUEVA VALIDACIÓN: Sucursal obligatoria
+	  if (!sucursalVenta) {
+		toast.error('Debe seleccionar una sucursal para la venta');
+		return;
+	  }
+
+	  // NUEVA VALIDACIÓN: Verificar stock de todos los productos antes de procesar
+	  console.log('🔍 Verificando stock antes de procesar venta...');
+	  
+	  for (const item of carrito) {
+		// Verificar stock actual (podría haber cambiado desde que se agregó al carrito)
+		try {
+		  const productoActualizado = await productosService.obtenerPorCodigoConStock(
+			item.codigo, 
+			sucursalVenta
+		  );
+		  
+		  if (!productoActualizado) {
+			toast.error(`❌ Producto ${item.nombre} no encontrado`);
+			return;
+		  }
+		  
+		  const stockActual = productoActualizado.stock_actual || 0;
+		  
+		  if (stockActual < item.cantidad) {
+			toast.error(
+			  `❌ Stock insuficiente para ${item.nombre}. ` +
+			  `Disponible: ${stockActual}, Solicitado: ${item.cantidad}`
+			);
+			return;
+		  }
+		} catch (error) {
+		  console.error('Error verificando stock:', error);
+		  toast.error(`Error al verificar stock de ${item.nombre}`);
+		  return;
+		}
+	  }
+	  
+	  console.log('✅ Stock verificado, procesando venta...');
+
+	  try {
+		setVentaEnProceso(true);
+		const totales = calcularTotales();
+		
+		// Validar método de pago antes de enviar
+		const metodosValidos = ['efectivo', 'tarjeta', 'transferencia', 'credito'];
+		if (!metodosValidos.includes(metodoPago)) {
+		  toast.error('Método de pago inválido');
+		  return;
+		}
+
+		// ✅ CORREGIDO: Cálculo correcto del estado y montos de pago
+		let estadoFinal = estadoPago;
+		let montoPagadoFinal = montoPagado;
+		let saldoPendienteFinal = 0;
+
+		// Validaciones de consistencia
+		if (montoPagadoFinal >= totales.total) {
+		  estadoFinal = 'completada';
+		  montoPagadoFinal = totales.total;
+		  saldoPendienteFinal = 0;
+		} else if (montoPagadoFinal > 0) {
+		  estadoFinal = 'pendiente';
+		  saldoPendienteFinal = totales.total - montoPagadoFinal;
+		} else {
+		  estadoFinal = 'pendiente';
+		  montoPagadoFinal = 0;
+		  saldoPendienteFinal = totales.total;
+		}
+
+		console.log('💰 [VENTA] Estados de pago calculados:', {
+		  estadoOriginal: estadoPago,
+		  estadoFinal: estadoFinal,
+		  montoPagadoOriginal: montoPagado,
+		  montoPagadoFinal: montoPagadoFinal,
+		  total: totales.total,
+		  saldoPendiente: saldoPendienteFinal
+		});
+		
+		// Estructura mejorada para incluir información completa
+		const ventaData = {
+		  venta: {
+			sucursal_id: sucursalVenta,
+			cliente_id: cliente?.id || null,
+			cliente_nombre: cliente ? `${cliente.nombre} ${cliente.apellido}`.trim() : 'Cliente General',
+			cliente_info: cliente ? {
+			  id: cliente.id,
+			  nombre: cliente.nombre || '',
+			  apellido: cliente.apellido || '',
+			  nombre_completo: `${cliente.nombre || ''} ${cliente.apellido || ''}`.trim(),
+			  telefono: cliente.telefono || '',
+			  email: cliente.email || ''
+			} : null,
+			usuario_id: currentUser?.id || null,
+			metodo_pago: metodoPago,
+			subtotal: totales.subtotalSinDescuento,
+			descuento: totales.descuentoTotal,
+			total: totales.total,
+			estado: estadoFinal, // ← USAR ESTADO CALCULADO
+			lista_precio_aplicada: listaSeleccionada,
+			// ✅ CAMPOS DE PAGO CORREGIDOS
+			monto_pagado: montoPagadoFinal,
+			total_pagado: montoPagadoFinal,
+			saldo_pendiente: saldoPendienteFinal,
+			estado_pago: montoPagadoFinal >= totales.total ? 'pagado' : 
+						 montoPagadoFinal > 0 ? 'parcial' : 'pendiente'
+		  },
+		  detalles: carrito.map(item => ({
+			producto_id: item.id,
+			cantidad: item.cantidad,
+			precio_unitario: item.precio,
+			precio_lista: item.precio_lista || item.precio,
+			lista_aplicada: item.lista_aplicada || listaSeleccionada,
+			precio_editado_manual: item.precio_editado_manual || false,
+			precio_original: item.precio_original_backup || item.precio_lista,
+			
+			descuento: item.descuento || 0,
+			precio_total: item.subtotal || (item.precio * item.cantidad - (item.descuento || 0)),
+			
+			// Información de auditoría si el precio fue editado
+			...(item.precio_editado_manual && {
+			  auditoria_precio: {
+				editado_por: currentUser.email,
+				fecha_edicion: new Date().toISOString(),
+				precio_anterior: item.precio_original_backup,
+				precio_nuevo: item.precio
+			  }
+			}),
+			// Añadir información completa del producto
+			producto_info: {
+			  id: item.id,
+			  codigo: item.codigo || '',
+			  nombre: item.nombre || 'Producto sin nombre',
+			  precio: item.precio
+			}
+		  }))
+		};
+		
+		console.log('📤 [VENTA] Datos de venta a enviar:', {
+		  sucursal: ventaData.venta.sucursal_id,
+		  total: ventaData.venta.total,
+		  estado: ventaData.venta.estado,
+		  monto_pagado: ventaData.venta.monto_pagado,
+		  saldo_pendiente: ventaData.venta.saldo_pendiente,
+		  detalles_count: ventaData.detalles.length
+		});
+		
+		// Pasar sucursal al servicio
+		const respuesta = await ventasService.crear(ventaData.venta, ventaData.detalles, sucursalVenta);
+		
+		// NUEVO: Preparar datos para el ticket
+		const ventaParaTicket = {
+		  id: respuesta.id || respuesta.data?.id,
+		  numero: respuesta.numero || respuesta.data?.numero || `V-${Date.now()}`,
+		  fecha: new Date().toISOString(),
+		  cliente_nombre: ventaData.venta.cliente_nombre,
+		  cliente_info: ventaData.venta.cliente_info,
+		  usuario_nombre: currentUser?.nombre || currentUser?.email || 'Sistema',
+		  metodo_pago: metodoPago,
+		  estado: estadoFinal,
+		  estado_pago: ventaData.venta.estado_pago,
+		  subtotal: totales.subtotalSinDescuento,
+		  descuento: totales.descuentoTotal,
+		  total: totales.total,
+		  monto_pagado: montoPagadoFinal,
+		  saldo_pendiente: saldoPendienteFinal,
+		  detalles: ventaData.detalles,
+		  sucursal_nombre: sucursalesDisponibles.find(s => s.id === sucursalVenta)?.nombre || 'Principal'
+		};
+		
+		// Guardar venta creada y mostrar ticket
+		setVentaCreada(ventaParaTicket);
+		setShowTicket(true);
+		
+		// Mostrar mensaje de éxito diferenciado
+		if (estadoFinal === 'completada') {
+		  toast.success('✅ Venta completada y pagada correctamente');
+		} else {
+		  toast.success(`✅ Venta registrada - Saldo pendiente: ${formatMoneda(saldoPendienteFinal)}`);
+		}
+		
+	  } catch (error) {
+		console.error('❌ Error al procesar la venta:', error);
+		
+		let mensajeError = 'Error al procesar la venta';
+		
+		if (error.response?.data?.message) {
+		  mensajeError = error.response.data.message;
+		} else if (error.message) {
+		  mensajeError = error.message;
+		}
+		
+		toast.error(mensajeError);
+	  } finally {
+		setVentaEnProceso(false);
+		setShowConfirmDialog(false);
+	  }
+	};
+
+  
+  /**
+   * Cancela la confirmación de venta
+   */
+  const cancelarConfirmacion = () => {
+    setShowConfirmDialog(false);
+  };
+  
+  /**
+   * ✅ CORREGIDO: Reinicia el formulario de venta con estados correctos
+   */
+  const nuevaVenta = () => {
+    setCarrito([]);
+    setCliente(null);
+    setMetodoPago('efectivo');
+    setDescuentoGeneral(0);
+    setDescuentoGeneralTipo('porcentaje');
+    setEstadoPago('pendiente'); // ← VALOR CORRECTO por defecto
+    setMontoPagado(0); // ← VALOR CORRECTO por defecto
+    setListaSeleccionada('interior');
+    
+    // No resetear sucursal para mantenerla entre ventas
+    
+    // Enfocar el campo de búsqueda
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  };
+  
+  // Calcular totales para mostrar
+  const totales = calcularTotales();
+
+  return (
+  <div className="container mx-auto p-4 max-w-7xl">
+      {/* Header con título e indicadores */}
+	<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
+	  <div className="flex items-center gap-2 flex-wrap">
+		<h1 className="text-xl md:text-2xl font-bold text-gray-800">
+		  Punto de Venta
+		</h1>
+		
+		{/* Indicador de permisos */}
+		{puedeEditarPrecios && (
+		  <div className="inline-flex items-center px-3 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full border border-yellow-200">
+			<FaEdit className="mr-1" size={10} />
+			Puede editar precios
+		  </div>
+		)}
+		
+		{/* Indicador de rol (opcional) */}
+		{currentUser?.rol && (
+		  <div className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 text-xs rounded-full border border-blue-200">
+			<FaUserTag className="mr-1" size={10} />
+			{currentUser.rol}
+		  </div>
+		)}
+	  </div>
+	  
+	  {/* Información adicional del usuario (opcional) */}
+	  <div className="text-sm text-gray-600 mt-2 sm:mt-0">
+		<span className="flex items-center">
+		  <FaUser className="mr-1" size={12} />
+		  {currentUser?.nombre || currentUser?.email || 'Usuario'}
+		</span>
+	  </div>
+	</div>
+      
+      {/* Selector de sucursal */}
+      {(!sucursalVenta || sucursalesDisponibles.length > 1) && (
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <div className="flex items-center">
+            <FaExclamationTriangle className="text-yellow-600 mr-2" />
+            <div className="flex-1">
+              <h3 className="font-medium text-yellow-800">Seleccionar Sucursal</h3>
+              <p className="text-sm text-yellow-700">Debe seleccionar una sucursal para registrar la venta</p>
+            </div>
+          </div>
+          
+          <div className="mt-3 flex flex-wrap gap-2">
+            {sucursalesDisponibles.map(sucursal => (
+              <button
+                key={sucursal.id}
+                onClick={() => setSucursalVenta(sucursal.id)}
+                className={`px-3 py-2 lg:px-4 rounded-md flex items-center text-sm lg:text-base ${
+                  sucursalVenta === sucursal.id
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <FaStore className="mr-1 lg:mr-2" size={16} />
+                {sucursal.nombre}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Indicador de sucursal seleccionada */}
+      {sucursalVenta && (
+        <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <FaStore className="text-blue-600 mr-2" />
+              <span className="text-blue-800 font-medium">
+                Facturando en: {sucursalesDisponibles.find(s => s.id === sucursalVenta)?.nombre || 'Sucursal desconocida'}
+              </span>
+            </div>
+            {sucursalesDisponibles.length > 1 && (
+              <button
+                onClick={() => setSucursalVenta('')}
+                className="text-blue-600 text-sm hover:text-blue-800"
+              >
+                Cambiar
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+        {/* Panel derecho: Opciones de venta y resumen - PRIMERO EN MÓVIL */}
+        <div className="order-1 lg:order-2 lg:col-span-1">
+          <div className="bg-white rounded-lg shadow p-4 lg:p-6">
+            <h2 className="text-lg font-medium text-gray-700 mb-4">
+              Detalles de Venta
+            </h2>
+            
+            {/* Cliente */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700">Cliente</label>
+                <button
+                  onClick={() => setShowClienteDialog(true)}
+                  className="text-indigo-600 text-sm hover:text-indigo-900"
+                  disabled={!sucursalVenta}
+                >
+                  {cliente ? 'Cambiar' : 'Seleccionar'}
+                </button>
+              </div>
+              
+              {cliente ? (
+                <div className="border rounded-md p-3 bg-gray-50">
+                  <div className="text-gray-800 font-medium">
+                    {cliente.nombre} {cliente.apellido}
+                  </div>
+                  <div className="text-gray-500 text-sm">
+                    {cliente.telefono || 'Sin teléfono'}
+                  </div>
+                  <div className="text-gray-500 text-sm">
+                    {cliente.email || 'Sin email'}
+                  </div>
+                  {cliente.lista_precio_default && (
+                    <div className="text-blue-600 text-sm mt-1">
+                      Lista predeterminada: {cliente.lista_precio_default}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="border rounded-md p-3 bg-gray-50 text-center">
+                  <p className="text-gray-500">Venta sin cliente asignado</p>
+                  <button
+                    onClick={() => setShowClienteDialog(true)}
+                    className="mt-1 text-indigo-600 hover:text-indigo-900 flex items-center justify-center mx-auto"
+                    disabled={!sucursalVenta}
+                  >
+                    <FaUserPlus className="mr-1" /> Agregar cliente
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            {/* Lista de Precios */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Lista de Precios
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowConfigMargenesModal(true)}
+                  className="text-indigo-600 text-sm hover:text-indigo-900 flex items-center"
+                  disabled={!sucursalVenta}
+                >
+                  <FaPercent className="mr-1" size={12} />
+                  Configurar Márgenes
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-2">
+                {['mayorista', 'interior', 'posadas'].map(lista => (
+                  <button
+                    key={lista}
+                    type="button"
+                    onClick={() => cambiarListaPrecios(lista)}
+                    className={`
+                      px-3 py-2 rounded-md text-sm font-medium capitalize transition-colors
+                      ${listaSeleccionada === lista 
+                        ? 'bg-indigo-600 text-white shadow-md' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}
+                    `}
+                    disabled={!sucursalVenta}
+                  >
+                    {lista}
+                  </button>
+                ))}
+              </div>
+              
+              {/* Indicador cuando el cliente tiene otra lista asignada */}
+              {cliente?.lista_precio_default && cliente.lista_precio_default !== listaSeleccionada && (
+                <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-md">
+                  <p className="text-xs text-amber-800 flex items-center">
+                    <FaExclamationTriangle className="mr-1" />
+                    Cliente tiene lista "{cliente.lista_precio_default}" pero se está usando "{listaSeleccionada}"
+                  </p>
+                </div>
+              )}
+              
+              {/* Mostrar diferencia de precios si no es interior */}
+              {listaSeleccionada !== 'interior' && carrito.length > 0 && (
+                <div className="mt-2 text-xs text-gray-600">
+                  Descuento aplicado vs. precio interior
+                </div>
+              )}
+            </div>
+            
+            {/* Método de pago */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Método de Pago
+              </label>
+              
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <button
+                  onClick={() => setMetodoPago('efectivo')}
+                  className={`
+                    flex items-center justify-center px-3 py-3 rounded-md text-sm lg:text-base min-h-[44px]
+                    ${metodoPago === 'efectivo' 
+                      ? 'bg-indigo-100 text-indigo-700 border-indigo-300 border-2' 
+                      : 'bg-gray-100 text-gray-700 border border-gray-300'}
+                  `}
+                  disabled={!sucursalVenta}
+                >
+                  <FaMoneyBill className="mr-1 lg:mr-2" />
+                  <span className="hidden sm:inline">Efectivo</span>
+                  <span className="sm:hidden">Efect.</span>
+                </button>
+                
+                <button
+                  onClick={() => setMetodoPago('tarjeta')}
+                  className={`
+                    flex items-center justify-center px-3 py-3 rounded-md text-sm lg:text-base min-h-[44px]
+                    ${metodoPago === 'tarjeta' 
+                      ? 'bg-indigo-100 text-indigo-700 border-indigo-300 border-2' 
+                      : 'bg-gray-100 text-gray-700 border border-gray-300'}
+                  `}
+                  disabled={!sucursalVenta}
+                >
+                  <FaCreditCard className="mr-1 lg:mr-2" />
+                  Tarjeta
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setMetodoPago('credito')}
+                  className={`
+                    flex items-center justify-center px-3 py-3 rounded-md text-sm lg:text-base min-h-[44px]
+                    ${metodoPago === 'credito' 
+                      ? 'bg-indigo-100 text-indigo-700 border-indigo-300 border-2' 
+                      : 'bg-gray-100 text-gray-700 border border-gray-300'}
+                  `}
+                  disabled={!sucursalVenta}
+                >
+                  <FaMobile className="mr-1 lg:mr-2" />
+                  Crédito
+                </button>
+                
+                <button
+                  onClick={() => setMetodoPago('transferencia')}
+                  className={`
+                    flex items-center justify-center px-3 py-3 rounded-md text-sm lg:text-base min-h-[44px]
+                    ${metodoPago === 'transferencia' 
+                      ? 'bg-indigo-100 text-indigo-700 border-indigo-300 border-2' 
+                      : 'bg-gray-100 text-gray-700 border border-gray-300'}
+                  `}
+                  disabled={!sucursalVenta}
+                >
+                  <FaUniversity className="mr-1 lg:mr-2" />
+                  <span className="hidden sm:inline">Transferencia</span>
+                  <span className="sm:hidden">Transfer.</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ✅ CORREGIDO: Estado del pago con lógica mejorada */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Estado del Pago
+              </label>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => handleEstadoPagoChange('completada')}
+                  className={`
+                    flex items-center justify-center px-4 py-2 rounded-md
+                    ${estadoPago === 'completada' 
+                      ? 'bg-green-100 text-green-700 border-green-300 border-2' 
+                      : 'bg-gray-100 text-gray-700 border border-gray-300'}
+                  `}
+                  disabled={!sucursalVenta || carrito.length === 0}
+                >
+                  <FaCheck className="mr-2" />
+                  Pago Completo
+                </button>
+                
+                <button
+                  onClick={() => handleEstadoPagoChange('pendiente')}
+                  className={`
+                    flex items-center justify-center px-4 py-2 rounded-md
+                    ${estadoPago === 'pendiente' 
+                      ? 'bg-yellow-100 text-yellow-700 border-yellow-300 border-2' 
+                      : 'bg-gray-100 text-gray-700 border border-gray-300'}
+                  `}
+                  disabled={!sucursalVenta}
+                >
+                  <FaClock className="mr-2" />
+                  Pago Pendiente
+                </button>
+              </div>
+            </div>
+
+            {/* ✅ CORREGIDO: Monto pagado con mejor control */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Monto Pagado
+              </label>
+              <div className="flex items-center">
+                <input
+                  type="number"
+                  value={montoPagado}
+                  onChange={(e) => handleMontoPagadoChange(e.target.value)}
+                  min="0"
+                  max={totales.total}
+                  step="0.01"
+                  className="w-full border rounded-md px-3 py-2"
+                  disabled={!sucursalVenta || carrito.length === 0}
+                  placeholder="0.00"
+                />
+                <span className="ml-2 text-sm text-gray-600">
+                  de {formatMoneda(totales.total)}
+                </span>
+              </div>
+              
+              {/* Indicadores visuales del estado de pago */}
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <div className="flex items-center space-x-4">
+                  {montoPagado >= totales.total ? (
+                    <span className="flex items-center text-green-600">
+                      <FaCheck className="mr-1" size={12} />
+                      Pago completo
+                    </span>
+                  ) : montoPagado > 0 ? (
+                    <span className="flex items-center text-yellow-600">
+                      <FaClock className="mr-1" size={12} />
+                      Pago parcial
+                    </span>
+                  ) : (
+                    <span className="flex items-center text-red-600">
+                      <FaClock className="mr-1" size={12} />
+                      Sin pago
+                    </span>
+                  )}
+                </div>
+                
+                <span className="font-medium">
+                  Saldo: {formatMoneda(Math.max(0, totales.total - montoPagado))}
+                </span>
+              </div>
+              
+              {/* Botones de monto rápido */}
+              {estadoPago === 'pendiente' && carrito.length > 0 && (
+                <div className="mt-2 flex gap-1">
+                  <button
+                    onClick={() => handleMontoPagadoChange(0)}
+                    className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  >
+                    $0
+                  </button>
+                  <button
+                    onClick={() => handleMontoPagadoChange(totales.total / 2)}
+                    className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  >
+                    50%
+                  </button>
+                  <button
+                    onClick={() => handleMontoPagadoChange(totales.total)}
+                    className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+                  >
+                    Total
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            {/* Descuento general */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Descuento General
+              </label>
+              
+              <div className="flex items-center">
+                <input
+                  type="number"
+                  min="0"
+                  value={descuentoGeneral}
+                  onChange={(e) => setDescuentoGeneral(parseFloat(e.target.value) || 0)}
+                  className="border rounded-l-md px-3 py-2 w-full"
+                  disabled={!sucursalVenta}
+                />
+                
+                <select
+                  value={descuentoGeneralTipo}
+                  onChange={(e) => setDescuentoGeneralTipo(e.target.value)}
+                  className="border-t border-r border-b rounded-r-md px-2 py-2 bg-gray-50"
+                  disabled={!sucursalVenta}
+                >
+                  <option value="porcentaje">%</option>
+                  <option value="monto">$</option>
+                </select>
+              </div>
+            </div>
+            
+            {/* Resumen de venta */}
+            <div className="border-t border-gray-200 pt-4 mb-6">
+              <h3 className="text-md font-medium text-gray-700 mb-2">
+                Resumen
+              </h3>
+              
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Subtotal:</span>
+                  <span className="text-gray-800">{formatMoneda(totales.subtotalSinDescuento)}</span>
+                </div>
+                
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Descuento:</span>
+                  <span className="text-red-600">-{formatMoneda(totales.descuentoTotal)}</span>
+                </div>
+                
+                {totales.listaAplicada && totales.listaAplicada !== 'interior' && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Lista aplicada:</span>
+                    <span className="text-blue-600 capitalize">{totales.listaAplicada}</span>
+                  </div>
+                )}
+                
+                <div className="flex justify-between text-lg font-bold border-t pt-2">
+                  <span>Total a pagar:</span>
+                  <span>{formatMoneda(totales.total)}</span>
+                </div>
+                
+                {/* ✅ NUEVO: Mostrar estado de pago en el resumen */}
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Monto pagado:</span>
+                  <span className={montoPagado > 0 ? 'text-green-600 font-medium' : 'text-gray-500'}>
+                    {formatMoneda(montoPagado)}
+                  </span>
+                </div>
+                
+                {montoPagado < totales.total && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Saldo pendiente:</span>
+                    <span className="text-red-600 font-medium">
+                      {formatMoneda(totales.total - montoPagado)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Botones de acción */}
+            <div className="space-y-2">
+              <Button
+                color="primary"
+                fullWidth
+                onClick={prepararConfirmacion}
+                disabled={carrito.length === 0 || !sucursalVenta}
+                icon={<FaReceipt />}
+                className="min-h-[48px] text-base font-medium"
+              >
+                {estadoPago === 'completada' ? 'Finalizar Venta' : 
+                 montoPagado > 0 ? 'Venta con Saldo Pendiente' : 'Venta a Crédito'}
+              </Button>
+              
+              <Button
+                color="secondary"
+                fullWidth
+                onClick={nuevaVenta}
+                disabled={carrito.length === 0 || !sucursalVenta}
+                icon={<FaSave />}
+                className="min-h-[44px] text-base"
+              >
+                Nueva Venta
+              </Button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Panel izquierdo: Búsqueda de productos - SEGUNDO EN MÓVIL */}
+        <div className="order-2 lg:order-1 lg:col-span-2">
+          <div className="bg-white rounded-lg shadow p-4 lg:p-6">
+            {/* Barra de búsqueda */}
+            <div className="mb-4 relative">
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Buscar producto por código o nombre..."
+                value={searchTerm}
+                onChange={handleSearchChange}
+                onKeyDown={handleSearchKeyDown}
+                className="w-full px-4 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                inputMode="search"
+                disabled={!sucursalVenta}
+              />
+              
+              {loading && (
+                <div className="absolute right-3 top-2">
+                  <Spinner size="sm" />
+                </div>
+              )}
+              
+              {/* Dropdown de autocompletado */}
+              {searchTerm.length >= 3 && searchResults.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200 max-h-[50vh] overflow-y-auto">
+                  {searchResults.map(producto => (
+                    <div 
+                      key={producto.id}
+                      className={`px-4 py-3 hover:bg-gray-100 cursor-pointer ${
+                        producto.stock_actual <= 0 ? 'bg-red-50' : ''
+                      }`}
+                      onClick={() => {
+                        if (producto.stock_actual > 0) {
+                          agregarAlCarrito(producto);
+                          setSearchTerm('');
+                          setSearchResults([]);
+                        } else {
+                          toast.warning(`No hay stock disponible de ${producto.nombre}`);
+                        }
+                      }}
+                    >
+                      <div className="font-medium text-sm lg:text-base">{producto.nombre}</div>
+                      <div className="text-xs lg:text-sm flex justify-between">
+                        <span className="text-gray-600">{producto.codigo}</span>
+                        <span className={`font-medium ${
+                          producto.stock_actual <= 0 ? 'text-red-600' : 'text-green-600'
+                        }`}>
+                          Stock: {producto.stock_actual}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {/* Carrito de compras */}
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-medium text-gray-700 flex items-center">
+                  <FaShoppingCart className="mr-2" />
+                  Carrito
+                  {carrito.length > 0 && (
+                    <span className="ml-2 px-2 py-1 bg-indigo-100 text-indigo-800 text-xs rounded-full">
+                      {carrito.length}
+                    </span>
+                  )}
+                </h2>
+                {carrito.length > 0 && (
+                  <Button
+                    color="secondary"
+                    size="sm"
+                    onClick={aplicarPromociones}
+                    icon={<FaPercentage />}
+                    disabled={!sucursalVenta}
+                  >
+                    Aplicar Promociones
+                  </Button>
+                )}
+              </div>
+              
+              {carrito.length === 0 ? (
+                <div className="bg-gray-50 p-8 rounded-lg text-center">
+                  <FaShoppingCart className="mx-auto text-4xl text-gray-400 mb-2" />
+                  <h3 className="text-lg font-medium text-gray-700 mb-1">
+                    Carrito vacío
+                  </h3>
+                  <p className="text-gray-500">
+                    {!sucursalVenta 
+                      ? 'Selecciona una sucursal y busca productos para comenzar una venta'
+                      : 'Busca y añade productos para comenzar una venta'}
+                  </p>
+                </div>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Producto
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Precio Unit.
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Cantidad
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Subtotal
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Acciones
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {carrito.map(item => (
+                          <tr key={item.id}>
+                            <td className="px-4 py-3 text-sm">
+                              <div className="font-medium text-gray-900">
+                                {item.nombre}
+                              </div>
+                              <div className="text-gray-500">
+                                Código: {item.codigo}
+                              </div>
+                              
+                              {/* Mostrar lista aplicada si no es interior */}
+                              {item.lista_aplicada && item.lista_aplicada !== 'interior' && (
+                                <div className="text-xs text-blue-600 mt-1">
+                                  Lista: {item.lista_aplicada}
+                                </div>
+                              )}
+                              
+                              {/* Mostrar promociones aplicadas */}
+                              {item.promociones && item.promociones.length > 0 && (
+                                <div className="mt-2">
+                                  {item.promociones.map((promo, idx) => (
+                                    <div 
+                                      key={`${item.id}-promo-${idx}`}
+                                      className="flex items-center justify-between text-xs bg-green-100 text-green-800 px-2 py-1 rounded-md mt-1"
+                                    >
+                                      <span className="flex items-center">
+                                        <FaPercentage className="mr-1" size={10} />
+                                        {promo.mensaje || `¡${promo.nombre}!`}
+                                      </span>
+                                      <span className="font-bold ml-1">
+                                        -{formatMoneda(promo.descuento)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                            
+                           <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
+							  {puedeEditarPrecios ? (
+								<div className="flex flex-col items-center">
+								  <div className="flex items-center">
+									<span className="mr-1 text-gray-600">$</span>
+									<input
+									  type="number"
+									  value={item.precio}
+									  onChange={(e) => actualizarPrecio(item.id, e.target.value)}
+									  onBlur={(e) => {
+										// Validar al salir del campo
+										if (parseFloat(e.target.value) <= 0) {
+										  actualizarPrecio(item.id, item.precio_original_backup || item.precio_lista);
+										  toast.warning('Precio restaurado al original');
+										}
+									  }}
+									  className="w-20 text-center border rounded px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-400"
+									  min="0"
+									  step="0.01"
+									  title="Click para editar precio"
+									/>
+								  </div>
+								  {item.precio_editado_manual && (
+									<span className="text-xs text-blue-600 mt-1 flex items-center">
+									  <FaEdit size={10} className="mr-1" />
+									  Editado
+									</span>
+								  )}
+								  {item.precio_original_backup && item.precio !== item.precio_original_backup && (
+									<button
+									  onClick={() => actualizarPrecio(item.id, item.precio_original_backup)}
+									  className="text-xs text-gray-500 hover:text-gray-700 mt-1 underline"
+									  title="Restaurar precio original"
+									>
+									  Restaurar: {formatMoneda(item.precio_original_backup)}
+									</button>
+								  )}
+								</div>
+							  ) : (
+								<div>
+								  {formatMoneda(item.precio)}
+								  {item.precio_original && item.precio_original !== item.precio && (
+									<div className="text-xs text-gray-400 line-through">
+									  {formatMoneda(item.precio_original)}
+									</div>
+								  )}
+								</div>
+							  )}
+							</td>
+                            
+                            <td className="px-4 py-3 whitespace-nowrap text-sm">
+                              <div className="flex items-center justify-center">
+                                <button
+                                  onClick={() => actualizarCantidad(item.id, item.cantidad - 1)}
+                                  className="bg-gray-200 text-gray-600 hover:bg-gray-300 p-2 rounded transition-colors min-w-[32px] min-h-[32px] flex items-center justify-center"
+                                  title="Disminuir cantidad"
+                                >
+                                  <FaMinus size={14} />
+                                </button>
+                                
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max={item.stock_disponible}
+                                  value={item.cantidad}
+                                  onChange={(e) => handleCantidadInputChange(item.id, e)}
+                                  onBlur={(e) => handleCantidadInputBlur(item.id, e)}
+                                  className="mx-1 w-16 text-center text-base border rounded p-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  inputMode="numeric"
+                                  title={`Stock disponible: ${item.stock_disponible}`}
+                                />
+                                
+                                <button
+                                  onClick={() => actualizarCantidad(item.id, item.cantidad + 1)}
+                                  className="bg-gray-200 text-gray-600 hover:bg-gray-300 p-2 rounded transition-colors min-w-[32px] min-h-[32px] flex items-center justify-center"
+                                  title="Aumentar cantidad"
+                                  disabled={item.cantidad >= item.stock_disponible}
+                                >
+                                  <FaPlus size={14} />
+                                </button>
+                              </div>
+                              
+                              {/* Indicador de stock */}
+                              <div className="text-xs text-gray-500 text-center mt-1">
+                                Stock: {item.stock_disponible}
+                              </div>
+                            </td>
+                            
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
+                              {/* Mostrar precio original tachado si hay descuento */}
+                              {item.descuento > 0 ? (
+                                <div>
+                                  <span className="line-through text-gray-400">
+                                    {formatMoneda(item.precio * item.cantidad)}
+                                  </span>
+                                  <span className="ml-2 text-green-600 font-bold">
+                                    {formatMoneda(item.subtotal)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="font-medium">
+                                  {formatMoneda(item.subtotal || (item.precio * item.cantidad))}
+                                </span>
+                              )}
+                            </td>
+                            
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
+                              <button
+                                onClick={() => eliminarDelCarrito(item.id)}
+                                className="text-red-600 hover:text-red-900 transition-colors"
+                                title="Eliminar del carrito"
+                              >
+                                <FaTrash />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              
+              {/* Resumen del carrito */}
+              {carrito.length > 0 && (
+                <div className="mt-4 bg-gray-50 p-4 rounded-lg">
+                  <h3 className="text-sm lg:text-md font-medium text-gray-700 mb-2 flex items-center">
+                    <FaCalculator className="mr-2" />
+                    Resumen del Carrito
+                  </h3>
+                  
+                  <div className="space-y-2">
+                    {/* Subtotal sin descuentos */}
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Subtotal:</span>
+                      <span className="text-gray-800">
+                        {formatMoneda(totales.subtotalSinDescuento)}
+                      </span>
+                    </div>
+                    
+                    {/* Descuentos por promociones */}
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Descuento promociones:</span>
+                      <span className="text-green-600">
+                        -{formatMoneda(totales.descuentoPromociones)}
+                      </span>
+                    </div>
+                    
+                    {/* Descuento general */}
+                    {descuentoGeneral > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">
+                          Descuento adicional {descuentoGeneralTipo === 'porcentaje' ? `(${descuentoGeneral}%)` : '(monto fijo)'}:
+                        </span>
+                        <span className="text-green-600">
+                          -{formatMoneda(totales.descuentoGeneralValor)}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {/* Diferencia por lista de precios */}
+                    {totales.diferenciaListaInterior > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">
+                          Descuento por lista {listaSeleccionada}:
+                        </span>
+                        <span className="text-blue-600">
+                          -{formatMoneda(totales.diferenciaListaInterior)}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {/* Total final */}
+                    <div className="flex justify-between pt-2 border-t font-bold text-lg">
+                      <span>Total:</span>
+                      <span>{formatMoneda(totales.total)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Diálogo de selección de cliente */}
+      <ClienteDialog
+        isOpen={showClienteDialog}
+        onClose={() => setShowClienteDialog(false)}
+        onSelectCliente={(cliente) => seleccionarCliente(cliente)}
+        onCreateCliente={(cliente) => seleccionarCliente(cliente)}
+      />
+
+      {/* Modal de configuración de márgenes */}
+      <ConfiguracionMargenesModal
+        isOpen={showConfigMargenesModal}
+        onClose={() => setShowConfigMargenesModal(false)}
+        onSave={(margenes) => {
+          console.log('Márgenes configurados:', margenes);
+          // Los márgenes se guardan en localStorage dentro del modal
+          // Aquí podrías actualizar precios si es necesario
+        }}
+      />
+	   {/* Modal de Ticket */}
+		{showTicket && ventaCreada && (
+		  <TicketVenta
+			venta={ventaCreada}
+			onClose={() => {
+			  setShowTicket(false);
+			  // Opcional: Redirigir después de cerrar el ticket
+			  if (ventaCreada.id) {
+				navigate(`/ventas/${ventaCreada.id}`);
+			  } else {
+				// O simplemente limpiar para nueva venta
+				nuevaVenta();
+			  }
+			}}
+		  />
+		)}
+      {/* ✅ CORREGIDO: Diálogo de confirmación con información mejorada */}
+      <ConfirmDialog
+        isOpen={showConfirmDialog}
+        title="Confirmar Venta"
+        message={
+          <div className="space-y-3">
+            <p className="text-base">¿Estás seguro de procesar esta venta?</p>
+            
+            <div className="bg-gray-50 p-3 rounded-md">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="font-medium">Total:</span>
+                  <span className="font-bold text-lg">{formatMoneda(totales.total)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Método:</span>
+                  <span className="capitalize">{metodoPago}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Lista:</span>
+                  <span className="capitalize">{listaSeleccionada}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Sucursal:</span>
+                  <span>{sucursalesDisponibles.find(s => s.id === sucursalVenta)?.nombre || 'Desconocida'}</span>
+                </div>
+              </div>
+              
+              {/* Estado de pago */}
+              <div className="mt-2 pt-2 border-t border-gray-200">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">Estado de Pago:</span>
+                  <div className="text-right">
+                    {montoPagado >= totales.total ? (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <FaCheck className="mr-1" size={10} />
+                        Pago Completo
+                      </span>
+                    ) : montoPagado > 0 ? (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                        <FaClock className="mr-1" size={10} />
+                        Pago Parcial
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        <FaClock className="mr-1" size={10} />
+                        A Crédito
+                      </span>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 mt-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>Monto pagado:</span>
+                    <span className="font-medium">{formatMoneda(montoPagado)}</span>
+                  </div>
+                  {montoPagado < totales.total && (
+                    <div className="flex justify-between">
+                      <span>Saldo pendiente:</span>
+                      <span className="font-medium text-red-600">{formatMoneda(totales.total - montoPagado)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        }
+        confirmText={estadoPago === 'completada' ? 'Finalizar Venta' : 'Procesar Venta'}
+        cancelText="Cancelar"
+        onConfirm={procesarVenta}
+        onCancel={cancelarConfirmacion}
+        confirmColor="primary"
+        loading={ventaEnProceso}
+      />
+    </div>
+  );
+};
+
+export default PuntoVenta;

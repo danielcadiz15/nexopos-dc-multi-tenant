@@ -1,0 +1,9 @@
+{
+  "appId": "com.tudespensa.app",
+  "appName": "Mi Despensa",
+  "webDir": "build",
+  "server": {
+    "url": "https://la-fabrica-1.web.app/",
+    "cleartext": true
+  }
+}

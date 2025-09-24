@@ -1,0 +1,368 @@
+/* CompraForm.css - Estilos para el formulario mejorado */
+
+/* Contenedor principal del formulario */
+.compra-form-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+/* Tarjetas de producto mejoradas */
+.producto-card {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  transition: all 0.2s ease-in-out;
+}
+
+.producto-card:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Campo de búsqueda de productos */
+.producto-search-input {
+  width: 100%;
+  padding: 0.75rem 1rem 0.75rem 2.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  transition: all 0.2s ease-in-out;
+}
+
+.producto-search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Sugerencias de productos */
+.productos-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 50;
+  margin-top: 0.25rem;
+}
+
+.suggestion-item {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.suggestion-item:hover,
+.suggestion-item.active {
+  background-color: #f3f4f6;
+}
+
+.suggestion-item.highlighted {
+  background-color: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+/* Producto seleccionado */
+.producto-selected {
+  background: white;
+  border: 1px solid #10b981;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  position: relative;
+}
+
+.producto-selected-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.producto-selected-info h4 {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #111827;
+  margin: 0 0 0.25rem 0;
+}
+
+.producto-selected-info p {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin: 0.125rem 0;
+}
+
+.producto-selected-info .stock-info {
+  color: #059669;
+  font-weight: 500;
+}
+
+.producto-remove-btn {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  transition: all 0.15s ease-in-out;
+}
+
+.producto-remove-btn:hover {
+  background-color: #fef2f2;
+  color: #dc2626;
+}
+
+/* Campos de entrada numéricos */
+.numero-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  transition: all 0.2s ease-in-out;
+}
+
+.numero-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.numero-input:disabled {
+  background-color: #f9fafb;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+/* Campo de subtotal */
+.subtotal-display {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background-color: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+/* Botón eliminar producto */
+.eliminar-producto-btn {
+  padding: 0.5rem;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.eliminar-producto-btn:not(:disabled) {
+  color: #ef4444;
+  background: transparent;
+}
+
+.eliminar-producto-btn:not(:disabled):hover {
+  background-color: #fef2f2;
+  color: #dc2626;
+}
+
+.eliminar-producto-btn:disabled {
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+/* Alertas y advertencias */
+.producto-warning {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  background-color: #fffbeb;
+  border: 1px solid #fbbf24;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  color: #92400e;
+}
+
+.producto-warning svg {
+  margin-right: 0.25rem;
+  flex-shrink: 0;
+}
+
+/* Grid responsivo */
+.producto-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+@media (min-width: 768px) {
+  .producto-grid {
+    grid-template-columns: 5fr 2fr 2fr 2fr 1fr;
+  }
+}
+
+/* Labels mejorados */
+.form-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.25rem;
+}
+
+.form-label.required::after {
+  content: ' *';
+  color: #ef4444;
+}
+
+/* Botón agregar producto */
+.agregar-producto-btn {
+  width: 100%;
+  padding: 0.75rem 1.5rem;
+  background: #f9fafb;
+  border: 2px dashed #d1d5db;
+  border-radius: 0.5rem;
+  color: #6b7280;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.agregar-producto-btn:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+  color: #374151;
+}
+
+/* Resumen de totales */
+.compra-totales {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.total-principal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1e293b;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.total-principal .monto {
+  color: #3b82f6;
+}
+
+/* Animaciones */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.productos-suggestions {
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.producto-card {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Estados de carga */
+.loading-overlay {
+  position: relative;
+}
+
+.loading-overlay::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+}
+
+/* Scroll personalizado para sugerencias */
+.productos-suggestions::-webkit-scrollbar {
+  width: 6px;
+}
+
+.productos-suggestions::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.productos-suggestions::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.productos-suggestions::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Mejoras para móviles */
+@media (max-width: 767px) {
+  .compra-form-container {
+    padding: 1rem;
+  }
+  
+  .producto-card {
+    padding: 0.75rem;
+  }
+  
+  .producto-grid {
+    gap: 0.5rem;
+  }
+  
+  .suggestion-item {
+    padding: 1rem;
+  }
+  
+  .productos-suggestions {
+    max-height: 200px;
+  }
+}

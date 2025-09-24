@@ -1,0 +1,1101 @@
+/* ========================================
+   ESTILOS MÓVILES COMPLETOS - MI DESPENSA
+   ======================================== */
+
+/* RESET Y BASE MÓVIL */
+@media (max-width: 768px) {
+  /* Prevenir zoom en iOS */
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  
+  /* Safe area para iPhone X+ */
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* === LAYOUT PRINCIPAL === */
+@media (max-width: 768px) {
+  /* Body sin scroll cuando sidebar abierto */
+  body.sidebar-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+  
+  /* Contenedor principal */
+  #root > div {
+    height: 100vh;
+    overflow: hidden;
+  }
+  
+  /* Main content */
+  main {
+    height: calc(100vh - 64px - 64px); /* header - bottom nav */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* === SIDEBAR MÓVIL === */
+@media (max-width: 768px) {
+  /* Sidebar oculto por defecto */
+  .sidebar-closed {
+    transform: translateX(-100%);
+  }
+  
+  /* Sidebar visible */
+  .sidebar-open {
+    transform: translateX(0);
+  }
+  
+  /* Transición suave */
+  [class*="sidebar"] {
+    transition: transform 0.3s ease-in-out;
+  }
+}
+
+/* === HEADER MÓVIL === */
+@media (max-width: 768px) {
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+  
+  /* Logo más pequeño */
+  header .text-lg {
+    font-size: 1rem;
+  }
+}
+
+/* === NAVEGACIÓN INFERIOR === */
+@media (max-width: 768px) {
+  /* Navegación fija abajo */
+  nav[class*="bottom"] {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    border-top: 1px solid #e5e7eb;
+    z-index: 40;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+  }
+  
+  /* Safe area para iPhone */
+  nav[class*="bottom"] {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* === COMPONENTES TÁCTILES === */
+@media (max-width: 768px) {
+  /* Botones más grandes */
+  button,
+  .btn,
+  [role="button"] {
+    min-height: 44px !important;
+    font-size: 16px !important;
+  }
+  
+  /* Áreas táctiles */
+  a,
+  button,
+  [role="button"],
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Inputs mejorados */
+  input,
+  select,
+  textarea {
+    min-height: 44px !important;
+    padding: 12px !important;
+  }
+  
+  /* Checkboxes y radios más grandes */
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* === TABLAS RESPONSIVE === */
+@media (max-width: 768px) {
+  /* Contenedor con scroll */
+  .table-container,
+  [class*="overflow-x-auto"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  /* Tabla con ancho mínimo */
+  table {
+    min-width: 600px;
+  }
+  
+  /* Celdas más espaciadas */
+  th,
+  td {
+    padding: 12px 8px !important;
+    font-size: 14px !important;
+  }
+}
+
+/* === CARDS Y GRIDS === */
+@media (max-width: 768px) {
+  /* Grids a una columna */
+  .grid,
+  [class*="grid-cols"] {
+    display: block !important;
+  }
+  
+  .grid > *,
+  [class*="col-span"] {
+    margin-bottom: 1rem;
+  }
+  
+  /* Cards con padding reducido */
+  .card,
+  [class*="rounded-lg"] {
+    padding: 1rem !important;
+  }
+}
+
+/* === MODALES Y OVERLAYS === */
+@media (max-width: 768px) {
+  /* Modales fullscreen */
+  .modal,
+  [role="dialog"] {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  
+  /* Overlay del sidebar */
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 20;
+  }
+}
+
+/* === FORMULARIOS === */
+@media (max-width: 768px) {
+  /* Formularios en columna */
+  form .grid {
+    display: block !important;
+  }
+  
+  /* Labels más grandes */
+  label {
+    font-size: 14px !important;
+    margin-bottom: 8px !important;
+    display: block !important;
+  }
+  
+  /* Grupos de formulario */
+  .form-group {
+    margin-bottom: 20px !important;
+  }
+}
+
+/* === PUNTO DE VENTA === */
+@media (max-width: 768px) {
+  /* Búsqueda sticky */
+  .punto-venta-search {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+    background: white !important;
+    padding: 10px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+  }
+  
+  /* Carrito scrolleable */
+  .carrito-container {
+    max-height: calc(100vh - 200px) !important;
+    overflow-y: auto !important;
+  }
+  
+  /* Totales fijos abajo */
+  .punto-venta-totales {
+    position: sticky !important;
+    bottom: 0 !important;
+    background: white !important;
+    border-top: 2px solid #e5e7eb !important;
+    padding: 15px !important;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1) !important;
+  }
+}
+
+/* === DROPDOWNS === */
+@media (max-width: 768px) {
+  /* Dropdowns responsive */
+  .dropdown-menu,
+  [class*="origin-top"] {
+    position: fixed !important;
+    left: 10px !important;
+    right: 10px !important;
+    width: auto !important;
+    max-width: calc(100vw - 20px) !important;
+  }
+}
+
+/* === UTILIDADES === */
+@media (max-width: 768px) {
+  /* Ocultar en móvil */
+  .hidden-mobile,
+  .lg\:block,
+  .md\:block {
+    display: none !important;
+  }
+  
+  /* Mostrar solo en móvil */
+  .block-mobile,
+  .md\:hidden {
+    display: block !important;
+  }
+  
+  /* Texto más pequeño */
+  .text-xs { font-size: 0.75rem !important; }
+  .text-sm { font-size: 0.875rem !important; }
+  .text-base { font-size: 1rem !important; }
+  .text-lg { font-size: 1.125rem !important; }
+  .text-xl { font-size: 1.25rem !important; }
+  
+  /* Espaciado reducido */
+  .p-4 { padding: 1rem !important; }
+  .p-6 { padding: 1.5rem !important; }
+  .px-4 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .py-4 { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+}
+
+/* === ANIMACIONES === */
+@media (max-width: 768px) {
+  /* Transiciones suaves */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Feedback táctil */
+  button:active,
+  a:active,
+  [role="button"]:active {
+    opacity: 0.8;
+    transform: scale(0.98);
+  }
+}
+
+/* === LANDSCAPE === */
+@media (max-width: 768px) and (orientation: landscape) {
+  /* Reducir alturas en landscape */
+  header {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+  
+  nav[class*="bottom"] {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+  
+  nav[class*="bottom"] > div {
+    height: 3rem !important;
+  }
+}
+
+/* === SCROLLBAR PERSONALIZADA === */
+@media (max-width: 768px) {
+  /* Scrollbar más delgada */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e0;
+    border-radius: 2px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* === MODO OSCURO === */
+@media (max-width: 768px) and (prefers-color-scheme: dark) {
+  body {
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+  }
+  
+  .bg-white {
+    background-color: #2a2a2a !important;
+  }
+  
+  .text-gray-900 {
+    color: #e0e0e0 !important;
+  }
+  
+  input,
+  select,
+  textarea {
+    background-color: #333 !important;
+    color: #e0e0e0 !important;
+    border-color: #444 !important;
+  }
+}
+
+/* === PRINT === */
+@media print {
+  .no-print,
+  nav,
+  header,
+  .sidebar,
+  button {
+    display: none !important;
+  }
+  
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+/* ========================================
+   ESTILOS MÓVILES COMPLETOS - MI DESPENSA
+   ======================================== */
+
+/* RESET Y BASE MÓVIL */
+@media (max-width: 768px) {
+  /* Prevenir zoom en iOS */
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  
+  /* Safe area para iPhone X+ */
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* === LAYOUT PRINCIPAL === */
+@media (max-width: 768px) {
+  /* Body sin scroll cuando sidebar abierto */
+  body.sidebar-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+  
+  /* Contenedor principal */
+  #root > div {
+    height: 100vh;
+    overflow: hidden;
+  }
+  
+  /* Main content */
+  main {
+    height: calc(100vh - 64px - 64px); /* header - bottom nav */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* === SIDEBAR MÓVIL === */
+@media (max-width: 768px) {
+  /* Sidebar oculto por defecto */
+  .sidebar-closed {
+    transform: translateX(-100%);
+  }
+  
+  /* Sidebar visible */
+  .sidebar-open {
+    transform: translateX(0);
+  }
+  
+  /* Transición suave */
+  [class*="sidebar"] {
+    transition: transform 0.3s ease-in-out;
+  }
+}
+
+/* === HEADER MÓVIL === */
+@media (max-width: 768px) {
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+  
+  /* Logo más pequeño */
+  header .text-lg {
+    font-size: 1rem;
+  }
+}
+
+/* === NAVEGACIÓN INFERIOR === */
+@media (max-width: 768px) {
+  /* Navegación fija abajo */
+  nav[class*="bottom"] {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    border-top: 1px solid #e5e7eb;
+    z-index: 40;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+  }
+  
+  /* Safe area para iPhone */
+  nav[class*="bottom"] {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* === COMPONENTES TÁCTILES === */
+@media (max-width: 768px) {
+  /* Botones más grandes */
+  button,
+  .btn,
+  [role="button"] {
+    min-height: 44px !important;
+    font-size: 16px !important;
+  }
+  
+  /* Áreas táctiles */
+  a,
+  button,
+  [role="button"],
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Inputs mejorados */
+  input,
+  select,
+  textarea {
+    min-height: 44px !important;
+    padding: 12px !important;
+  }
+  
+  /* Checkboxes y radios más grandes */
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* === TABLAS RESPONSIVE === */
+@media (max-width: 768px) {
+  /* Contenedor con scroll */
+  .table-container,
+  [class*="overflow-x-auto"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  /* Tabla con ancho mínimo */
+  table {
+    min-width: 600px;
+  }
+  
+  /* Celdas más espaciadas */
+  th,
+  td {
+    padding: 12px 8px !important;
+    font-size: 14px !important;
+  }
+}
+
+/* === CARDS Y GRIDS === */
+@media (max-width: 768px) {
+  /* Grids a una columna */
+  .grid,
+  [class*="grid-cols"] {
+    display: block !important;
+  }
+  
+  .grid > *,
+  [class*="col-span"] {
+    margin-bottom: 1rem;
+  }
+  
+  /* Cards con padding reducido */
+  .card,
+  [class*="rounded-lg"] {
+    padding: 1rem !important;
+  }
+}
+
+/* === MODALES Y OVERLAYS === */
+@media (max-width: 768px) {
+  /* Modales fullscreen */
+  .modal,
+  [role="dialog"] {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  
+  /* Overlay del sidebar */
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 20;
+  }
+}
+
+/* === FORMULARIOS === */
+@media (max-width: 768px) {
+  /* Formularios en columna */
+  form .grid {
+    display: block !important;
+  }
+  
+  /* Labels más grandes */
+  label {
+    font-size: 14px !important;
+    margin-bottom: 8px !important;
+    display: block !important;
+  }
+  
+  /* Grupos de formulario */
+  .form-group {
+    margin-bottom: 20px !important;
+  }
+}
+
+/* === PUNTO DE VENTA === */
+@media (max-width: 768px) {
+  /* Búsqueda sticky */
+  .punto-venta-search {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+    background: white !important;
+    padding: 10px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+  }
+  
+  /* Carrito scrolleable */
+  .carrito-container {
+    max-height: calc(100vh - 200px) !important;
+    overflow-y: auto !important;
+  }
+  
+  /* Totales fijos abajo */
+  .punto-venta-totales {
+    position: sticky !important;
+    bottom: 0 !important;
+    background: white !important;
+    border-top: 2px solid #e5e7eb !important;
+    padding: 15px !important;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1) !important;
+  }
+}
+
+/* === DROPDOWNS === */
+@media (max-width: 768px) {
+  /* Dropdowns responsive */
+  .dropdown-menu,
+  [class*="origin-top"] {
+    position: fixed !important;
+    left: 10px !important;
+    right: 10px !important;
+    width: auto !important;
+    max-width: calc(100vw - 20px) !important;
+  }
+}
+
+/* === UTILIDADES === */
+@media (max-width: 768px) {
+  /* Ocultar en móvil */
+  .hidden-mobile,
+  .lg\:block,
+  .md\:block {
+    display: none !important;
+  }
+  
+  /* Mostrar solo en móvil */
+  .block-mobile,
+  .md\:hidden {
+    display: block !important;
+  }
+  
+  /* Texto más pequeño */
+  .text-xs { font-size: 0.75rem !important; }
+  .text-sm { font-size: 0.875rem !important; }
+  .text-base { font-size: 1rem !important; }
+  .text-lg { font-size: 1.125rem !important; }
+  .text-xl { font-size: 1.25rem !important; }
+  
+  /* Espaciado reducido */
+  .p-4 { padding: 1rem !important; }
+  .p-6 { padding: 1.5rem !important; }
+  .px-4 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .py-4 { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+}
+
+/* === ANIMACIONES === */
+@media (max-width: 768px) {
+  /* Transiciones suaves */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Feedback táctil */
+  button:active,
+  a:active,
+  [role="button"]:active {
+    opacity: 0.8;
+    transform: scale(0.98);
+  }
+}
+
+/* === LANDSCAPE === */
+@media (max-width: 768px) and (orientation: landscape) {
+  /* Reducir alturas en landscape */
+  header {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+  
+  nav[class*="bottom"] {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+  
+  nav[class*="bottom"] > div {
+    height: 3rem !important;
+  }
+}
+
+/* === SCROLLBAR PERSONALIZADA === */
+@media (max-width: 768px) {
+  /* Scrollbar más delgada */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e0;
+    border-radius: 2px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* === MODO OSCURO === */
+@media (max-width: 768px) and (prefers-color-scheme: dark) {
+  body {
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+  }
+  
+  .bg-white {
+    background-color: #2a2a2a !important;
+  }
+  
+  .text-gray-900 {
+    color: #e0e0e0 !important;
+  }
+  
+  input,
+  select,
+  textarea {
+    background-color: #333 !important;
+    color: #e0e0e0 !important;
+    border-color: #444 !important;
+  }
+}
+
+/* === PÁGINAS DE PRODUCTOS === */
+@media (max-width: 768px) {
+  /* Ocultar filtros de categorías en móvil */
+  .categoria-filters,
+  [class*="categoria-filter"] {
+    display: none !important;
+  }
+  
+  /* Búsqueda full width */
+  .search-container {
+    width: 100% !important;
+    margin-bottom: 1rem !important;
+  }
+  
+  /* Botón exportar más pequeño */
+  .export-button,
+  [class*="export"] {
+    padding: 0.5rem 1rem !important;
+    font-size: 0.875rem !important;
+  }
+  
+  /* Tabla de productos responsive */
+  .productos-table {
+    font-size: 0.75rem !important;
+  }
+  
+  /* Ocultar columnas menos importantes */
+  .hide-mobile,
+  th:nth-child(4),
+  td:nth-child(4),
+  th:nth-child(5),
+  td:nth-child(5),
+  th:nth-child(6),
+  td:nth-child(6) {
+    display: none !important;
+  }
+  
+  /* Acciones en una columna */
+  .actions-column {
+    width: 60px !important;
+  }
+  
+  .actions-column button {
+    padding: 0.25rem !important;
+    margin: 0.125rem !important;
+  }
+}
+
+/* === PÁGINAS DE CLIENTES === */
+@media (max-width: 768px) {
+  /* Lista de clientes como cards */
+  .clientes-list table {
+    display: block !important;
+  }
+  
+  .clientes-list tbody {
+    display: block !important;
+  }
+  
+  .clientes-list tr {
+    display: block !important;
+    margin-bottom: 1rem !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 0.5rem !important;
+    padding: 1rem !important;
+    background: white !important;
+  }
+  
+  .clientes-list td {
+    display: block !important;
+    text-align: left !important;
+    padding: 0.25rem 0 !important;
+    border: none !important;
+  }
+  
+  .clientes-list td:before {
+    content: attr(data-label);
+    font-weight: bold;
+    display: inline-block;
+    width: 80px;
+    margin-right: 0.5rem;
+  }
+}
+
+/* === PÁGINAS DE VENTAS === */
+@media (max-width: 768px) {
+  /* Filtros apilados */
+  .ventas-filters {
+    display: block !important;
+  }
+  
+  .ventas-filters > * {
+    width: 100% !important;
+    margin-bottom: 0.5rem !important;
+  }
+  
+  /* Cards de ventas */
+  .ventas-table tbody tr {
+    display: block !important;
+    margin-bottom: 1rem !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 0.5rem !important;
+    padding: 0.75rem !important;
+    background: white !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  }
+  
+  .ventas-table td {
+    display: flex !important;
+    justify-content: space-between !important;
+    padding: 0.25rem 0 !important;
+    border: none !important;
+  }
+  
+  .ventas-table td:before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #6b7280;
+  }
+}
+
+/* === FORMULARIOS RESPONSIVOS === */
+@media (max-width: 768px) {
+  /* Formulario de producto/cliente */
+  .form-container {
+    padding: 1rem !important;
+  }
+  
+  .form-grid,
+  [class*="grid-cols-2"],
+  [class*="grid-cols-3"] {
+    display: block !important;
+  }
+  
+  .form-group {
+    margin-bottom: 1rem !important;
+  }
+  
+  /* Botones del formulario */
+  .form-actions {
+    position: sticky !important;
+    bottom: 0 !important;
+    background: white !important;
+    padding: 1rem !important;
+    border-top: 1px solid #e5e7eb !important;
+    margin: 0 -1rem -1rem -1rem !important;
+  }
+  
+  .form-actions button {
+    width: 100% !important;
+    margin-bottom: 0.5rem !important;
+  }
+}
+
+/* === REPORTES === */
+@media (max-width: 768px) {
+  /* Gráficos responsive */
+  .chart-container {
+    width: 100% !important;
+    height: 300px !important;
+    margin-bottom: 1rem !important;
+  }
+  
+  /* Estadísticas en grid */
+  .stats-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0.5rem !important;
+  }
+  
+  .stat-card {
+    padding: 0.75rem !important;
+  }
+  
+  .stat-value {
+    font-size: 1.25rem !important;
+  }
+  
+  .stat-label {
+    font-size: 0.75rem !important;
+  }
+}
+
+/* === STOCK === */
+@media (max-width: 768px) {
+  /* Filtro de sucursal prominente */
+  .sucursal-selector {
+    width: 100% !important;
+    margin-bottom: 1rem !important;
+    padding: 0.75rem !important;
+    background: #f3f4f6 !important;
+    border-radius: 0.5rem !important;
+  }
+  
+  /* Stock cards */
+  .stock-item {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 0.75rem !important;
+    border-bottom: 1px solid #e5e7eb !important;
+  }
+  
+  .stock-info {
+    flex: 1 !important;
+  }
+  
+  .stock-actions {
+    display: flex !important;
+    gap: 0.5rem !important;
+  }
+  
+  .stock-actions button {
+    padding: 0.5rem !important;
+    font-size: 0.75rem !important;
+  }
+}
+
+/* === AJUSTES GENERALES PARA TODAS LAS PÁGINAS === */
+@media (max-width: 768px) {
+  /* Títulos de página */
+  .page-title,
+  h1 {
+    font-size: 1.25rem !important;
+    margin-bottom: 1rem !important;
+  }
+  
+  /* Breadcrumbs más pequeños */
+  .breadcrumb {
+    font-size: 0.75rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+  
+  /* Paginación */
+  .pagination {
+    display: flex !important;
+    justify-content: center !important;
+    gap: 0.25rem !important;
+  }
+  
+  .pagination button {
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.875rem !important;
+  }
+  
+  /* Tooltips y popovers */
+  [role="tooltip"],
+  .tooltip {
+    font-size: 0.75rem !important;
+    max-width: 200px !important;
+  }
+  
+  /* Badges y tags */
+  .badge,
+  .tag {
+    font-size: 0.625rem !important;
+    padding: 0.25rem 0.5rem !important;
+  }
+  
+  /* Mensajes de estado vacío */
+  .empty-state {
+    padding: 2rem 1rem !important;
+    text-align: center !important;
+  }
+  
+  .empty-state img,
+  .empty-state svg {
+    max-width: 150px !important;
+    margin: 0 auto !important;
+  }
+}
+
+/* === FILTROS Y BÚSQUEDAS === */
+@media (max-width: 768px) {
+  /* Filtros colapsables */
+  .filters-container {
+    background: #f9fafb !important;
+    padding: 1rem !important;
+    border-radius: 0.5rem !important;
+    margin-bottom: 1rem !important;
+  }
+  
+  .filter-toggle {
+    display: block !important;
+    width: 100% !important;
+    padding: 0.75rem !important;
+    background: white !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 0.5rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+  
+  .filters-content {
+    display: none !important;
+  }
+  
+  .filters-content.open {
+    display: block !important;
+  }
+}
+
+/* === ACCIONES FLOTANTES === */
+@media (max-width: 768px) {
+  /* Botón flotante de agregar */
+  .fab,
+  .floating-action-button {
+    position: fixed !important;
+    bottom: 80px !important; /* Encima de la nav */
+    right: 1rem !important;
+    width: 56px !important;
+    height: 56px !important;
+    border-radius: 50% !important;
+    background: #4f46e5 !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    z-index: 30 !important;
+  }
+  
+  .fab:hover {
+    transform: scale(1.1) !important;
+  }
+}
+
+/* === PRINT === */
+@media print {
+  .no-print,
+  nav,
+  header,
+  .sidebar,
+  button,
+  .actions-column {
+    display: none !important;
+  }
+  
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  table {
+    font-size: 10pt !important;
+  }
+}

@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+
+    // Devuelve true si el usuario pertenece a la organización
+    function isMember(orgId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/usuariosOrg/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/usuariosOrg/$(request.auth.uid)).data.orgId == orgId;
+    }
+
+    // Devuelve true si el usuario tiene alguno de los roles indicados en la org
+    function hasRole(orgId, roles) {
+      return isMember(orgId) &&
+        get(/databases/$(database)/documents/usuariosOrg/$(request.auth.uid)).data.roles.hasAny(roles);
+    }
+
+    // Documento de vínculo usuario↔organización (a nivel global)
+    match /usuariosOrg/{uid} {
+      // Permitir leer tu propio doc o cualquiera con tu uid (para alta inicial)
+      allow read: if isSignedIn() && (request.auth.uid == uid || resource.data.uid == request.auth.uid);
+      // Crear/actualizar tu propio doc para asociarte a una org
+      allow create, update: if isSignedIn() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    // Tenancy principal: todas las colecciones viven bajo tenants/{orgId}/...
+    match /tenants/{orgId} {
+      allow read: if isMember(orgId);
+      allow write: if hasRole(orgId, ['OWNER','MANAGER']);
+
+      // Productos
+      match /productos/{productoId} {
+        allow read: if isMember(orgId);
+        allow create, update, delete: if hasRole(orgId, ['OWNER','MANAGER','CASHIER']);
+      }
+
+      // Lotes
+      match /lotes/{loteId} {
+        allow read: if isMember(orgId);
+        allow create, update, delete: if hasRole(orgId, ['OWNER','MANAGER']);
+      }
+
+      // Ventas
+      match /ventas/{ventaId} {
+        allow read: if isMember(orgId);
+        allow create, update: if hasRole(orgId, ['OWNER','MANAGER','CASHIER']);
+        allow delete: if hasRole(orgId, ['OWNER','MANAGER']);
+      }
+
+      // Clientes
+      match /clientes/{clienteId} {
+        allow read: if isMember(orgId);
+        allow create, update, delete: if hasRole(orgId, ['OWNER','MANAGER']);
+      }
+
+      // Configuración, roles, sucursales
+      match /{collection}/{doc} {
+        allow read: if isMember(orgId);
+        allow write: if hasRole(orgId, ['OWNER','MANAGER']);
+      }
+    }
+
+    // Compatibilidad: configuración y licencia bajo companies/{orgId}
+    match /companies/{orgId} {
+      // Lectura general de datos de la empresa por miembros
+      allow read: if isMember(orgId);
+      // Escritura limitada a roles de gestión
+      allow write: if hasRole(orgId, ['OWNER','MANAGER']);
+
+      // Subcolección config (incluye modules y license)
+      match /config/{docId} {
+        allow read: if isMember(orgId);
+        allow write: if hasRole(orgId, ['OWNER','MANAGER']);
+      }
+    }
+
+    // Documento de licencia centralizado
+    match /licenses/{orgId} {
+      allow read: if isMember(orgId);
+      allow write: if hasRole(orgId, ['OWNER','MANAGER']);
+    }
+
+    // Denegar todo lo no especificado
+    match /{document=**} { allow read, write: if false; }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "migracion-listas-precios",
+  "version": "1.0.0",
+  "description": "Script de migración para agregar listas de precios a productos en Firebase",
+  "main": "migrar-listas-precios.js",
+  "scripts": {
+    "start": "node migrar-listas-precios.js",
+    "verificar": "node migrar-listas-precios.js verificar",
+    "preview": "node migrar-listas-precios.js previsualizar",
+    "migrar": "node migrar-listas-precios.js migrar activos",
+    "migrar-todos": "node migrar-listas-precios.js migrar todos",
+    "revertir": "node migrar-listas-precios.js revertir"
+  },
+  "dependencies": {
+    "firebase-admin": "^11.11.0",
+    "colors": "^1.4.0"
+  },
+  "devDependencies": {},
+  "keywords": [
+    "firebase",
+    "firestore",
+    "migration",
+    "precios"
+  ],
+  "author": "Tu Nombre",
+  "license": "ISC"
+}

@@ -1,0 +1,10 @@
+{
+  "trusted": true,
+  "autoApprove": true,
+  "allowDangerousCommands": true,
+  "workspace": {
+    "name": "Admin Panel Sistemas",
+    "trustLevel": "high",
+    "autoExecute": true
+  }
+} 

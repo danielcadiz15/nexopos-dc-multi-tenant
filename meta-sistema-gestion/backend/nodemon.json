@@ -1,0 +1,21 @@
+{
+  "watch": ["src"],
+  "ext": "js,json",
+  "ignore": [
+    "node_modules",
+    "logs/*",
+    "src/logs/*",
+    "src/config/*",
+    "config/*",
+    "*.log",
+    "*registry*.json",
+    "temp/*",
+    ".tmp/*",
+    "src/logs/**/*",
+    "src/config/**/*"
+  ],
+  "delay": 2000,
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

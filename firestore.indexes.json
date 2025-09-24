@@ -1,0 +1,83 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "transferencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sucursal_destino_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha_solicitud",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "transferencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sucursal_origen_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha_solicitud",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "transferencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha_solicitud",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notificaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "usuario_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "activa",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaCreacion",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notificaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "usuario_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "leida",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "activa",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -1,0 +1,40 @@
+{
+  "name": "sistema-despensa",
+  "version": "1.0.0",
+  "description": "Sistema de Gestión para Despensa",
+  "main": "index.js",
+  "scripts": {
+    "start": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "npx firebase emulators:start --only functions",
+    "client": "npm --prefix client start",
+    "install-all": "npm install && cd functions && npm install && cd ../client && npm install",
+    "build": "cd client && npm run build && cd ../functions && npm run build"
+  },
+  "keywords": [
+    "despensa",
+    "inventario",
+    "ventas",
+    "compras",
+    "stock"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.2",
+    "concurrently": "^8.2.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.2",
+    "@capacitor/core": "^7.4.2",
+    "@capacitor/ios": "^7.4.2",
+    "firebase": "^11.8.1",
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.3.2",
+    "html2canvas": "^1.4.1",
+    "html2pdf.js": "^0.10.3",
+    "jspdf": "^3.0.1",
+    "mysql2": "^3.14.2",
+    "react-to-print": "^3.1.1",
+    "xlsx": "^0.18.5"
+  }
+}

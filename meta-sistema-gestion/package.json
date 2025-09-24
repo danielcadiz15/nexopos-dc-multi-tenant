@@ -1,0 +1,64 @@
+{
+  "name": "meta-sistema-gestion",
+  "version": "1.0.0",
+  "description": "Sistema centralizado para gestión de múltiples sistemas empresariales",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run frontend:dev\" \"npm run backend:dev\"",
+    "start": "npm run backend:start",
+    "build": "npm run frontend:build && npm run backend:build",
+    "frontend:dev": "cd frontend && npm start",
+    "frontend:build": "cd frontend && npm run build",
+    "backend:dev": "cd backend && npm run dev",
+    "backend:start": "cd backend && npm start",
+    "backend:build": "cd backend && npm run build",
+    "cli:install": "cd cli && npm install && npm link",
+    "install-all": "npm install && cd frontend && npm install && cd ../backend && npm install && cd ../cli && npm install",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "cd frontend && npm test",
+    "test:backend": "cd backend && npm test",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "setup": "node scripts/setup.js",
+    "scan-systems": "node scripts/scan-systems.js",
+    "sync-systems": "node scripts/sync-systems.js",
+    "backup": "node scripts/backup-all.js",
+    "deploy": "node scripts/deploy.js",
+    "create-system": "node scripts/create-new-system.js"
+  },
+  "keywords": [
+    "meta-system",
+    "system-management",
+    "multi-tenant",
+    "enterprise",
+    "management",
+    "deployment",
+    "monitoring"
+  ],
+  "author": "Sistema de Gestión Empresarial",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "eslint": "^8.50.0",
+    "eslint-config-react-app": "^7.0.1",
+    "nodemon": "^3.0.1"
+  },
+  "dependencies": {
+    "fs-extra": "^11.1.1",
+    "chokidar": "^3.5.3",
+    "dotenv": "^16.3.1",
+    "chalk": "^4.1.2",
+    "inquirer": "^8.2.6",
+    "commander": "^11.0.0",
+    "axios": "^1.5.0",
+    "ws": "^8.14.0",
+    "node-cron": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
