@@ -23,6 +23,8 @@ firebase-debug.*.log
 # Service account keys (IMPORTANTE: No subir claves privadas)
 serviceAccountKey.json
 *-service-account.json
+*firebase-adminsdk*.json
+*firebase-adminsdk*.key
 
 # IDE
 .vscode/
