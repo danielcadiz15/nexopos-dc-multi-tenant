@@ -374,6 +374,12 @@ export function AuthProvider({ children }) {
         }
       });
       
+      // TEMPORAL: Forzar habilitación de compras para usuarios básicos
+      if (usuario.rolId === '1' && permisosFinales.compras) {
+        console.log('🔐 [AUTH] TEMPORAL: Forzando habilitación de compras para usuario básico');
+        permisosFinales.compras.ver = true;
+      }
+      
       console.log('🔐 [AUTH] Permisos efectivos calculados:', permisosFinales);
       setPermisosEfectivos(permisosFinales);
       
