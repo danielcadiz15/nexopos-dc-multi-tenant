@@ -112,29 +112,33 @@ export function AuthProvider({ children }) {
             setOrgId(null);
           }
           
-          // MEJORADO: Intentar obtener datos mas completos desde Firestore
-          try {
-            const userDoc = await doc(db, 'usuarios', firebaseUser.uid);
-            const userSnapshot = await getDoc(userDoc);
-            
-            if (userSnapshot.exists()) {
-              const firestoreData = userSnapshot.data();
-              console.log('?? [AUTH] Datos de Firestore:', firestoreData);
+          // MEJORADO: Intentar obtener datos mas completos desde Firestore (solo si tenemos orgId)
+          if (orgId) {
+            try {
+              const userDoc = await doc(db, 'companies', orgId, 'usuarios', firebaseUser.uid);
+              const userSnapshot = await getDoc(userDoc);
               
-              // Combinar datos de custom claims con Firestore
-              userData = {
-                ...userData,
-                nombre: firestoreData.nombre || userData.nombre,
-                apellido: firestoreData.apellido || userData.apellido,
-                rol: firestoreData.rol || userData.rol,
-                rolId: firestoreData.rol_id || userData.rolId,
-                permisos: firestoreData.permisos || userData.permisos,
-                sucursales: firestoreData.sucursales || userData.sucursales,
-                activo: firestoreData.activo !== false
-              };
+              if (userSnapshot.exists()) {
+                const firestoreData = userSnapshot.data();
+                console.log('?? [AUTH] Datos de Firestore:', firestoreData);
+                
+                // Combinar datos de custom claims con Firestore
+                userData = {
+                  ...userData,
+                  nombre: firestoreData.nombre || userData.nombre,
+                  apellido: firestoreData.apellido || userData.apellido,
+                  rol: firestoreData.rol || userData.rol,
+                  rolId: firestoreData.rol_id || userData.rolId,
+                  permisos: firestoreData.permisos || userData.permisos,
+                  sucursales: firestoreData.sucursales || userData.sucursales,
+                  activo: firestoreData.activo !== false
+                };
+              }
+            } catch (firestoreError) {
+              console.warn('?? [AUTH] No se pudieron obtener datos de Firestore:', firestoreError.message);
             }
-          } catch (firestoreError) {
-            console.warn('?? [AUTH] No se pudieron obtener datos de Firestore:', firestoreError.message);
+          } else {
+            console.log('?? [AUTH] No hay orgId disponible, saltando consulta a Firestore');
           }
           
           console.log('? [AUTH] Usuario autenticado:', {
