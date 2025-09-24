@@ -3,11 +3,13 @@ import Button from '../../components/common/Button';
 import Spinner from '../../components/common/Spinner';
 import { FaPlus, FaMoneyBill, FaMinus, FaCalendarAlt, FaTrash, FaCheck, FaTimes, FaCalculator, FaEye } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import { useAuth } from '../../contexts/AuthContext';
 
 // URL de Firebase Functions - ajustar según tu proyecto
 const API_URL = process.env.REACT_APP_API_URL || 'https://api-5q2i5764zq-uc.a.run.app';
 
 const Caja = () => {
+  const { orgId, getAccessToken } = useAuth();
   const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10));
   const [movimientos, setMovimientos] = useState([]);
   const [resumen, setResumen] = useState({ ingresos: 0, egresos: 0, saldo: 0 });
@@ -21,9 +23,11 @@ const Caja = () => {
   const [saldoFisico, setSaldoFisico] = useState('');
   const [mostrarVerificacion, setMostrarVerificacion] = useState(false);
 
-  // Cargar movimientos y resumen al cambiar la fecha
+  // Cargar movimientos y resumen al cambiar la fecha o orgId
   useEffect(() => {
-    console.log('💰 [FRONTEND] Fecha actual en el componente:', fecha);
+    if (!orgId) return; // No cargar si no hay orgId
+    
+    console.log('💰 [FRONTEND] Fecha actual en el componente:', fecha, 'orgId:', orgId);
     if (modoVista === 'diario') {
       cargarMovimientos();
       cargarResumen();
@@ -32,13 +36,24 @@ const Caja = () => {
       cargarSaldoAcumulado();
     }
     // eslint-disable-next-line
-  }, [fecha, modoVista]);
+  }, [fecha, modoVista, orgId]);
 
   const cargarMovimientos = async () => {
+    if (!orgId) {
+      console.warn('💰 [FRONTEND] No hay orgId disponible');
+      return;
+    }
+    
     setLoading(true);
     try {
-      console.log('💰 [FRONTEND] Cargando movimientos para fecha:', fecha);
-      const res = await fetch(`${API_URL}/caja/movimientos?fecha=${fecha}`);
+      console.log('💰 [FRONTEND] Cargando movimientos para fecha:', fecha, 'orgId:', orgId);
+      const token = await getAccessToken();
+      const res = await fetch(`${API_URL}/caja/movimientos?fecha=${fecha}&orgId=${orgId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
       console.log('💰 [FRONTEND] Respuesta de movimientos:', res.status, res.ok);
       
       if (!res.ok) throw new Error('Error al cargar movimientos');
@@ -57,10 +72,21 @@ const Caja = () => {
   };
 
   const cargarMovimientosAcumulados = async () => {
+    if (!orgId) {
+      console.warn('💰 [FRONTEND] No hay orgId disponible');
+      return;
+    }
+    
     setLoading(true);
     try {
-      console.log('💰 [FRONTEND] Cargando movimientos acumulados');
-      const res = await fetch(`${API_URL}/caja/movimientos-acumulados`);
+      console.log('💰 [FRONTEND] Cargando movimientos acumulados para orgId:', orgId);
+      const token = await getAccessToken();
+      const res = await fetch(`${API_URL}/caja/movimientos-acumulados?orgId=${orgId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
       console.log('💰 [FRONTEND] Respuesta de movimientos acumulados:', res.status, res.ok);
       
       if (!res.ok) throw new Error('Error al cargar movimientos acumulados');
@@ -79,9 +105,20 @@ const Caja = () => {
   };
 
   const cargarSaldoAcumulado = async () => {
+    if (!orgId) {
+      console.warn('💰 [FRONTEND] No hay orgId disponible');
+      return;
+    }
+    
     try {
-      console.log('💰 [FRONTEND] Cargando saldo acumulado');
-      const res = await fetch(`${API_URL}/caja/saldo-acumulado`);
+      console.log('💰 [FRONTEND] Cargando saldo acumulado para orgId:', orgId);
+      const token = await getAccessToken();
+      const res = await fetch(`${API_URL}/caja/saldo-acumulado?orgId=${orgId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
       console.log('💰 [FRONTEND] Respuesta de saldo acumulado:', res.status, res.ok);
       
       if (!res.ok) throw new Error('Error al cargar saldo acumulado');
@@ -106,9 +143,13 @@ const Caja = () => {
     try {
       console.log('💰 [FRONTEND] Verificando saldo físico:', saldoFisico);
       
-      const res = await fetch(`${API_URL}/caja/verificar-saldo`, {
+      const token = await getAccessToken();
+      const res = await fetch(`${API_URL}/caja/verificar-saldo?orgId=${orgId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ saldoFisico: parseFloat(saldoFisico) })
       });
       
@@ -139,7 +180,13 @@ const Caja = () => {
   const cargarResumen = async () => {
     try {
       console.log('💰 [FRONTEND] Cargando resumen para fecha:', fecha);
-      const res = await fetch(`${API_URL}/caja/resumen?fecha=${fecha}`);
+      const token = await getAccessToken();
+      const res = await fetch(`${API_URL}/caja/resumen?fecha=${fecha}&orgId=${orgId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
       console.log('💰 [FRONTEND] Respuesta de resumen:', res.status, res.ok);
       
       if (!res.ok) throw new Error('Error al cargar resumen');
@@ -170,9 +217,13 @@ const Caja = () => {
     try {
       console.log('💰 [FRONTEND] Agregando movimiento:', form);
       
-      const res = await fetch(`${API_URL}/caja/movimiento`, {
+      const token = await getAccessToken();
+      const res = await fetch(`${API_URL}/caja/movimiento?orgId=${orgId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ ...form, monto: parseFloat(form.monto), fecha })
       });
       
@@ -206,8 +257,13 @@ const Caja = () => {
     
     setEliminando(movimientoId);
     try {
-      const res = await fetch(`${API_URL}/caja/movimiento/${movimientoId}`, {
-        method: 'DELETE'
+      const token = await getAccessToken();
+      const res = await fetch(`${API_URL}/caja/movimiento/${movimientoId}?orgId=${orgId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       
       if (!res.ok) throw new Error('Error al eliminar movimiento');
