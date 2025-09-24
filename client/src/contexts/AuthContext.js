@@ -154,7 +154,7 @@ export function AuthProvider({ children }) {
           setIsAuthenticated(true);
           
           // Calcular permisos efectivos
-          calcularPermisosEfectivos(userData);
+          await calcularPermisosEfectivos(userData, orgId);
           
           // Cargar sucursales disponibles para el usuario
           console.log('🏢 [AUTH] Llamando a cargarSucursalesUsuario...');
@@ -221,10 +221,11 @@ export function AuthProvider({ children }) {
   }, [orgId, currentUser?.id, isAuthenticated]);
 
   /**
-   * Calcula los permisos efectivos del usuario
+   * Calcula los permisos efectivos del usuario considerando configuración de módulos
    * @param {Object} usuario - Datos del usuario
+   * @param {string} orgId - ID de la empresa
    */
-  const calcularPermisosEfectivos = (usuario) => {
+  const calcularPermisosEfectivos = async (usuario, orgId) => {
     try {
       console.log('🔐 [AUTH] Calculando permisos efectivos para usuario:', {
         id: usuario?.id,
@@ -316,6 +317,41 @@ export function AuthProvider({ children }) {
          };
       }
       
+      // NUEVO: Consultar configuración de módulos desde Firestore
+      let modulosHabilitados = {};
+      if (orgId) {
+        try {
+          console.log('🔐 [AUTH] Consultando configuración de módulos para orgId:', orgId);
+          const modulesDoc = await doc(db, 'companies', orgId, 'config', 'modules');
+          const modulesSnapshot = await getDoc(modulesDoc);
+          
+          if (modulesSnapshot.exists()) {
+            modulosHabilitados = modulesSnapshot.data();
+            console.log('🔐 [AUTH] Módulos habilitados en Firestore:', modulosHabilitados);
+          } else {
+            console.log('🔐 [AUTH] No se encontró configuración de módulos, usando todos habilitados');
+            // Si no existe configuración, habilitar todos los módulos por defecto
+            modulosHabilitados = {
+              productos: true, categorias: true, compras: true, ventas: true, stock: true,
+              reportes: true, promociones: true, usuarios: true, sucursales: true,
+              materias_primas: true, recetas: true, produccion: true, clientes: true,
+              caja: true, gastos: true, devoluciones: true, listas_precios: true,
+              transferencias: true, auditoria: true, configuracion: true
+            };
+          }
+        } catch (error) {
+          console.warn('🔐 [AUTH] Error consultando configuración de módulos:', error.message);
+          // En caso de error, habilitar todos los módulos por defecto
+          modulosHabilitados = {
+            productos: true, categorias: true, compras: true, ventas: true, stock: true,
+            reportes: true, promociones: true, usuarios: true, sucursales: true,
+            materias_primas: true, recetas: true, produccion: true, clientes: true,
+            caja: true, gastos: true, devoluciones: true, listas_precios: true,
+            transferencias: true, auditoria: true, configuracion: true
+          };
+        }
+      }
+      
       // Combinar con permisos personalizados
       const permisosPersonalizados = usuario.permisos || {};
       const permisosFinales = { ...permisosBase };
@@ -327,6 +363,14 @@ export function AuthProvider({ children }) {
             ...permisosFinales[modulo],
             ...permisosPersonalizados[modulo]
           };
+        }
+      });
+      
+      // NUEVO: Aplicar filtro de módulos habilitados
+      Object.keys(permisosFinales).forEach(modulo => {
+        if (modulosHabilitados[modulo] === false) {
+          console.log(`🔐 [AUTH] Módulo ${modulo} deshabilitado en configuración, removiendo permisos`);
+          permisosFinales[modulo] = { ver: false, crear: false, editar: false, eliminar: false };
         }
       });
       
@@ -456,7 +500,7 @@ export function AuthProvider({ children }) {
       setIsAuthenticated(true);
       
       // Calcular permisos efectivos
-      calcularPermisosEfectivos(user);
+      await calcularPermisosEfectivos(user, user.customClaims?.orgId);
       
       // Cargar sucursales despues del login
       await cargarSucursalesUsuario(user);
