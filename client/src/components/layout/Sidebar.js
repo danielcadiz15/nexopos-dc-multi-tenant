@@ -211,6 +211,8 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     return true; // por defecto habilitado si no hay config
   };
 
+  const superAdmin = (currentUser?.email || '').toLowerCase() === 'danielcadiz15@gmail.com';
+
   const filteredMenuItems = menuItems
     .map(item => {
       // Filtrar subitems por módulos y permisos
@@ -218,6 +220,9 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         const modKey = sub.module || (sub.permission ? sub.permission.split('.')[0] : null);
         const modOk = moduleEnabled(modKey);
         const permOk = !sub.permission || hasPermission(sub.permission.split('.')[0], sub.permission.split('.')[1]);
+        // Bloquear gestión de módulos/licencias para no superadmin
+        const isConfigRutaSens = ['/admin', '/configuracion/modulos', '/configuracion/licencias'].includes(sub.path);
+        if (isConfigRutaSens && !superAdmin) return false;
         return modOk && (currentUser?.rol === 'Administrador' || permOk);
       });
       if (submenu && submenu.length === 0) submenu = undefined;
@@ -227,6 +232,13 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       // Filtrar items por módulo y permisos
       const modOk = moduleEnabled(item.permission);
       if (!modOk) return false;
+      // Ocultar completamente la sección de Configuración sensible para no superadmin
+      if (item.label === 'Configuración' && !superAdmin) {
+        // Permitimos sólo sucursales y datos empresa; no gestor de módulos/licencias
+        if (item.submenu) {
+          item.submenu = item.submenu.filter(s => ['/sucursales','/configuracion/empresa','/auditoria'].includes(s.path));
+        }
+      }
       if (!item.permission) return true;
       if (currentUser?.rol === 'Administrador') return true;
       if (item.submenu) return item.submenu && item.submenu.length > 0;
@@ -347,7 +359,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                 )}
               </div>
             ))}
-            {isAdminEmail && (
+            {superAdmin && (
               <div className="mt-2">
                 <Link
                   to="/admin"
