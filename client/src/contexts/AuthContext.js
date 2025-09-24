@@ -190,10 +190,28 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      if (orgId) {
+        localStorage.setItem('orgId', orgId);
+        localStorage.setItem('companyId', orgId);
+      } else {
+        localStorage.removeItem('orgId');
+        localStorage.removeItem('companyId');
+      }
+    } catch (storageError) {
+      console.warn('[AUTH] No se pudo sincronizar orgId en localStorage:', storageError);
+    }
+  }, [orgId]);
+
   // Efecto para recargar sucursales cuando cambie el orgId
   useEffect(() => {
     if (currentUser && orgId && isAuthenticated) {
-      console.log('🏢 [AUTH] orgId cambió, recargando sucursales...', { orgId, userId: currentUser.id });
+      console.log('[AUTH] orgId cambió, recargando sucursales…', { orgId, userId: currentUser.id });
       cargarSucursalesUsuario(currentUser);
     }
   }, [orgId, currentUser?.id, isAuthenticated]);
