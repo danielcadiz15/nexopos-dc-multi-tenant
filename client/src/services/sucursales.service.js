@@ -1,5 +1,5 @@
 // src/services/sucursales.service.js
-import FirebaseService from './firebase.service';
+import FirebaseService, { ensureArray as ensureArrayPayload } from './firebase.service';
 
 // Datos de respaldo para sucursales
 const SUCURSALES_RESPALDO = [
@@ -31,28 +31,48 @@ class SucursalesService extends FirebaseService {
     super('/sucursales');
   }
 
+  getOrgQuery(params = {}) {
+    const hasWindow = typeof window !== 'undefined';
+    const storage = hasWindow ? window.localStorage : null;
+    const authContext = hasWindow ? window.authContext : null;
+
+    const storedOrgId =
+      params?.orgId ||
+      storage?.getItem?.('orgId') ||
+      storage?.getItem?.('companyId') ||
+      null;
+
+    const contextOrgId =
+      authContext?.orgId ||
+      authContext?.currentUser?.orgId ||
+      null;
+
+    const orgId = storedOrgId || contextOrgId || null;
+    return orgId ? { ...params, orgId } : params;
+  }
+
   /**
    * Obtiene todas las sucursales
    * @returns {Promise<Array>} Lista de sucursales
    */
   async obtenerTodas() {
     try {
-      console.log('🔄 Obteniendo todas las sucursales...');
-      const sucursales = await this.get('');
-      
-      const sucursalesArray = this.ensureArray(sucursales);
-      
+      console.log('[SUCURSALES SERVICE] Obteniendo todas las sucursales…');
+      const response = await this.api.get('', this.getOrgQuery());
+
+      const sucursalesArray = ensureArrayPayload(response?.data);
+
       if (sucursalesArray.length === 0) {
-        console.log('⚠️ No hay sucursales, usando datos de respaldo');
+        console.log('[SUCURSALES SERVICE] No hay sucursales, usando datos de respaldo');
         return SUCURSALES_RESPALDO;
       }
-      
-      console.log(`✅ Sucursales cargadas: ${sucursalesArray.length}`);
+
+      console.log(`[SUCURSALES SERVICE] Sucursales cargadas: ${sucursalesArray.length}`);
       return sucursalesArray;
-      
+
     } catch (error) {
-      console.error('❌ Error al obtener sucursales:', error);
-      console.log('🔄 Usando datos de respaldo');
+      console.error('[SUCURSALES SERVICE] Error al obtener sucursales:', error);
+      console.log('[SUCURSALES SERVICE] Usando datos de respaldo');
       return SUCURSALES_RESPALDO;
     }
   }
@@ -63,26 +83,23 @@ class SucursalesService extends FirebaseService {
    */
   async obtenerActivas() {
     try {
-      console.log('🔄 [SUCURSALES SERVICE] Obteniendo sucursales activas...');
-      const sucursales = await this.get('/activas');
-      console.log('🔄 [SUCURSALES SERVICE] Respuesta de API:', sucursales);
-      
-      const sucursalesArray = this.ensureArray(sucursales);
-      console.log('🔄 [SUCURSALES SERVICE] Sucursales procesadas:', sucursalesArray.length, sucursalesArray);
-      
+      console.log('[SUCURSALES SERVICE] Obteniendo sucursales activas…');
+      const response = await this.api.get('/activas', this.getOrgQuery());
+      const sucursalesArray = ensureArrayPayload(response?.data);
+
       if (sucursalesArray.length === 0) {
         const activas = SUCURSALES_RESPALDO.filter(s => s.activa);
-        console.log('⚠️ [SUCURSALES SERVICE] Usando sucursales activas de respaldo:', activas);
+        console.log('[SUCURSALES SERVICE] Usando sucursales activas de respaldo');
         return activas;
       }
-      
-      console.log(`✅ [SUCURSALES SERVICE] Sucursales activas: ${sucursalesArray.length}`);
+
+      console.log(`[SUCURSALES SERVICE] Sucursales activas: ${sucursalesArray.length}`);
       return sucursalesArray;
-      
+
     } catch (error) {
-      console.error('❌ [SUCURSALES SERVICE] Error al obtener sucursales activas:', error);
+      console.error('[SUCURSALES SERVICE] Error al obtener sucursales activas:', error);
       const activas = SUCURSALES_RESPALDO.filter(s => s.activa);
-      console.log('🔄 [SUCURSALES SERVICE] Usando sucursales de respaldo por error:', activas);
+      console.log('[SUCURSALES SERVICE] Usando sucursales de respaldo por error');
       return activas;
     }
   }
@@ -194,15 +211,15 @@ class SucursalesService extends FirebaseService {
    */
   async obtenerStock(sucursalId) {
     try {
-      console.log(`📦 Obteniendo stock de sucursal ${sucursalId}`);
-      const stock = await this.get(`/${sucursalId}/stock`);
-      
-      const stockArray = this.ensureArray(stock);
-      console.log(`✅ Stock obtenido: ${stockArray.length} productos`);
-      
+      console.log(`[SUCURSALES SERVICE] Obteniendo stock de la sucursal ${sucursalId}`);
+      const response = await this.api.get(`/${sucursalId}/stock`, this.getOrgQuery());
+
+      const stockArray = ensureArrayPayload(response?.data);
+      console.log(`[SUCURSALES SERVICE] Stock obtenido: ${stockArray.length} productos`);
+
       return stockArray;
     } catch (error) {
-      console.error(`❌ Error al obtener stock de sucursal ${sucursalId}:`, error);
+      console.error(`[SUCURSALES SERVICE] Error al obtener stock de sucursal ${sucursalId}:`, error);
       return [];
     }
   }
@@ -214,15 +231,15 @@ class SucursalesService extends FirebaseService {
    */
   async obtenerPorUsuario(usuarioId) {
     try {
-      console.log(`👤 Obteniendo sucursales del usuario ${usuarioId}`);
-      const sucursales = await this.get(`/usuario/${usuarioId}`);
-      
-      const sucursalesArray = this.ensureArray(sucursales);
-      console.log(`✅ Sucursales del usuario: ${sucursalesArray.length}`);
-      
+      console.log(`[SUCURSALES SERVICE] Obteniendo sucursales del usuario ${usuarioId}`);
+      const response = await this.api.get(`/usuario/${usuarioId}`, this.getOrgQuery());
+
+      const sucursalesArray = ensureArrayPayload(response?.data);
+      console.log(`[SUCURSALES SERVICE] Sucursales del usuario: ${sucursalesArray.length}`);
+
       return sucursalesArray;
     } catch (error) {
-      console.error(`❌ Error al obtener sucursales del usuario ${usuarioId}:`, error);
+      console.error(`[SUCURSALES SERVICE] Error al obtener sucursales del usuario ${usuarioId}:`, error);
       return [];
     }
   }

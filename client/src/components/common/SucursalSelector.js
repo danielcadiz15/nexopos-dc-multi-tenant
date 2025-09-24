@@ -1,5 +1,5 @@
 // src/components/common/SucursalSelector.js
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { FaStore } from 'react-icons/fa';
 
@@ -7,12 +7,36 @@ import { FaStore } from 'react-icons/fa';
  * Componente selector de sucursal
  */
 const SucursalSelector = () => {
-  const { 
-    sucursalSeleccionada, 
-    sucursalesDisponibles, 
-    cambiarSucursal, 
-    loadingSucursales 
+  const {
+    sucursalSeleccionada,
+    sucursalesDisponibles,
+    cambiarSucursal,
+    loadingSucursales
   } = useAuth();
+
+  useEffect(() => {
+    if (loadingSucursales) {
+      return;
+    }
+
+    if (!sucursalesDisponibles || sucursalesDisponibles.length === 0) {
+      return;
+    }
+
+    const currentId = sucursalSeleccionada?.id || null;
+    const storedId = typeof window !== 'undefined'
+      ? window.localStorage?.getItem?.('sucursalSeleccionada')
+      : null;
+    const firstSucursal = sucursalesDisponibles[0];
+
+    const shouldSelectFirst = !currentId && !storedId;
+    const selectedNotInList = currentId && !sucursalesDisponibles.some((sucursal) => sucursal.id === currentId);
+
+    if (shouldSelectFirst || selectedNotInList) {
+      console.log('[SUCURSAL SELECTOR] Seleccionando sucursal por defecto:', firstSucursal);
+      cambiarSucursal(firstSucursal.id);
+    }
+  }, [loadingSucursales, sucursalesDisponibles, sucursalSeleccionada, cambiarSucursal]);
 
   // DEBUG: Siempre mostrar el selector para diagnosticar problemas
   console.log('🏪 [SUCURSAL SELECTOR] Estado:', {

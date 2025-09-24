@@ -1,7 +1,6 @@
 // src/services/productos.service.js - VERSIÓN CORREGIDA COMPLETA CON MÉTODOS FALTANTES
-import FirebaseService from './firebase.service';
+import FirebaseService, { ensureArray as ensureArrayPayload, ensureObject as ensureObjectPayload } from './firebase.service';
 import ApiService from './api.service';
-import { useAuth } from '../contexts/AuthContext';
 
 // Datos de respaldo para productos (por si Firebase falla)
 const PRODUCTOS_RESPALDO = [
@@ -34,28 +33,40 @@ class ProductosService extends FirebaseService {
 
   getOrgQuery(params = {}) {
     // Obtener orgId del localStorage o del contexto global si está disponible
-    const orgId = localStorage.getItem('orgId') || window?.authContext?.orgId || null;
+    const hasWindow = typeof window !== 'undefined';
+    const storage = hasWindow ? window.localStorage : null;
+    const authContext = hasWindow ? window.authContext : null;
+
+    const storedOrgId =
+      storage?.getItem?.('orgId') ||
+      storage?.getItem?.('companyId') ||
+      null;
+
+    const contextOrgId =
+      authContext?.orgId ||
+      authContext?.currentUser?.orgId ||
+      null;
+
+    const orgId = storedOrgId || contextOrgId || null;
     return orgId ? { ...params, orgId } : params;
   }
 
   async obtenerTodos() {
     try {
-      console.log('🔄 [PRODUCTOS SERVICE] Obteniendo todos los productos...');
-      const productos = await this.api.get('', this.getOrgQuery());
-      console.log('🔄 [PRODUCTOS SERVICE] Respuesta de API:', productos);
-      
-      const productosArray = this.ensureArray(productos.data);
-      console.log('🔄 [PRODUCTOS SERVICE] Productos procesados:', productosArray.length);
-      
+      console.log('[PRODUCTOS SERVICE] Obteniendo todos los productos…');
+      const response = await this.api.get('', this.getOrgQuery());
+      const productosArray = ensureArrayPayload(response?.data);
+
+      console.log('Productos obtenidos correctamente:', productosArray.length);
+
       if (productosArray.length === 0) {
-        console.log('⚠️ [PRODUCTOS SERVICE] No hay productos, usando datos de respaldo');
+        console.log('[PRODUCTOS SERVICE] No hay productos, usando datos de respaldo');
         return PRODUCTOS_RESPALDO;
       }
-      
-      console.log('✅ [PRODUCTOS SERVICE] Productos obtenidos correctamente:', productosArray.length);
+
       return productosArray;
     } catch (error) {
-      console.error('❌ [PRODUCTOS SERVICE] Error al obtener productos:', error);
+      console.error('[PRODUCTOS SERVICE] Error al obtener productos:', error);
       return PRODUCTOS_RESPALDO;
     }
   }
@@ -64,20 +75,20 @@ class ProductosService extends FirebaseService {
 
   async obtenerActivos() {
     try {
-      const res = await this.api.get('/activos');
-      const productosArray = this.ensureArray(res.data);
+      const response = await this.api.get('/activos', this.getOrgQuery());
+      const productosArray = ensureArrayPayload(response?.data);
       if (productosArray.length === 0) return PRODUCTOS_RESPALDO.filter(p => p.activo);
       return productosArray;
     } catch (error) {
-      console.error('❌ Error al obtener productos activos:', error);
+      console.error('Error al obtener productos activos:', error);
       return PRODUCTOS_RESPALDO.filter(p => p.activo);
     }
   }
 
   async obtenerPorId(id) {
     try {
-      const res = await this.api.get(`/${id}`);
-      const productoObj = this.ensureObject(res.data);
+      const response = await this.api.get(`/${id}`, this.getOrgQuery());
+      const productoObj = ensureObjectPayload(response?.data);
       if (!productoObj || Object.keys(productoObj).length === 0) {
         const productoRespaldo = PRODUCTOS_RESPALDO.find(p => p.id === id);
         if (productoRespaldo) return productoRespaldo;
@@ -95,11 +106,11 @@ class ProductosService extends FirebaseService {
   async buscarConStockPorSucursal(termino, sucursalId) {
     try {
       if (!sucursalId) throw new Error('ID de sucursal es requerido');
-      let url = `/buscar-con-stock/${sucursalId}`;
-      if (termino && termino.trim()) url += `?termino=${encodeURIComponent(termino.trim())}`;
-      const response = await this.api.get(url);
-      const raw = response?.data ?? response;
-      const productosArray = this.ensureArray(raw);
+      const queryParams = this.getOrgQuery(
+        termino && termino.trim() ? { termino: termino.trim() } : {}
+      );
+      const response = await this.api.get(`/buscar-con-stock/${sucursalId}`, queryParams);
+      const productosArray = ensureArrayPayload(response?.data);
       if (productosArray.length === 0 && termino) return await this.buscarConStockFallback(termino, sucursalId);
       return productosArray.map(p => ({
         ...p,
@@ -109,7 +120,7 @@ class ProductosService extends FirebaseService {
         sucursal_id: p?.sucursal_id ?? sucursalId
       }));
     } catch (error) {
-      console.error('❌ [PRODUCTOS SERVICE] Error al buscar productos con stock por sucursal:', error);
+      console.error('[PRODUCTOS SERVICE] Error al buscar productos con stock por sucursal:', error);
       return await this.buscarConStockFallback(termino, sucursalId);
     }
   }
@@ -159,8 +170,8 @@ class ProductosService extends FirebaseService {
       if (!codigo || !sucursalId) throw new Error('Código de producto y ID de sucursal son requeridos');
       try {
         const url = `/codigo/${encodeURIComponent(codigo)}/sucursal/${sucursalId}`;
-        const response = await this.api.get(url);
-        return response.data || response;
+        const response = await this.api.get(url, this.getOrgQuery());
+        return ensureObjectPayload(response?.data);
       } catch (endpointError) {
         const producto = await this.obtenerPorCodigo(codigo);
         if (!producto) return null;
@@ -168,7 +179,7 @@ class ProductosService extends FirebaseService {
         return { ...producto, stock_actual: stockSucursal.cantidad || 0, stock_sucursal: stockSucursal.cantidad || 0, stock_minimo: stockSucursal.stock_minimo || producto.stock_minimo || 5, sucursal_id: sucursalId };
       }
     } catch (error) {
-      console.error('❌ [PRODUCTOS SERVICE] Error al buscar producto por código con stock:', error);
+      console.error('[PRODUCTOS SERVICE] Error al buscar producto por código con stock:', error);
       return null;
     }
   }
@@ -176,11 +187,10 @@ class ProductosService extends FirebaseService {
   async buscar(termino, sucursalId = null) {
     try {
       const params = this.getOrgQuery({ search: termino, limit: 20, ...(sucursalId && { sucursal_id: sucursalId }) });
-      const productos = await this.api.get('', params);
-      const productosArray = this.ensureArray(productos.data);
-      return productosArray;
+      const response = await this.api.get('', params);
+      return ensureArrayPayload(response?.data);
     } catch (error) {
-      console.error('❌ Error al buscar productos:', error);
+      console.error('Error al buscar productos:', error);
       return [];
     }
   }
@@ -215,8 +225,8 @@ class ProductosService extends FirebaseService {
         proveedor_id: producto.proveedor_id || '',
         activo: producto.activo !== false
       };
-      const resultado = await this.api.post('', this.getOrgQuery(productoFormateado));
-      return resultado.data ?? resultado;
+      const resultado = await this.post('', this.getOrgQuery(productoFormateado));
+      return resultado;
     } catch (error) {
       console.error('❌ Error al crear producto:', error);
       throw error;
@@ -230,8 +240,8 @@ class ProductosService extends FirebaseService {
       if (producto.precio_venta !== undefined) productoFormateado.precio_venta = parseFloat(producto.precio_venta || 0);
       if (producto.stock_actual !== undefined) productoFormateado.stock_actual = parseInt(producto.stock_actual || 0);
       if (producto.stock_minimo !== undefined) productoFormateado.stock_minimo = parseInt(producto.stock_minimo || 5);
-      const resultado = await this.api.post(`/update/${id}`, this.getOrgQuery(productoFormateado));
-      return resultado.data ?? resultado;
+      const resultado = await this.post(`/update/${id}`, this.getOrgQuery(productoFormateado));
+      return resultado;
     } catch (error) {
       console.error(`❌ Error al actualizar producto ${id}:`, error);
       throw error;
@@ -240,8 +250,8 @@ class ProductosService extends FirebaseService {
 
   async eliminar(id) {
     try {
-      const resultado = await this.api.post(`/delete/${id}`, this.getOrgQuery());
-      return resultado.data ?? resultado;
+      const resultado = await this.post(`/delete/${id}`, this.getOrgQuery());
+      return resultado;
     } catch (error) {
       console.error(`❌ Error al eliminar producto ${id}:`, error);
       throw error;
@@ -250,24 +260,24 @@ class ProductosService extends FirebaseService {
 
   async obtenerStockBajo() {
     try {
-      const res = await this.api.get('/stock-bajo');
-      const productosArray = this.ensureArray(res.data);
+      const response = await this.api.get('/stock-bajo', this.getOrgQuery());
+      const productosArray = ensureArrayPayload(response?.data);
       if (productosArray.length === 0) return PRODUCTOS_RESPALDO.filter(p => p.stock_actual <= (p.stock_minimo || 5));
       return productosArray;
     } catch (error) {
-      console.error('❌ Error al obtener stock bajo:', error);
+      console.error('Error al obtener stock bajo:', error);
       return PRODUCTOS_RESPALDO.filter(p => p.stock_actual <= (p.stock_minimo || 5));
     }
   }
 
   async obtenerPorCategoria(categoriaId) {
     try {
-      const res = await this.api.get('/categoria', this.getOrgQuery({ categoriaId }));
-      const productosArray = this.ensureArray(res.data);
+      const response = await this.api.get('/categoria', this.getOrgQuery({ categoriaId }));
+      const productosArray = ensureArrayPayload(response?.data);
       if (productosArray.length === 0) return PRODUCTOS_RESPALDO.filter(p => p.categoria_id === categoriaId);
       return productosArray;
     } catch (error) {
-      console.error(`❌ Error al obtener productos de categoría ${categoriaId}:`, error);
+      console.error(`Error al obtener productos de categoría ${categoriaId}:`, error);
       return PRODUCTOS_RESPALDO.filter(p => p.categoria_id === categoriaId);
     }
   }
@@ -275,8 +285,8 @@ class ProductosService extends FirebaseService {
   async ajustarStock(id, cantidad, motivo = 'Ajuste manual') {
     try {
       const ajuste = { cantidad: parseInt(cantidad), motivo: motivo.trim() };
-      const resultado = await this.api.post(`/${id}/stock`, this.getOrgQuery(ajuste));
-      return resultado.data ?? resultado;
+      const resultado = await this.post(`/${id}/stock`, this.getOrgQuery(ajuste));
+      return resultado;
     } catch (error) {
       console.error(`❌ Error al ajustar stock del producto ${id}:`, error);
       throw error;
@@ -285,18 +295,18 @@ class ProductosService extends FirebaseService {
 
   async obtenerHistorialMovimientos(id) {
     try {
-      const res = await this.api.get(`/${id}/movimientos`, this.getOrgQuery());
-      return this.ensureArray(res.data);
+      const response = await this.api.get(`/${id}/movimientos`, this.getOrgQuery());
+      return ensureArrayPayload(response?.data);
     } catch (error) {
-      console.error(`❌ Error al obtener historial del producto ${id}:`, error);
+      console.error(`Error al obtener historial del producto ${id}:`, error);
       return [];
     }
   }
 
   async obtenerEstadisticas() {
     try {
-      const res = await this.api.get('/estadisticas', this.getOrgQuery());
-      const statsObj = this.ensureObject(res.data);
+      const response = await this.api.get('/estadisticas', this.getOrgQuery());
+      const statsObj = ensureObjectPayload(response?.data);
       if (!statsObj || Object.keys(statsObj).length === 0) {
         return {
           total: PRODUCTOS_RESPALDO.length,
@@ -307,17 +317,17 @@ class ProductosService extends FirebaseService {
       }
       return statsObj;
     } catch (error) {
-      console.error('❌ Error al obtener estadísticas:', error);
+      console.error('Error al obtener estadísticas:', error);
       return { total: 0, activos: 0, stockBajo: 0, sinStock: 0 };
     }
   }
 
   async buscarConFiltros(filtros = {}) {
     try {
-      const res = await this.api.get('/filtros', this.getOrgQuery(filtros));
-      return this.ensureArray(res.data);
+      const response = await this.api.get('/filtros', this.getOrgQuery(filtros));
+      return ensureArrayPayload(response?.data);
     } catch (error) {
-      console.error('❌ Error en búsqueda con filtros:', error);
+      console.error('Error en búsqueda con filtros:', error);
       let resultado = [...PRODUCTOS_RESPALDO];
       if (filtros.categoria) resultado = resultado.filter(p => p.categoria_id === filtros.categoria);
       if (filtros.proveedor) resultado = resultado.filter(p => p.proveedor_id === filtros.proveedor);
@@ -384,10 +394,10 @@ class ProductosService extends FirebaseService {
 
   async obtenerMasVendidos(limite = 10) {
     try {
-      const res = await this.api.get('/mas-vendidos', this.getOrgQuery({ limite }));
-      return this.ensureArray(res.data);
+      const response = await this.api.get('/mas-vendidos', this.getOrgQuery({ limite }));
+      return ensureArrayPayload(response?.data);
     } catch (error) {
-      console.error('❌ Error al obtener productos más vendidos:', error);
+      console.error('Error al obtener productos más vendidos:', error);
       return [];
     }
   }
