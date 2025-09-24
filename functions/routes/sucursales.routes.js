@@ -144,15 +144,9 @@ const sucursalesRoutes = async (req, res, path) => {
           }
         }
       } else {
-        // Si no hay companyId, buscar todas las sucursales activas
-        const sucursalesSnapshot = await db.collection('sucursales').where('activa', '==', true).get();
-        
-        sucursalesSnapshot.forEach(doc => {
-          sucursales.push({
-            id: doc.id,
-            ...doc.data()
-          });
-        });
+        // Seguridad multi-tenant: nunca devolver sucursales fuera de un contexto de empresa
+        console.warn('⚠️ [SUCURSALES] companyId ausente; retornando lista vacía para evitar fuga de datos');
+        return res.json({ success: true, data: [], total: 0, message: 'Sin contexto de empresa' });
       }
       
       console.log(`✅ [SUCURSALES] Sucursales activas encontradas: ${sucursales.length}`);

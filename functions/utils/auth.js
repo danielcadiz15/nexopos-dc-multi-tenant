@@ -87,6 +87,11 @@ async function authenticateUser(req, res, next) {
     req.companyId = null;
   }
   
+  // Cortafuego multi-tenant para listados de sucursales sin contexto de empresa
+  if (!req.companyId && req.method === 'GET' && req.path && req.path.startsWith('/sucursales')) {
+    return res.status(200).json({ success: true, data: [], total: 0, message: 'Sin contexto de empresa' });
+  }
+
   next();
 }
 
