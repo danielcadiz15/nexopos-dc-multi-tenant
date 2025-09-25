@@ -1,6 +1,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
+const { getModulesForPlan, DEFAULT_PLAN } = require('../utils/planModules');
 
 setGlobalOptions({ region: 'us-central1' });
 
@@ -89,8 +90,9 @@ exports.createTenant = onCall(async (request) => {
     // Inicializar licencia DEMO por 7 días
     try {
       const paidUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const plan = DEFAULT_PLAN;
       const licensePayload = {
-        plan: 'demo',
+        plan,
         paidUntil,
         blocked: false,
         reason: '',
@@ -108,30 +110,11 @@ exports.createTenant = onCall(async (request) => {
 
     // Inicializar módulos por defecto
     try {
-      const defaultModules = {
-        productos: true,
-        categorias: true,
-        clientes: true,
-        proveedores: true,
-        compras: true,
-        ventas: true,
-        punto_venta: true,
-        stock: true,
-        listas_precios: true,
-        transferencias: true,
-        reportes: true,
-        promociones: false,
-        caja: true,
-        gastos: true,
-        devoluciones: true,
-        auditoria: false,
-        vehiculos: false,
-        produccion: false,
-        recetas: false,
-        materias_primas: false,
-        configuracion: true,
+      const plan = DEFAULT_PLAN;
+      const defaultModules = Object.assign({}, getModulesForPlan(plan), {
+        plan,
         updatedAt: now
-      };
+      });
       await db.collection('tenants').doc(orgRef.id).collection('config').doc('modules').set(defaultModules, { merge: true });
       await db.collection('companies').doc(orgRef.id).collection('config').doc('modules').set(defaultModules, { merge: true });
     } catch (e) {
