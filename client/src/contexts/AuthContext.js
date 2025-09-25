@@ -374,10 +374,13 @@ export function AuthProvider({ children }) {
         }
       });
       
-      // TEMPORAL: Forzar habilitación de compras para usuarios básicos
-      if (usuario.rolId === '1' && permisosFinales.compras) {
-        console.log('🔐 [AUTH] TEMPORAL: Forzando habilitación de compras para usuario básico');
+      // TEMPORAL: Forzar habilitación de compras para TODOS los usuarios
+      if (permisosFinales.compras) {
+        console.log('🔐 [AUTH] TEMPORAL: Forzando habilitación de compras para TODOS los usuarios');
         permisosFinales.compras.ver = true;
+        permisosFinales.compras.crear = true;
+        permisosFinales.compras.editar = true;
+        permisosFinales.compras.eliminar = false;
       }
       
       console.log('🔐 [AUTH] Permisos efectivos calculados:', permisosFinales);
