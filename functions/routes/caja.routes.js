@@ -13,7 +13,9 @@ const cajaRoutes = async (req, res, path) => {
 
     // Obtener companyId para filtrado multi-tenant
     const companyId = req.companyId || req.user?.companyId || null;
-    console.log(`💰 [CAJA] Procesando ruta: ${req.method} ${path}, companyId: ${companyId}`);
+    const requestedOrgId = req.query?.orgId || req.headers['x-org-id'] || null;
+    const tenantId = companyId || requestedOrgId || null;
+    console.log(`💰 [CAJA] Procesando ruta: ${req.method} ${path}, companyId: ${companyId}, requestedOrgId: ${requestedOrgId}`);
 
     // POST /caja/movimiento - Agregar movimiento
     if (path === '/caja/movimiento' && req.method === 'POST') {
@@ -25,7 +27,7 @@ const cajaRoutes = async (req, res, path) => {
         return res.status(400).json({ success: false, message: 'Faltan datos obligatorios' });
       }
       
-      const fechaMovimiento = fecha || new Date().toISOString();
+      const fechaMovimiento = obtenerFechaCorta(fecha);
       const movimiento = {
         tipo, // 'ingreso' o 'egreso'
         monto: parseFloat(monto),
@@ -34,7 +36,7 @@ const cajaRoutes = async (req, res, path) => {
         observaciones: observaciones || '',
         fecha: fechaMovimiento,
         fechaCreacion: admin.firestore.FieldValue.serverTimestamp(),
-        ...(companyId ? { orgId: companyId } : {})
+        ...(tenantId ? { orgId: tenantId } : {})
       };
       
       console.log('💰 [CAJA] Guardando movimiento:', movimiento);
@@ -60,23 +62,34 @@ const cajaRoutes = async (req, res, path) => {
       
       try {
         // Consultar movimientos filtrando por fecha y orgId
-        let query = db.collection(COLECCION_CAJA).where('fecha', '==', fecha);
+        let query = db.collection(COLECCION_CAJA);
 
-        if (companyId) {
-          query = query.where('orgId', '==', companyId);
-          console.log(`💰 [CAJA] Filtrando movimientos por orgId: ${companyId} y fecha: ${fecha}`);
+        if (tenantId) {
+          query = query.where('orgId', '==', tenantId);
+          console.log(`💰 [CAJA] Filtrando movimientos por orgId: ${tenantId}`);
         } else {
-          console.log('⚠️ [CAJA] No hay companyId, la consulta no estará aislada por tenant');
+          console.log('⚠️ [CAJA] No hay tenantId, la consulta no estará aislada por tenant');
         }
 
-        const snapshot = await query.get();
         let movimientos = [];
-        snapshot.forEach(doc => movimientos.push({ id: doc.id, ...doc.data() }));
 
-        // Ordenar en memoria para evitar índices compuestos
+        try {
+          const snapshot = await query.where('fecha', '==', fecha).get();
+          movimientos = construirMovimientos(snapshot);
+        } catch (firestoreError) {
+          if (esErrorDeIndiceCompuesto(firestoreError)) {
+            console.warn('⚠️ [CAJA] Faltó índice compuesto para fecha+orgId, aplicando filtro en memoria');
+            const fallbackSnapshot = await query.get();
+            movimientos = construirMovimientos(fallbackSnapshot, { filtrarPorFecha: fecha });
+          } else {
+            throw firestoreError;
+          }
+        }
+
+        // Ordenar en memoria para asegurar consistencia
         movimientos.sort((a, b) => {
-          const ta = (a.fechaCreacion?.toMillis?.() || 0);
-          const tb = (b.fechaCreacion?.toMillis?.() || 0);
+          const ta = obtenerTimestampMillis(a.fechaCreacion);
+          const tb = obtenerTimestampMillis(b.fechaCreacion);
           return ta - tb;
         });
 
@@ -102,25 +115,36 @@ const cajaRoutes = async (req, res, path) => {
       
       try {
         let query = db.collection(COLECCION_CAJA);
-        
+
         // Filtrar por companyId si está disponible
-        if (companyId) {
-          query = query.where('orgId', '==', companyId);
-          console.log(`💰 [CAJA] Filtrando movimientos acumulados por orgId: ${companyId}`);
+        if (tenantId) {
+          query = query.where('orgId', '==', tenantId);
+          console.log(`💰 [CAJA] Filtrando movimientos acumulados por orgId: ${tenantId}`);
         } else {
-          console.log('⚠️ [CAJA] No hay companyId, mostrando todos los movimientos acumulados');
+          console.log('⚠️ [CAJA] No hay tenantId, mostrando todos los movimientos acumulados');
         }
-        
-        const movimientosSnapshot = await query
-          .orderBy('fechaCreacion', 'desc')
-          .limit(100) // Últimos 100 movimientos
-          .get();
-        
-        const movimientos = [];
-        movimientosSnapshot.forEach(doc => {
-          movimientos.push({ id: doc.id, ...doc.data() });
-        });
-        
+
+        let movimientosSnapshot;
+        try {
+          movimientosSnapshot = await query
+            .orderBy('fechaCreacion', 'desc')
+            .limit(100) // Últimos 100 movimientos
+            .get();
+        } catch (firestoreError) {
+          if (esErrorDeIndiceCompuesto(firestoreError)) {
+            console.warn('⚠️ [CAJA] Faltó índice para orgId+fechaCreacion, ordenando en memoria');
+            const fallbackSnapshot = await query.get();
+            const movimientosFallback = construirMovimientos(fallbackSnapshot);
+            movimientosFallback.sort((a, b) => obtenerTimestampMillis(b.fechaCreacion) - obtenerTimestampMillis(a.fechaCreacion));
+            const topMovimientos = movimientosFallback.slice(0, 100);
+            res.json({ success: true, data: topMovimientos, total: topMovimientos.length });
+            return true;
+          }
+          throw firestoreError;
+        }
+
+        const movimientos = construirMovimientos(movimientosSnapshot);
+
         console.log(`✅ [CAJA] Encontrados ${movimientos.length} movimientos acumulados`);
         res.json({ success: true, data: movimientos, total: movimientos.length });
         return true;
@@ -148,21 +172,32 @@ const cajaRoutes = async (req, res, path) => {
       
       try {
         // CORREGIDO: Consultar por string de fecha en lugar de timestamps
-        let query = db.collection(COLECCION_CAJA).where('fecha', '==', fecha);
-        
-        // Filtrar por companyId si está disponible
-        if (companyId) {
-          query = query.where('orgId', '==', companyId);
-          console.log(`💰 [CAJA] Calculando resumen por orgId: ${companyId}`);
+        let query = db.collection(COLECCION_CAJA);
+
+        if (tenantId) {
+          query = query.where('orgId', '==', tenantId);
+          console.log(`💰 [CAJA] Calculando resumen por orgId: ${tenantId}`);
         }
-        
-        const movimientosSnapshot = await query.get();
-        
+
+        let movimientosProcesados = [];
+
+        try {
+          const movimientosSnapshot = await query.where('fecha', '==', fecha).get();
+          movimientosProcesados = construirMovimientos(movimientosSnapshot);
+        } catch (firestoreError) {
+          if (esErrorDeIndiceCompuesto(firestoreError)) {
+            console.warn('⚠️ [CAJA] Faltó índice compuesto para resumen, filtrando en memoria');
+            const fallbackSnapshot = await query.get();
+            movimientosProcesados = construirMovimientos(fallbackSnapshot, { filtrarPorFecha: fecha });
+          } else {
+            throw firestoreError;
+          }
+        }
+
         let ingresos = 0;
         let egresos = 0;
-        
-        movimientosSnapshot.forEach(doc => {
-          const mov = doc.data();
+
+        movimientosProcesados.forEach(mov => {
           if (mov.tipo === 'ingreso') ingresos += parseFloat(mov.monto);
           if (mov.tipo === 'egreso') egresos += parseFloat(mov.monto);
         });
@@ -324,6 +359,85 @@ const cajaRoutes = async (req, res, path) => {
     res.status(500).json({ success: false, message: 'Error en caja', error: error.message });
     return true;
   }
+};
+
+const esErrorDeIndiceCompuesto = (error) => {
+  if (!error) return false;
+  const codigo = error.code || error?.details?.code || '';
+  const mensaje = typeof error.message === 'string' ? error.message : '';
+  return codigo === 9 || codigo === 'failed-precondition' || codigo === 'FAILED_PRECONDITION' || mensaje.includes('index');
+};
+
+const obtenerTimestampMillis = (valor) => {
+  if (!valor) return 0;
+  if (typeof valor === 'number') return valor;
+  if (valor instanceof Date) return valor.getTime();
+  if (typeof valor.toMillis === 'function') return valor.toMillis();
+  if (typeof valor.toDate === 'function') return valor.toDate().getTime();
+  if (typeof valor === 'string') {
+    const fecha = new Date(valor);
+    return Number.isNaN(fecha.getTime()) ? 0 : fecha.getTime();
+  }
+  return 0;
+};
+
+const normalizarFecha = (valor) => {
+  if (!valor) return '';
+  if (typeof valor === 'string') {
+    return valor.length >= 10 ? valor.slice(0, 10) : valor;
+  }
+  if (valor instanceof Date) {
+    return valor.toISOString().slice(0, 10);
+  }
+  if (typeof valor.toDate === 'function') {
+    return valor.toDate().toISOString().slice(0, 10);
+  }
+  return '';
+};
+
+const obtenerFechaCorta = (valor) => {
+  if (!valor) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  if (typeof valor === 'string') {
+    return valor.length >= 10 ? valor.slice(0, 10) : valor;
+  }
+
+  if (valor instanceof Date) {
+    return valor.toISOString().slice(0, 10);
+  }
+
+  if (typeof valor.toDate === 'function') {
+    return valor.toDate().toISOString().slice(0, 10);
+  }
+
+  const fecha = new Date(valor);
+  if (!Number.isNaN(fecha.getTime())) {
+    return fecha.toISOString().slice(0, 10);
+  }
+
+  return new Date().toISOString().slice(0, 10);
+};
+
+const construirMovimientos = (snapshot, opciones = {}) => {
+  const { filtrarPorFecha = null } = opciones;
+  const fechaObjetivo = filtrarPorFecha ? obtenerFechaCorta(filtrarPorFecha) : null;
+  const movimientos = [];
+
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    if (fechaObjetivo) {
+      const fechaDoc = normalizarFecha(data?.fecha);
+      if (fechaDoc !== fechaObjetivo) {
+        return;
+      }
+    }
+
+    movimientos.push({ id: doc.id, ...data });
+  });
+
+  return movimientos;
 };
 
 // Función helper para actualizar saldo acumulado
