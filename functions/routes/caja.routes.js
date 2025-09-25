@@ -38,10 +38,16 @@ const cajaRoutes = async (req, res, path) => {
       };
       
       console.log('💰 [CAJA] Guardando movimiento:', movimiento);
-      const docRef = await db.collection(COLECCION_CAJA).add(movimiento);
+      
+      if (!companyId) {
+        console.log('❌ [CAJA] No se proporcionó companyId');
+        return res.status(400).json({ success: false, message: 'CompanyId requerido' });
+      }
+      
+      const docRef = await db.collection('companies').doc(companyId).collection('caja').collection('movimientos').add(movimiento);
       
       // Actualizar saldo acumulado
-      await actualizarSaldoAcumulado(tipo, parseFloat(monto));
+      await actualizarSaldoAcumulado(tipo, parseFloat(monto), companyId);
       
       console.log('✅ [CAJA] Movimiento guardado con ID:', docRef.id);
       res.json({ success: true, id: docRef.id, movimiento });
@@ -59,15 +65,14 @@ const cajaRoutes = async (req, res, path) => {
       }
       
       try {
-        // Consultar movimientos filtrando por fecha y orgId
-        let query = db.collection(COLECCION_CAJA).where('fecha', '==', fecha);
-
-        if (companyId) {
-          query = query.where('orgId', '==', companyId);
-          console.log(`💰 [CAJA] Filtrando movimientos por orgId: ${companyId} y fecha: ${fecha}`);
-        } else {
-          console.log('⚠️ [CAJA] No hay companyId, la consulta no estará aislada por tenant');
+        if (!companyId) {
+          console.log('⚠️ [CAJA] No hay companyId, no se pueden obtener movimientos');
+          return res.status(400).json({ success: false, message: 'CompanyId requerido' });
         }
+        
+        // Consultar movimientos usando estructura separada por empresa
+        const query = db.collection('companies').doc(companyId).collection('caja').collection('movimientos').where('fecha', '==', fecha);
+        console.log(`💰 [CAJA] Obteniendo movimientos para empresa: ${companyId} y fecha: ${fecha}`);
 
         const snapshot = await query.get();
         let movimientos = [];
@@ -101,15 +106,14 @@ const cajaRoutes = async (req, res, path) => {
       console.log('💰 [CAJA] Consultando movimientos acumulados (caja chica)');
       
       try {
-        let query = db.collection(COLECCION_CAJA);
-        
-        // Filtrar por companyId si está disponible
-        if (companyId) {
-          query = query.where('orgId', '==', companyId);
-          console.log(`💰 [CAJA] Filtrando movimientos acumulados por orgId: ${companyId}`);
-        } else {
-          console.log('⚠️ [CAJA] No hay companyId, mostrando todos los movimientos acumulados');
+        if (!companyId) {
+          console.log('⚠️ [CAJA] No hay companyId, no se pueden obtener movimientos acumulados');
+          return res.status(400).json({ success: false, message: 'CompanyId requerido' });
         }
+        
+        // Usar estructura separada por empresa
+        const query = db.collection('companies').doc(companyId).collection('caja').collection('movimientos');
+        console.log(`💰 [CAJA] Obteniendo movimientos acumulados para empresa: ${companyId}`);
         
         const movimientosSnapshot = await query
           .orderBy('fechaCreacion', 'desc')
@@ -147,14 +151,14 @@ const cajaRoutes = async (req, res, path) => {
       }
       
       try {
-        // CORREGIDO: Consultar por string de fecha en lugar de timestamps
-        let query = db.collection(COLECCION_CAJA).where('fecha', '==', fecha);
-        
-        // Filtrar por companyId si está disponible
-        if (companyId) {
-          query = query.where('orgId', '==', companyId);
-          console.log(`💰 [CAJA] Calculando resumen por orgId: ${companyId}`);
+        if (!companyId) {
+          console.log('⚠️ [CAJA] No hay companyId, no se puede calcular resumen');
+          return res.status(400).json({ success: false, message: 'CompanyId requerido' });
         }
+        
+        // Usar estructura separada por empresa
+        const query = db.collection('companies').doc(companyId).collection('caja').collection('movimientos').where('fecha', '==', fecha);
+        console.log(`💰 [CAJA] Calculando resumen para empresa: ${companyId} y fecha: ${fecha}`);
         
         const movimientosSnapshot = await query.get();
         
@@ -189,15 +193,21 @@ const cajaRoutes = async (req, res, path) => {
       console.log('💰 [CAJA] Calculando saldo acumulado de caja chica');
       
       try {
-        // Obtener saldo desde la colección de saldo
-        const saldoDoc = await db.collection(COLECCION_SALDO_CAJA).doc('actual').get();
+        if (!companyId) {
+          console.log('⚠️ [CAJA] No hay companyId, no se puede obtener saldo acumulado');
+          return res.status(400).json({ success: false, message: 'CompanyId requerido' });
+        }
+        
+        // Obtener saldo desde la estructura separada por empresa
+        const saldoRef = db.collection('companies').doc(companyId).collection('caja').doc('saldo');
+        const saldoDoc = await saldoRef.get();
         
         let saldoAcumulado = 0;
         if (saldoDoc.exists) {
           saldoAcumulado = saldoDoc.data().saldo || 0;
         } else {
-          // Si no existe, calcular desde todos los movimientos
-          const todosLosMovimientos = await db.collection(COLECCION_CAJA).get();
+          // Si no existe, calcular desde todos los movimientos de la empresa
+          const todosLosMovimientos = await db.collection('companies').doc(companyId).collection('caja').collection('movimientos').get();
           
           todosLosMovimientos.forEach(doc => {
             const mov = doc.data();
@@ -205,10 +215,11 @@ const cajaRoutes = async (req, res, path) => {
             if (mov.tipo === 'egreso') saldoAcumulado -= parseFloat(mov.monto);
           });
           
-          // Guardar el saldo calculado
-          await db.collection(COLECCION_SALDO_CAJA).doc('actual').set({
+          // Crear el documento de saldo para la empresa
+          await saldoRef.set({
             saldo: saldoAcumulado,
-            fechaActualizacion: admin.firestore.FieldValue.serverTimestamp()
+            fechaActualizacion: admin.firestore.FieldValue.serverTimestamp(),
+            companyId: companyId
           });
         }
         
@@ -237,19 +248,26 @@ const cajaRoutes = async (req, res, path) => {
       }
       
       try {
-        // Obtener saldo del sistema
-        const saldoDoc = await db.collection(COLECCION_SALDO_CAJA).doc('actual').get();
+        if (!companyId) {
+          console.log('⚠️ [CAJA] No hay companyId, no se puede verificar saldo');
+          return res.status(400).json({ success: false, message: 'CompanyId requerido' });
+        }
+        
+        // Obtener saldo del sistema desde la estructura separada por empresa
+        const saldoRef = db.collection('companies').doc(companyId).collection('caja').doc('saldo');
+        const saldoDoc = await saldoRef.get();
         const saldoSistema = saldoDoc.exists ? saldoDoc.data().saldo || 0 : 0;
         
         const diferencia = parseFloat(saldoFisico) - saldoSistema;
         
-        // Guardar verificación
-        await db.collection(COLECCION_SALDO_CAJA).doc('verificaciones').collection('registros').add({
+        // Guardar verificación en la estructura separada por empresa
+        await db.collection('companies').doc(companyId).collection('caja').collection('verificaciones').add({
           saldoFisico: parseFloat(saldoFisico),
           saldoSistema,
           diferencia,
           fechaVerificacion: admin.firestore.FieldValue.serverTimestamp(),
-          usuario: req.body.usuario || 'sistema'
+          usuario: req.body.usuario || 'sistema',
+          companyId: companyId
         });
         
         console.log(`✅ [CAJA] Verificación guardada - Físico: ${saldoFisico}, Sistema: ${saldoSistema}, Diferencia: ${diferencia}`);
@@ -279,7 +297,13 @@ const cajaRoutes = async (req, res, path) => {
       console.log('💰 [CAJA] Eliminando movimiento:', movimientoId);
       
       try {
-        const movimientoDoc = await db.collection(COLECCION_CAJA).doc(movimientoId).get();
+        if (!companyId) {
+          console.log('⚠️ [CAJA] No hay companyId, no se puede eliminar movimiento');
+          return res.status(400).json({ success: false, message: 'CompanyId requerido' });
+        }
+        
+        const movimientoRef = db.collection('companies').doc(companyId).collection('caja').collection('movimientos').doc(movimientoId);
+        const movimientoDoc = await movimientoRef.get();
         
         if (!movimientoDoc.exists) {
           console.log('❌ [CAJA] Movimiento no encontrado:', movimientoId);
@@ -293,9 +317,9 @@ const cajaRoutes = async (req, res, path) => {
         
         // Actualizar saldo acumulado (revertir el movimiento)
         const montoRevertir = movimiento.tipo === 'ingreso' ? -parseFloat(movimiento.monto) : parseFloat(movimiento.monto);
-        await actualizarSaldoAcumulado(movimiento.tipo === 'ingreso' ? 'egreso' : 'ingreso', Math.abs(montoRevertir));
+        await actualizarSaldoAcumulado(movimiento.tipo === 'ingreso' ? 'egreso' : 'ingreso', Math.abs(montoRevertir), companyId);
         
-        await db.collection(COLECCION_CAJA).doc(movimientoId).delete();
+        await movimientoRef.delete();
         
         console.log('✅ [CAJA] Movimiento eliminado:', movimientoId);
         res.json({ 
@@ -327,9 +351,15 @@ const cajaRoutes = async (req, res, path) => {
 };
 
 // Función helper para actualizar saldo acumulado
-const actualizarSaldoAcumulado = async (tipo, monto) => {
+const actualizarSaldoAcumulado = async (tipo, monto, companyId) => {
   try {
-    const saldoRef = db.collection(COLECCION_SALDO_CAJA).doc('actual');
+    if (!companyId) {
+      console.warn('⚠️ [CAJA] No se proporcionó companyId para actualizar saldo');
+      return;
+    }
+    
+    // Usar estructura separada por empresa: companies/{companyId}/caja/saldo
+    const saldoRef = db.collection('companies').doc(companyId).collection('caja').doc('saldo');
     const saldoDoc = await saldoRef.get();
     
     let saldoActual = 0;
@@ -342,10 +372,11 @@ const actualizarSaldoAcumulado = async (tipo, monto) => {
     
     await saldoRef.set({
       saldo: nuevoSaldo,
-      fechaActualizacion: admin.firestore.FieldValue.serverTimestamp()
+      fechaActualizacion: admin.firestore.FieldValue.serverTimestamp(),
+      companyId: companyId
     });
     
-    console.log(`💰 [CAJA] Saldo actualizado - Anterior: ${saldoActual}, Nuevo: ${nuevoSaldo}`);
+    console.log(`💰 [CAJA] Saldo actualizado para empresa ${companyId} - Anterior: ${saldoActual}, Nuevo: ${nuevoSaldo}`);
   } catch (error) {
     console.error('❌ [CAJA] Error actualizando saldo acumulado:', error);
   }
