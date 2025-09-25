@@ -1,6 +1,7 @@
 // functions/index.js - VERSIÓN MODIFICADA PARA MIGRACIÓN + CONFIGURACIÓN
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const { getModulesForPlan, normalizePlan, DEFAULT_PLAN } = require('./utils/planModules');
 
 // ==================== INICIALIZAR FIREBASE PRIMERO ====================
 admin.initializeApp();
@@ -592,17 +593,37 @@ exports.api = functions.https.onRequest(async (req, res) => {
         // PUT /admin/empresas/:id/licencia -> actualizar licencia centralizada
         if (path.match(/^\/admin\/empresas\/[^/]+\/licencia$/) && req.method === 'PUT') {
           const companyId = path.split('/')[3];
-          const payload = req.body || {};
-          payload.updatedAt = new Date().toISOString();
+          const payload = Object.assign({}, req.body || {});
+          const normalizedPlan = normalizePlan(payload.plan);
+          const timestamp = new Date().toISOString();
+          payload.plan = normalizedPlan;
+          payload.updatedAt = timestamp;
           await db.collection('licenses').doc(companyId).set(payload, { merge: true });
           await db.collection('companies').doc(companyId).collection('config').doc('license').set(payload, { merge: true });
-          return res.json({ success:true });
+
+          const modulesPayload = Object.assign({}, getModulesForPlan(normalizedPlan), {
+            plan: normalizedPlan,
+            updatedAt: timestamp,
+            enforcedByPlan: true,
+            updatedBy: req.user?.uid || null
+          });
+          await db.collection('companies').doc(companyId).collection('config').doc('modules').set(modulesPayload, { merge: true });
+          await db.collection('tenants').doc(companyId).collection('config').doc('modules').set(modulesPayload, { merge: true });
+
+          return res.json({ success:true, modules: modulesPayload });
         }
 
         // PUT /admin/empresas/:id/modulos -> actualizar módulos centralizados
         if (path.match(/^\/admin\/empresas\/[^/]+\/modulos$/) && req.method === 'PUT') {
           const companyId = path.split('/')[3];
-          const payload = Object.assign({}, req.body || {}, { updatedAt: new Date().toISOString() });
+          const incoming = req.body || {};
+          const normalizedPlan = normalizePlan(incoming.plan || DEFAULT_PLAN);
+          const timestamp = new Date().toISOString();
+          const payload = Object.assign({}, incoming, {
+            plan: normalizedPlan,
+            updatedAt: timestamp,
+            updatedBy: req.user?.uid || null
+          });
           await db.collection('companies').doc(companyId).collection('config').doc('modules').set(payload, { merge: true });
           await db.collection('tenants').doc(companyId).collection('config').doc('modules').set(payload, { merge: true });
           return res.json({ success:true });

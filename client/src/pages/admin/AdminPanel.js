@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import ApiService from '../../services/api.service';
 import { toast } from 'react-toastify';
+import { PLANES, getModulesForPlan, normalizePlan } from '../../config/planes';
 
 const api = new ApiService('/admin');
 
@@ -35,8 +36,13 @@ const AdminPanel = () => {
     try {
       if (!editLic) return;
       setSaving(true);
-      const payload = { plan: editLic.plan||'basic', paidUntil: editLic.paidUntil||'', blocked: !!editLic.blocked, reason: editLic.reason||'' };
+      const normalizedPlan = normalizePlan(editLic.plan);
+      const payload = { plan: normalizedPlan, paidUntil: editLic.paidUntil||'', blocked: !!editLic.blocked, reason: editLic.reason||'' };
       const { status } = await api.put(`/empresas/${editLic.id}/licencia`, payload);
+      if (status === 200) {
+        const modules = getModulesForPlan(normalizedPlan);
+        await api.put(`/empresas/${editLic.id}/modulos`, { ...modules, plan: normalizedPlan });
+      }
       if (status === 200) { toast.success('Licencia actualizada'); setEditLic(null); await cargar(); }
       else toast.error('No se pudo actualizar licencia');
     } catch(e){ toast.error('Error al actualizar licencia'); }
@@ -47,7 +53,9 @@ const AdminPanel = () => {
     try {
       if (!editMods) return;
       setSaving(true);
-      const { status } = await api.put(`/empresas/${editMods.id}/modulos`, editMods.modules || {});
+      const normalizedPlan = normalizePlan(editMods.modules?.plan || editLic?.plan);
+      const payload = { ...editMods.modules, plan: normalizedPlan };
+      const { status } = await api.put(`/empresas/${editMods.id}/modulos`, payload || {});
       if (status === 200) { toast.success('Módulos actualizados'); setEditMods(null); await cargar(); }
       else toast.error('No se pudieron actualizar módulos');
     } catch(e){ toast.error('Error al actualizar módulos'); }
@@ -93,17 +101,18 @@ const AdminPanel = () => {
           <tbody>
             {empresas.map((e)=>{
               const lic = e.license || {};
+              const planKey = normalizePlan(lic.plan);
               const paid = lic.paidUntil ? new Date(lic.paidUntil).toISOString().substring(0,10) : '';
               return (
                 <tr key={e.id} className="border-t">
                   <td className="px-4 py-2">{e.name||'(sin nombre)'}</td>
                   <td className="px-4 py-2">{e.ownerEmail || '(sin email)'}</td>
-                  <td className="px-4 py-2">{lic.plan||'basic'}</td>
+                  <td className="px-4 py-2">{PLANES[planKey]?.label || PLANES.basico.label}</td>
                   <td className="px-4 py-2">{paid}</td>
                   <td className="px-4 py-2">{e.daysLeft ?? '-'}</td>
                   <td className="px-4 py-2">{lic.blocked? 'Sí':'No'}</td>
                   <td className="px-4 py-2 space-x-2">
-                    <button className="px-2 py-1 bg-indigo-600 text-white rounded" onClick={()=> setEditLic({ id:e.id, plan: lic.plan||'basic', paidUntil: lic.paidUntil||'', blocked: !!lic.blocked, reason: lic.reason||'' })}>Licencia</button>
+                    <button className="px-2 py-1 bg-indigo-600 text-white rounded" onClick={()=> setEditLic({ id:e.id, plan: normalizePlan(lic.plan), paidUntil: lic.paidUntil||'', blocked: !!lic.blocked, reason: lic.reason||'' })}>Licencia</button>
                     <button className="px-2 py-1 bg-gray-700 text-white rounded" onClick={()=> abrirModulos(e.id)}>Módulos</button>
                   </td>
                 </tr>
@@ -120,10 +129,10 @@ const AdminPanel = () => {
             <div className="space-y-3">
               <div>
                 <label className="text-sm">Plan</label>
-                <select className="input w-full" value={editLic.plan} onChange={e=> setEditLic(prev=>({...prev, plan:e.target.value}))}>
-                  <option value="basic">Basic</option>
-                  <option value="pro">Pro</option>
-                  <option value="enterprise">Enterprise</option>
+                <select className="input w-full" value={editLic.plan} onChange={e=> setEditLic(prev=>({...prev, plan: normalizePlan(e.target.value)}))}>
+                  {Object.entries(PLANES).map(([key, info]) => (
+                    <option key={key} value={key}>{info.label}</option>
+                  ))}
                 </select>
               </div>
               <div>
