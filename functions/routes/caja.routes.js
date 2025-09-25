@@ -44,7 +44,7 @@ const cajaRoutes = async (req, res, path) => {
         return res.status(400).json({ success: false, message: 'CompanyId requerido' });
       }
       
-      const docRef = await db.collection('companies').doc(companyId).collection('caja').collection('movimientos').add(movimiento);
+      const docRef = await db.collection('companies').doc(companyId).collection('caja/movimientos').add(movimiento);
       
       // Actualizar saldo acumulado
       await actualizarSaldoAcumulado(tipo, parseFloat(monto), companyId);
@@ -71,7 +71,7 @@ const cajaRoutes = async (req, res, path) => {
         }
         
         // Consultar movimientos usando estructura separada por empresa
-        const query = db.collection('companies').doc(companyId).collection('caja').collection('movimientos').where('fecha', '==', fecha);
+        const query = db.collection('companies').doc(companyId).collection('caja/movimientos').where('fecha', '==', fecha);
         console.log(`💰 [CAJA] Obteniendo movimientos para empresa: ${companyId} y fecha: ${fecha}`);
 
         const snapshot = await query.get();
@@ -112,7 +112,7 @@ const cajaRoutes = async (req, res, path) => {
         }
         
         // Usar estructura separada por empresa
-        const query = db.collection('companies').doc(companyId).collection('caja').collection('movimientos');
+        const query = db.collection('companies').doc(companyId).collection('caja/movimientos');
         console.log(`💰 [CAJA] Obteniendo movimientos acumulados para empresa: ${companyId}`);
         
         const movimientosSnapshot = await query
@@ -157,7 +157,7 @@ const cajaRoutes = async (req, res, path) => {
         }
         
         // Usar estructura separada por empresa
-        const query = db.collection('companies').doc(companyId).collection('caja').collection('movimientos').where('fecha', '==', fecha);
+        const query = db.collection('companies').doc(companyId).collection('caja/movimientos').where('fecha', '==', fecha);
         console.log(`💰 [CAJA] Calculando resumen para empresa: ${companyId} y fecha: ${fecha}`);
         
         const movimientosSnapshot = await query.get();
@@ -207,7 +207,7 @@ const cajaRoutes = async (req, res, path) => {
           saldoAcumulado = saldoDoc.data().saldo || 0;
         } else {
           // Si no existe, calcular desde todos los movimientos de la empresa
-          const todosLosMovimientos = await db.collection('companies').doc(companyId).collection('caja').collection('movimientos').get();
+          const todosLosMovimientos = await db.collection('companies').doc(companyId).collection('caja/movimientos').get();
           
           todosLosMovimientos.forEach(doc => {
             const mov = doc.data();
@@ -261,7 +261,7 @@ const cajaRoutes = async (req, res, path) => {
         const diferencia = parseFloat(saldoFisico) - saldoSistema;
         
         // Guardar verificación en la estructura separada por empresa
-        await db.collection('companies').doc(companyId).collection('caja').collection('verificaciones').add({
+        await db.collection('companies').doc(companyId).collection('caja/verificaciones').add({
           saldoFisico: parseFloat(saldoFisico),
           saldoSistema,
           diferencia,
@@ -302,7 +302,7 @@ const cajaRoutes = async (req, res, path) => {
           return res.status(400).json({ success: false, message: 'CompanyId requerido' });
         }
         
-        const movimientoRef = db.collection('companies').doc(companyId).collection('caja').collection('movimientos').doc(movimientoId);
+        const movimientoRef = db.collection('companies').doc(companyId).collection('caja/movimientos').doc(movimientoId);
         const movimientoDoc = await movimientoRef.get();
         
         if (!movimientoDoc.exists) {
