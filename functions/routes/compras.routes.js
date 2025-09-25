@@ -488,7 +488,8 @@ const comprasRoutes = async (req, res, path) => {
             referencia_id: docRef.id,
             proveedor_id: compraFirebase.proveedor_id || null,
             sucursal_id: compraFirebase.sucursal_id || sucursalPrincipalId || null,
-            fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
+            fechaCreacion: admin.firestore.FieldValue.serverTimestamp(),
+            ...(companyId ? { orgId: companyId } : {})
           });
           console.log('💸 [CAJA] Egreso registrado por compra:', { id: docRef.id, monto: montoEgreso });
         } catch (e) {

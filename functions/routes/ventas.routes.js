@@ -983,21 +983,22 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		  const fechaISO = new Date().toISOString();
 		  const fechaDia = fechaISO.split('T')[0];
 		  const montoIngreso = parseFloat(ventaFirebase.total_pagado || ventaFirebase.total || 0) || 0;
-		  await db.collection('movimientos_caja').add({
-			 tipo: 'ingreso',
-			 monto: montoIngreso,
-			 concepto: `Venta ${ventaFirebase.numero} a ${ventaFirebase?.cliente_info?.nombre_completo || ventaFirebase?.cliente_info?.nombre || 'Cliente'}`,
-			 usuario: req.user?.email || req.user?.uid || 'sistema',
-			 observaciones: ventaFirebase.metodo_pago ? `Método: ${ventaFirebase.metodo_pago}` : '',
-			 fecha: fechaDia,
-			 hora: fechaISO.split('T')[1]?.slice(0,8) || '',
-			 referencia_tipo: 'venta',
-			 referencia_id: resultado,
-			 cliente_id: venta.cliente_id || null,
-			 cliente_nombre: ventaFirebase?.cliente_info?.nombre_completo || null,
-			 sucursal_id: venta.sucursal_id || null,
-			 fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
-		  });
+                  await db.collection('movimientos_caja').add({
+                         tipo: 'ingreso',
+                         monto: montoIngreso,
+                         concepto: `Venta ${ventaFirebase.numero} a ${ventaFirebase?.cliente_info?.nombre_completo || ventaFirebase?.cliente_info?.nombre || 'Cliente'}`,
+                         usuario: req.user?.email || req.user?.uid || 'sistema',
+                         observaciones: ventaFirebase.metodo_pago ? `Método: ${ventaFirebase.metodo_pago}` : '',
+                         fecha: fechaDia,
+                         hora: fechaISO.split('T')[1]?.slice(0,8) || '',
+                         referencia_tipo: 'venta',
+                         referencia_id: resultado,
+                         cliente_id: venta.cliente_id || null,
+                         cliente_nombre: ventaFirebase?.cliente_info?.nombre_completo || null,
+                         sucursal_id: venta.sucursal_id || null,
+                         fechaCreacion: admin.firestore.FieldValue.serverTimestamp(),
+                         ...(companyId ? { orgId: companyId } : {})
+                  });
 		  console.log('💰 [CAJA] Ingreso registrado por venta:', { id: resultado, monto: montoIngreso });
 		} catch (e) {
 		  console.warn('⚠️ [CAJA] No se pudo registrar ingreso por venta:', e.message);
