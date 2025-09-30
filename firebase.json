@@ -20,6 +20,7 @@
     }
   ],
   "hosting": {
+    "site": "nexopos-dc",
     "public": "client/build",
     "ignore": [
       "firebase.json",

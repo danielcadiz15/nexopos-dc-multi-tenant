@@ -242,22 +242,21 @@ const enriquecerDetallesConProductos = async (compras) => {
 const comprasRoutes = async (req, res, path) => {
   try {
     const pathParts = path.split('/').filter(p => p);
-    const companyId = req.companyId || req.user?.companyId || null;
+    const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
     
     // Reemplazar estos bloques en compras.routes.js
 
 	// COMPRAS - GET todas (LÍNEAS ~30-70) - REEMPLAZAR POR ESTO:
 	if (req.method === 'GET' && pathParts.length === 1) {
 	  try {
-		let query = db.collection('compras');
-		
-		// Filtrar por companyId si está disponible
-		if (companyId) {
-		  query = query.where('orgId', '==', companyId);
-		  console.log(`🔍 [MULTI-TENANT] Filtrando compras por companyId: ${companyId}`);
+		if (!companyId) {
+		  console.log('⚠️ [COMPRAS] companyId requerido para obtener compras');
+		  return res.status(400).json({ success:false, message:'CompanyId requerido' });
 		}
+		let query = db.collection('companies').doc(companyId).collection('compras');
 		
-		const comprasSnapshot = await query.orderBy('fecha', 'desc').get();
+		// Evitar índices compuestos: obtener sin orderBy y ordenar en memoria
+		const comprasSnapshot = await query.get();
 		const compras = [];
 		
 		comprasSnapshot.forEach(doc => {
@@ -265,6 +264,13 @@ const comprasRoutes = async (req, res, path) => {
 			id: doc.id,
 			...doc.data()
 		  });
+		});
+		
+		// Ordenar en memoria por fecha descendente (ISO o Timestamp)
+		compras.sort((a, b) => {
+		  const ta = a.fecha && a.fecha.toMillis ? a.fecha.toMillis() : new Date(a.fecha || 0).getTime();
+		  const tb = b.fecha && b.fecha.toMillis ? b.fecha.toMillis() : new Date(b.fecha || 0).getTime();
+		  return tb - ta;
 		});
 		
 		// ✅ PASO 1: Enriquecer compras con información de proveedores
@@ -296,7 +302,25 @@ const comprasRoutes = async (req, res, path) => {
 	if (req.method === 'GET' && pathParts.length === 2) {
 	  try {
 		const compraId = pathParts[1];
-		const compraDoc = await db.collection('compras').doc(compraId).get();
+		let compraDoc = null;
+		if (companyId) {
+		  compraDoc = await db.collection('companies').doc(companyId).collection('compras').doc(compraId).get();
+		}
+		// Fallback: buscar en colección global para compatibilidad
+		if (!compraDoc || !compraDoc.exists) {
+		  const globalDoc = await db.collection('compras').doc(compraId).get();
+		  if (globalDoc.exists) {
+			const data = globalDoc.data() || {};
+			// Si tiene orgId y no coincide con companyId (si existe), denegar
+			if (companyId && data.orgId && data.orgId !== companyId) {
+			  return res.status(404).json({ success:false, message:'Compra no encontrada' });
+			}
+			return res.json({ success:true, data: { id: globalDoc.id, ...data }, message:'Compra obtenida (legacy)' });
+		  }
+		}
+		if (!compraDoc || !compraDoc.exists) {
+		  return res.status(404).json({ success:false, message:'Compra no encontrada' });
+		}
 		
 		if (!compraDoc.exists) {
 		  res.status(404).json({
@@ -357,8 +381,11 @@ const comprasRoutes = async (req, res, path) => {
       }
       
       try {
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido' });
+        }
         // Obtener la sucursal principal
-        const sucursalPrincipalSnapshot = await db.collection('sucursales')
+        const sucursalPrincipalSnapshot = await db.collection('companies').doc(companyId).collection('sucursales')
           .where('tipo', '==', 'principal')
           .limit(1)
           .get();
@@ -376,7 +403,7 @@ const comprasRoutes = async (req, res, path) => {
             fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
           };
           
-          const sucursalRef = await db.collection('sucursales').add(nuevaSucursal);
+          const sucursalRef = await db.collection('companies').doc(companyId).collection('sucursales').add(nuevaSucursal);
           var sucursalPrincipalId = sucursalRef.id;
           
           console.log('✅ Sucursal principal creada:', sucursalPrincipalId);
@@ -398,12 +425,13 @@ const comprasRoutes = async (req, res, path) => {
         };
         
         // Crear la compra
-        const docRef = await db.collection('compras').add(compraFirebase);
+        const docRef = await db.collection('companies').doc(companyId).collection('compras').add(compraFirebase);
         console.log('✅ Compra creada con ID:', docRef.id);
         
         // Si la compra está completada, actualizar stock
         if (compraFirebase.estado === 'completada' && Array.isArray(compraFirebase.detalles)) {
-          console.log('🔄 Actualizando stock en sucursal principal...');
+          const destinoSucursalId = compraFirebase.sucursal_id || sucursalPrincipalId;
+          console.log(`🔄 Actualizando stock en sucursal destino: ${destinoSucursalId}`);
           
           const batch = db.batch();
           
@@ -412,9 +440,9 @@ const comprasRoutes = async (req, res, path) => {
               console.log(`  📦 Procesando producto ${detalle.producto_id}, cantidad: ${detalle.cantidad}`);
               
               // Buscar stock existente
-              const stockQuery = await db.collection('stock_sucursal')
+              const stockQuery = await db.collection('companies').doc(companyId).collection('stock_sucursal')
                 .where('producto_id', '==', detalle.producto_id)
-                .where('sucursal_id', '==', sucursalPrincipalId)
+                .where('sucursal_id', '==', destinoSucursalId)
                 .limit(1)
                 .get();
               
@@ -422,10 +450,10 @@ const comprasRoutes = async (req, res, path) => {
                 // Crear nuevo registro de stock
                 console.log(`  🆕 Creando stock para producto ${detalle.producto_id}`);
                 
-                const nuevoStockRef = db.collection('stock_sucursal').doc();
+                const nuevoStockRef = db.collection('companies').doc(companyId).collection('stock_sucursal').doc();
                 batch.set(nuevoStockRef, {
                   producto_id: detalle.producto_id,
-                  sucursal_id: sucursalPrincipalId,
+                  sucursal_id: destinoSucursalId,
                   cantidad: parseFloat(parseFloat(detalle.cantidad).toFixed(3)),
                   stock_minimo: 5,
                   ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp()
@@ -451,9 +479,9 @@ const comprasRoutes = async (req, res, path) => {
               }
               
               // Crear movimiento de stock
-              const movimientoRef = db.collection('movimientos_stock').doc();
+              const movimientoRef = db.collection('companies').doc(companyId).collection('movimientos_stock').doc();
               batch.set(movimientoRef, {
-                sucursal_id: sucursalPrincipalId,
+                sucursal_id: destinoSucursalId,
                 producto_id: detalle.producto_id,
                 tipo: 'entrada',
                 cantidad: parseFloat(detalle.cantidad),
@@ -476,7 +504,7 @@ const comprasRoutes = async (req, res, path) => {
           const fechaISO = new Date().toISOString();
           const fechaDia = fechaISO.split('T')[0];
           const montoEgreso = parseFloat(compraFirebase.total || compraFirebase.subtotal || 0) || 0;
-          await db.collection('movimientos_caja').add({
+          await db.collection('companies').doc(companyId).collection('caja').doc('principal').collection('movimientos').add({
             tipo: 'egreso',
             monto: montoEgreso,
             concepto: `Compra ${docRef.id} a ${compraFirebase.proveedor_nombre || compraFirebase.proveedor || 'Proveedor'}`,
@@ -577,7 +605,24 @@ const comprasRoutes = async (req, res, path) => {
         console.log(`📦 [COMPRAS] Actualizando compra ${compraId}:`, datosActualizados);
         
         // Obtener la compra actual
-        const compraDoc = await db.collection('compras').doc(compraId).get();
+        let compraDoc = null;
+        if (companyId) {
+          compraDoc = await db.collection('companies').doc(companyId).collection('compras').doc(compraId).get();
+        }
+        // Fallback a legacy si no se encontró en tenant
+        let esLegacy = false;
+        if (!compraDoc || !compraDoc.exists) {
+          const legacyDoc = await db.collection('compras').doc(compraId).get();
+          if (!legacyDoc.exists) {
+            return res.status(404).json({ success:false, message:'Compra no encontrada' });
+          }
+          // Validar orgId si hay companyId
+          if (companyId && legacyDoc.get('orgId') && legacyDoc.get('orgId') !== companyId) {
+            return res.status(404).json({ success:false, message:'Compra no encontrada' });
+          }
+          compraDoc = legacyDoc;
+          esLegacy = true;
+        }
         
         if (!compraDoc.exists) {
           res.status(404).json({
@@ -645,7 +690,7 @@ const comprasRoutes = async (req, res, path) => {
                   console.log(`  📦 Actualizando stock producto ${detalle.producto_id}: +${cantidadRecibida}`);
                   
                   // Buscar stock existente
-                  const stockQuery = await db.collection('stock_sucursal')
+                  const stockQuery = await (companyId ? db.collection('companies').doc(companyId).collection('stock_sucursal') : db.collection('stock_sucursal'))
                     .where('producto_id', '==', detalle.producto_id)
                     .where('sucursal_id', '==', sucursalId)
                     .limit(1)
@@ -653,7 +698,7 @@ const comprasRoutes = async (req, res, path) => {
                   
                   if (stockQuery.empty) {
                     // Crear nuevo stock
-                    const nuevoStockRef = db.collection('stock_sucursal').doc();
+                    const nuevoStockRef = (companyId ? db.collection('companies').doc(companyId).collection('stock_sucursal') : db.collection('stock_sucursal')).doc();
                     transaction.set(nuevoStockRef, {
                       producto_id: detalle.producto_id,
                       sucursal_id: sucursalId,
@@ -677,7 +722,7 @@ const comprasRoutes = async (req, res, path) => {
                   }
                   
                   // Crear movimiento de stock
-                  const movimientoRef = db.collection('movimientos_stock').doc();
+                  const movimientoRef = (companyId ? db.collection('companies').doc(companyId).collection('movimientos_stock') : db.collection('movimientos_stock')).doc();
                   transaction.set(movimientoRef, {
                     sucursal_id: sucursalId,
                     producto_id: detalle.producto_id,
@@ -735,7 +780,7 @@ const comprasRoutes = async (req, res, path) => {
         console.log(`📦 [COMPRAS] Recibiendo mercadería de compra: ${compraId}`);
         
         // Obtener la compra
-        const compraDoc = await db.collection('compras').doc(compraId).get();
+        let compraDoc = await (companyId ? db.collection('companies').doc(companyId).collection('compras').doc(compraId) : db.collection('compras').doc(compraId)).get();
         
         if (!compraDoc.exists) {
           res.status(404).json({
@@ -803,7 +848,7 @@ const comprasRoutes = async (req, res, path) => {
               console.log(`  📦 Procesando producto ${detalle.producto_id}: +${cantidadRecibida}`);
               
               // Buscar stock existente
-              const stockQuery = await db.collection('stock_sucursal')
+          const stockQuery = await (companyId ? db.collection('companies').doc(companyId).collection('stock_sucursal') : db.collection('stock_sucursal'))
                 .where('producto_id', '==', detalle.producto_id)
                 .where('sucursal_id', '==', sucursalId)
                 .limit(1)
@@ -813,7 +858,7 @@ const comprasRoutes = async (req, res, path) => {
                 // Crear nuevo registro de stock
                 console.log(`    🆕 Creando nuevo stock para producto ${detalle.producto_id}`);
                 
-                const nuevoStockRef = db.collection('stock_sucursal').doc();
+                const nuevoStockRef = (companyId ? db.collection('companies').doc(companyId).collection('stock_sucursal') : db.collection('stock_sucursal')).doc();
                 transaction.set(nuevoStockRef, {
                   producto_id: detalle.producto_id,
                   sucursal_id: sucursalId,
@@ -837,7 +882,7 @@ const comprasRoutes = async (req, res, path) => {
               }
               
               // 3. Crear movimiento de stock
-              const movimientoRef = db.collection('movimientos_stock').doc();
+              const movimientoRef = (companyId ? db.collection('companies').doc(companyId).collection('movimientos_stock') : db.collection('movimientos_stock')).doc();
               transaction.set(movimientoRef, {
                 sucursal_id: sucursalId,
                 producto_id: detalle.producto_id,

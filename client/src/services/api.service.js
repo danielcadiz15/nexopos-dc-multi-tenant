@@ -33,9 +33,25 @@ class ApiService {
 
   buildUrl(endpoint = '', params) {
     const url = `${this.baseURL}${this.basePath}${endpoint}`;
-    if (!params || Object.keys(params).length === 0) return url;
+    // Inyectar orgId automáticamente si está disponible y no viene en params
+    let finalParams = params || {};
+    try {
+      const alreadyHasOrg = finalParams && Object.prototype.hasOwnProperty.call(finalParams, 'orgId');
+      if (!alreadyHasOrg) {
+        let orgId;
+        try { orgId = window?.authContext?.orgId || window?.authContext?.state?.orgId; } catch {}
+        if (!orgId) {
+          try { orgId = localStorage.getItem('orgId'); } catch {}
+        }
+        if (orgId) {
+          finalParams = { ...finalParams, orgId };
+        }
+      }
+    } catch {}
+
+    if (!finalParams || Object.keys(finalParams).length === 0) return url;
     const qs = new URLSearchParams();
-    Object.entries(params).forEach(([k, v]) => {
+    Object.entries(finalParams).forEach(([k, v]) => {
       if (v === undefined || v === null) return;
       qs.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
     });
@@ -54,9 +70,9 @@ class ApiService {
     return { data, status: response.status };
   }
 
-  async post(endpoint = '', data = {}) {
+  async post(endpoint = '', data = {}, params = {}) {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(this.buildUrl(endpoint), {
+    const response = await fetch(this.buildUrl(endpoint, params), {
       method: 'POST',
       headers,
       body: JSON.stringify(data)
@@ -70,9 +86,9 @@ class ApiService {
     return { data: responseData, status: response.status };
   }
 
-  async put(endpoint = '', data = {}) {
+  async put(endpoint = '', data = {}, params = {}) {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(this.buildUrl(endpoint), {
+    const response = await fetch(this.buildUrl(endpoint, params), {
       method: 'PUT',
       headers,
       body: JSON.stringify(data)
@@ -86,9 +102,9 @@ class ApiService {
     return { data: responseData, status: response.status };
   }
 
-  async delete(endpoint = '', data = {}) {
+  async delete(endpoint = '', data = {}, params = {}) {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(this.buildUrl(endpoint), {
+    const response = await fetch(this.buildUrl(endpoint, params), {
       method: 'DELETE',
       headers,
       body: Object.keys(data || {}).length ? JSON.stringify(data) : undefined

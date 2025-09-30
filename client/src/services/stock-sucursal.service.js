@@ -14,10 +14,10 @@ class StockSucursalService extends FirebaseService {
    * @param {string} sucursalId - ID de la sucursal
    * @returns {Promise<Array>} Lista de productos con stock
    */
-  async obtenerStockPorSucursal(sucursalId) {
+  async obtenerStockPorSucursal(sucursalId, orgId) {
     try {
       console.log(`📦 Obteniendo stock de sucursal ${sucursalId}`);
-      const stock = await this.get(`/sucursal/${sucursalId}`);
+      const stock = await this.get(`/sucursal/${sucursalId}`, { orgId });
       
       const stockArray = this.ensureArray(stock);
       console.log(`✅ Stock obtenido: ${stockArray.length} productos`);
@@ -34,10 +34,10 @@ class StockSucursalService extends FirebaseService {
    * @param {string} productoId - ID del producto
    * @returns {Promise<Array>} Stock del producto por sucursal
    */
-  async obtenerStockPorProducto(productoId) {
+  async obtenerStockPorProducto(productoId, orgId) {
     try {
       console.log(`📦 Obteniendo stock del producto ${productoId} en todas las sucursales`);
-      const stock = await this.get(`/producto/${productoId}`);
+      const stock = await this.get(`/producto/${productoId}`, { orgId });
       
       const stockArray = this.ensureArray(stock);
       console.log(`✅ Stock del producto en ${stockArray.length} sucursales`);
@@ -56,11 +56,11 @@ class StockSucursalService extends FirebaseService {
    * @param {number} cantidad - Nueva cantidad
    * @returns {Promise<Object>} Respuesta de la actualización
    */
-  async actualizarStock(sucursalId, productoId, cantidad) {
+  async actualizarStock(sucursalId, productoId, cantidad, orgId) {
     try {
       console.log(`🔄 Actualizando stock: Sucursal ${sucursalId}, Producto ${productoId}, Cantidad: ${cantidad}`);
       
-      const resultado = await this.put(`/${sucursalId}/${productoId}`, { cantidad });
+      const resultado = await this.put(`/${sucursalId}/${productoId}`, { cantidad }, { orgId });
       
       console.log('✅ Stock actualizado correctamente');
       return resultado;
@@ -78,7 +78,7 @@ class StockSucursalService extends FirebaseService {
    * @param {string} motivo - Motivo del ajuste
    * @returns {Promise<Object>} Respuesta del ajuste
    */
-  async ajustarStock(sucursalId, productoId, ajuste, motivo) {
+  async ajustarStock(sucursalId, productoId, ajuste, motivo, orgId) {
     try {
       console.log(`📊 Ajustando stock: Sucursal ${sucursalId}, Producto ${productoId}, Ajuste: ${ajuste}`);
       
@@ -87,7 +87,7 @@ class StockSucursalService extends FirebaseService {
         producto_id: productoId,
         ajuste,
         motivo
-      });
+      }, { orgId });
       
       console.log('✅ Stock ajustado correctamente');
       return resultado;
@@ -102,11 +102,11 @@ class StockSucursalService extends FirebaseService {
    * @param {Object} transferencia - Datos de la transferencia
    * @returns {Promise<Object>} Respuesta de la transferencia
    */
-  async transferirStock(transferencia) {
+  async transferirStock(transferencia, orgId) {
     try {
       console.log('🚛 Creando transferencia de stock:', transferencia);
       
-      const resultado = await this.post('/transferir', transferencia);
+      const resultado = await this.post('/transferir', transferencia, { orgId });
       
       console.log('✅ Transferencia creada correctamente');
       return resultado;
@@ -121,11 +121,11 @@ class StockSucursalService extends FirebaseService {
    * @param {string} sucursalId - ID de la sucursal
    * @returns {Promise<Array>} Productos con stock bajo
    */
-  async obtenerStockBajo(sucursalId) {
+  async obtenerStockBajo(sucursalId, orgId) {
     try {
       console.log(`⚠️ Obteniendo productos con stock bajo en sucursal ${sucursalId}`);
       
-      const productos = await this.get(`/sucursal/${sucursalId}/stock-bajo`);
+      const productos = await this.get(`/sucursal/${sucursalId}/stock-bajo`, { orgId });
       
       const productosArray = this.ensureArray(productos);
       console.log(`✅ Productos con stock bajo: ${productosArray.length}`);
@@ -143,14 +143,14 @@ class StockSucursalService extends FirebaseService {
    * @param {Array} productos - Array de {producto_id, cantidad, stock_minimo}
    * @returns {Promise<Object>} Respuesta de la inicialización
    */
-  async inicializarStock(sucursalId, productos) {
+  async inicializarStock(sucursalId, productos, orgId) {
     try {
       console.log(`🆕 Inicializando stock para sucursal ${sucursalId} con ${productos.length} productos`);
       
       const resultado = await this.post('/inicializar', {
         sucursal_id: sucursalId,
         productos
-      });
+      }, { orgId });
       
       console.log('✅ Stock inicializado correctamente');
       return resultado;
@@ -166,11 +166,11 @@ class StockSucursalService extends FirebaseService {
    * @param {Object} filtros - Filtros opcionales (fecha_inicio, fecha_fin, tipo)
    * @returns {Promise<Array>} Historial de movimientos
    */
-  async obtenerMovimientos(sucursalId, filtros = {}) {
+  async obtenerMovimientos(sucursalId, filtros = {}, orgId) {
     try {
       console.log(`📋 Obteniendo movimientos de sucursal ${sucursalId}`);
       
-      const movimientos = await this.get(`/sucursal/${sucursalId}/movimientos`, filtros);
+      const movimientos = await this.get(`/sucursal/${sucursalId}/movimientos`, { ...filtros, orgId });
       
       const movimientosArray = this.ensureArray(movimientos);
       console.log(`✅ Movimientos obtenidos: ${movimientosArray.length}`);
@@ -187,10 +187,10 @@ class StockSucursalService extends FirebaseService {
    * @param {string} productoId
    * @returns {Promise<{movimientos: Array, producto: Object}>}
    */
-  async obtenerMovimientosPorProducto(productoId) {
+  async obtenerMovimientosPorProducto(productoId, orgId) {
     try {
       console.log(`📋 Obteniendo movimientos del producto ${productoId} en todas las sucursales`);
-      const movimientos = await this.get(`/producto/${productoId}/movimientos`);
+      const movimientos = await this.get(`/producto/${productoId}/movimientos`, { orgId });
       
       const movimientosArray = this.ensureArray(movimientos);
       console.log(`✅ Movimientos del producto en ${movimientosArray.length} sucursales`);

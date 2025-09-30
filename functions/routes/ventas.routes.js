@@ -5,7 +5,7 @@ const db = admin.firestore();
 const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
   try {
     // Obtener companyId para filtrado multi-tenant
-    const companyId = req.companyId || req.user?.companyId || null;
+    const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
     
     // GET /ventas - Obtener todas las ventas
     if (path === '/ventas' && req.method === 'GET') {
@@ -13,13 +13,10 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
         console.log('📋 Obteniendo listado de ventas...');
         
         // Construir query base
-        let query = db.collection('ventas');
-        
-        // Filtrar por companyId si está disponible
-        if (companyId) {
-          query = query.where('orgId', '==', companyId);
-          console.log(`🔍 [MULTI-TENANT] Filtrando ventas por companyId: ${companyId}`);
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido' });
         }
+        let query = db.collection('companies').doc(companyId).collection('ventas');
         
         // Filtros opcionales
         const { 
@@ -46,13 +43,12 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
           query = query.where('cliente_id', '==', cliente_id);
         }
         
-        // Ordenar por fecha descendente
-        query = query.orderBy('fechaCreacion', 'desc');
+        // Evitar requerir índices compuestos: no ordenar en Firestore
         
         // Aplicar paginación
         if (startAfter) {
           // Buscar el documento a partir del cual continuar
-          const docRef = await db.collection('ventas').doc(startAfter).get();
+          const docRef = await db.collection('companies').doc(companyId).collection('ventas').doc(startAfter).get();
           if (docRef.exists) {
             query = query.startAfter(docRef);
           }
@@ -75,6 +71,13 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
           ventasEnriquecidas = await enriquecerVentasConClientes(ventas);
         }
         
+        // Ordenar en memoria por fechaCreacion desc si existe
+        ventasEnriquecidas.sort((a, b) => {
+          const ta = a.fechaCreacion?.toMillis ? a.fechaCreacion.toMillis() : new Date(a.fecha || 0).getTime();
+          const tb = b.fechaCreacion?.toMillis ? b.fechaCreacion.toMillis() : new Date(b.fecha || 0).getTime();
+          return tb - ta;
+        });
+
         console.log(`✅ ${ventasEnriquecidas.length} ventas obtenidas`);
         
         // Log temporal para verificar propiedades de modificación
@@ -115,12 +118,17 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
     // GET /ventas/eliminadas - Obtener ventas eliminadas (DEBE IR ANTES DE LAS RUTAS CON PARÁMETROS)
     if (path === '/ventas/eliminadas' && req.method === 'GET') {
       try {
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido' });
+        }
         console.log('🗑️ [DEBUG] Iniciando obtención de ventas eliminadas...');
         console.log('🗑️ [DEBUG] Path recibido:', path);
         console.log('🗑️ [DEBUG] Método:', req.method);
         
-        // Verificar si la colección existe
-        const coleccionRef = db.collection('ventas_eliminadas');
+        // Verificar si la colección existe (usar tenant si está disponible)
+        const coleccionRef = companyId
+          ? db.collection('companies').doc(companyId).collection('ventas_eliminadas')
+          : db.collection('ventas_eliminadas');
         console.log('🗑️ [DEBUG] Referencia a colección creada');
         
         const ventasEliminadasSnapshot = await coleccionRef
@@ -161,63 +169,44 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
       
       return true;
     }
-    // GET /ventas/buscar - Búsqueda con filtros
+    // GET /ventas/buscar - Búsqueda con filtros (multi-tenant, sin índices compuestos)
 	if (path === '/ventas/buscar' && req.method === 'GET') {
 	  try {
 		console.log('🔍 Búsqueda de ventas con filtros');
 		
 		const { termino, sucursal_id, estado, cliente_id } = req.query;
 		
-		let query = db.collection('ventas');
+		let query = db.collection('companies').doc(companyId).collection('ventas');
 		
-		// Aplicar filtro multi-tenant
-		if (companyId) {
-		  query = query.where('orgId', '==', companyId);
-		  console.log(`🔍 [MULTI-TENANT] Filtrando ventas por companyId: ${companyId}`);
-		}
-		
-		// Aplicar filtro de sucursal
-		if (sucursal_id) {
-		  query = query.where('sucursal_id', '==', sucursal_id);
-		}
-		
-		// Aplicar filtro de estado
-		if (estado) {
-		  query = query.where('estado', '==', estado);
-		}
-		
-		// Aplicar filtro de cliente
-		if (cliente_id) {
-		  query = query.where('cliente_id', '==', cliente_id);
-		}
-		
-		// Ordenar por fecha
-		query = query.orderBy('fechaCreacion', 'desc').limit(100);
+		// Evitar índices compuestos: no combinar múltiples where distintos a igualdad con orderBy.
+		// Usamos solo limit y filtramos/ordenamos en memoria.
+		query = query.limit(200);
 		
 		const ventasSnapshot = await query.get();
-		const ventas = [];
+		let ventas = [];
 		
 		ventasSnapshot.forEach(doc => {
 		  const ventaData = doc.data();
-		  
-		  // Filtrar por término de búsqueda si existe
-		  if (termino) {
-			const terminoLower = termino.toLowerCase();
-			const numero = (ventaData.numero || '').toLowerCase();
-			const clienteNombre = (ventaData.cliente_info?.nombre_completo || '').toLowerCase();
-			
-			if (numero.includes(terminoLower) || clienteNombre.includes(terminoLower)) {
-			  ventas.push({
-				id: doc.id,
-				...ventaData
-			  });
-			}
-		  } else {
-			ventas.push({
-			  id: doc.id,
-			  ...ventaData
-			});
-		  }
+		  ventas.push({ id: doc.id, ...ventaData });
+		});
+
+		// Filtrar en memoria por sucursal, estado y cliente si se enviaron
+		if (sucursal_id) ventas = ventas.filter(v => v.sucursal_id === sucursal_id);
+		if (estado) ventas = ventas.filter(v => v.estado === estado);
+		if (cliente_id) ventas = ventas.filter(v => v.cliente_id === cliente_id);
+		if (termino) {
+		  const terminoLower = termino.toLowerCase();
+		  ventas = ventas.filter(v =>
+			(v.numero || '').toLowerCase().includes(terminoLower) ||
+			(v.cliente_info?.nombre_completo || '').toLowerCase().includes(terminoLower)
+		  );
+		}
+
+		// Ordenar en memoria por fechaCreacion desc
+		ventas.sort((a, b) => {
+		  const ta = a.fechaCreacion?.toMillis ? a.fechaCreacion.toMillis() : new Date(a.fecha || 0).getTime();
+		  const tb = b.fechaCreacion?.toMillis ? b.fechaCreacion.toMillis() : new Date(b.fecha || 0).getTime();
+		  return tb - ta;
 		});
 		
 		// Enriquecer con clientes si está disponible
@@ -247,7 +236,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 	  return true;
 	}
 
-	// GET /ventas/buscar-cliente - Buscar ventas por nombre de cliente
+    // GET /ventas/buscar-cliente - Buscar ventas por nombre de cliente (multi-tenant)
 	if (path === '/ventas/buscar-cliente' && req.method === 'GET') {
 	  try {
 		console.log('🔍 Búsqueda de ventas por nombre de cliente');
@@ -265,8 +254,8 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		const nombreCliente = nombre.trim().toLowerCase();
 		console.log(`🔍 Buscando ventas para cliente: "${nombreCliente}"`);
 		
-		// Obtener todos los clientes y filtrar localmente para búsqueda parcial
-		const clientesSnapshot = await db.collection('clientes').get();
+		// Obtener todos los clientes del tenant y filtrar localmente para búsqueda parcial
+		const clientesSnapshot = await db.collection('companies').doc(companyId).collection('clientes').get();
 		
 		const clientesIds = [];
 		clientesSnapshot.forEach(doc => {
@@ -285,22 +274,23 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		
 		console.log(`👥 Clientes encontrados: ${clientesIds.length}`);
 		
-		// Buscar ventas para todos los clientes encontrados
+		// Buscar ventas del tenant para todos los clientes encontrados
 		const ventas = [];
-		
 		for (const clienteId of clientesIds) {
-		  const ventasSnapshot = await db.collection('ventas')
+		  const ventasSnapshot = await db.collection('companies').doc(companyId).collection('ventas')
 			.where('cliente_id', '==', clienteId)
-			.orderBy('fechaCreacion', 'desc')
+			.limit(200)
 			.get();
-			
 		  ventasSnapshot.forEach(doc => {
-			ventas.push({
-			  id: doc.id,
-			  ...doc.data()
-			});
+			ventas.push({ id: doc.id, ...doc.data() });
 		  });
 		}
+		// Ordenar en memoria por fecha
+		ventas.sort((a, b) => {
+		  const ta = a.fechaCreacion?.toMillis ? a.fechaCreacion.toMillis() : new Date(a.fecha || 0).getTime();
+		  const tb = b.fechaCreacion?.toMillis ? b.fechaCreacion.toMillis() : new Date(b.fecha || 0).getTime();
+		  return tb - ta;
+		});
 		
 		// Enriquecer con clientes si está disponible
 		let ventasEnriquecidas = ventas;
@@ -641,9 +631,29 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
       }
       
       try {
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido' });
+        }
         console.log(`📋 Obteniendo venta ${ventaId}`);
         
-        const ventaDoc = await db.collection('ventas').doc(ventaId).get();
+        let ventaDoc = null;
+        if (companyId) {
+          ventaDoc = await db.collection('companies').doc(companyId).collection('ventas').doc(ventaId).get();
+        }
+        if (!ventaDoc || !ventaDoc.exists) {
+          const legacy = await db.collection('ventas').doc(ventaId).get();
+          if (legacy.exists) {
+            const data = legacy.data() || {};
+            if (companyId && data.orgId && data.orgId !== companyId) {
+              return res.status(404).json({ success:false, message:'Venta no encontrada' });
+            }
+            return res.json({ success:true, data: { id: legacy.id, ...data }, message:'Venta obtenida (legacy)' });
+          }
+        }
+        if (!ventaDoc || !ventaDoc.exists) {
+          res.status(404).json({ success:false, message:'Venta no encontrada' });
+          return true;
+        }
         
         if (!ventaDoc.exists) {
           res.status(404).json({
@@ -678,7 +688,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
         };
         
         // Obtener pagos si existen
-        const pagosSnapshot = await db.collection('ventas').doc(ventaId)
+        const pagosSnapshot = await db.collection('companies').doc(companyId).collection('ventas').doc(ventaId)
           .collection('pagos').get();
         
         const pagos = [];
@@ -719,6 +729,9 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		console.log('📥 [VENTAS] Body completo:', JSON.stringify(req.body, null, 2));
 		
 		const { venta, detalles } = req.body;
+		if (!companyId) {
+		  return res.status(400).json({ success:false, message:'CompanyId requerido' });
+		}
 
 		// VALIDACIÓN 1: Verificar estructura básica
 		if (!venta) {
@@ -758,20 +771,22 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		  return true;
 		}
 
-		// Verificar que la sucursal existe
-		console.log(`🏪 Verificando sucursal: ${venta.sucursal_id}`);
-		const sucursalDoc = await db.collection('sucursales').doc(venta.sucursal_id).get();
-		
-		if (!sucursalDoc.exists) {
-		  console.error(`❌ Sucursal ${venta.sucursal_id} no existe`);
-		  res.status(400).json({
-			success: false,
-			message: 'La sucursal especificada no existe'
-		  });
-		  return true;
-		}
-		
-		console.log(`✅ Sucursal verificada: ${sucursalDoc.data().nombre}`);
+        // Verificar que la sucursal existe (multi-tenant) o crearla si falta
+        console.log(`🏪 Verificando sucursal: ${venta.sucursal_id}`);
+        let sucursalDoc = await db.collection('companies').doc(companyId).collection('sucursales').doc(venta.sucursal_id).get();
+        if (!sucursalDoc.exists) {
+          console.warn(`⚠️ Sucursal ${venta.sucursal_id} no existe. Creando automáticamente...`);
+          const sucursalNueva = {
+            nombre: `Sucursal ${venta.sucursal_id}`,
+            tipo: venta.sucursal_id === '1' ? 'principal' : 'secundaria',
+            activa: true,
+            fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
+          };
+          await db.collection('companies').doc(companyId).collection('sucursales').doc(venta.sucursal_id).set(sucursalNueva);
+          sucursalDoc = await db.collection('companies').doc(companyId).collection('sucursales').doc(venta.sucursal_id).get();
+          console.log(`✅ Sucursal creada: ${sucursalDoc.id}`);
+        }
+        console.log(`✅ Sucursal verificada: ${sucursalDoc.data().nombre}`);
 		
 		// VALIDACIÓN 3: Verificar estructura de detalles
 		console.log('📋 Verificando estructura de detalles...');
@@ -805,7 +820,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		// VALIDACIÓN 4: Verificar stock disponible (OPTIMIZADA)
 		console.log('🔍 Verificando stock disponible en sucursal...');
 		
-		// Verificar que todos los productos existan y crear stock_sucursal si no existe
+        // Verificar que todos los productos existan y crear stock_sucursal si no existe
 		for (let i = 0; i < detalles.length; i++) {
 		  const detalle = detalles[i];
 		  console.log(`\n📦 [${i}] Verificando producto:`, {
@@ -815,8 +830,8 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 			nombre: detalle.producto_info?.nombre || 'Sin nombre'
 		  });
 		  
-		  // Buscar stock en la sucursal específica
-		  let stockQuery = await db.collection('stock_sucursal')
+          // Buscar stock en la sucursal específica (multi-tenant)
+          let stockQuery = await db.collection('companies').doc(companyId).collection('stock_sucursal')
 			.where('producto_id', '==', detalle.producto_id)
 			.where('sucursal_id', '==', venta.sucursal_id)
 			.limit(1)
@@ -825,8 +840,14 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		  if (stockQuery.empty) {
 			console.log(`⚠️ No existe stock_sucursal para producto ${detalle.producto_id}`);
 			
-			// Verificar que el producto existe
-			const productoDoc = await db.collection('productos').doc(detalle.producto_id).get();
+            // Verificar que el producto existe (tenant primero, luego global con orgId)
+            let productoDoc = await db.collection('companies').doc(companyId).collection('productos').doc(detalle.producto_id).get();
+            if (!productoDoc.exists) {
+              const globalProd = await db.collection('productos').doc(detalle.producto_id).get();
+              if (globalProd.exists && (!globalProd.get('orgId') || globalProd.get('orgId') === companyId)) {
+                productoDoc = globalProd;
+              }
+            }
 			
 			if (!productoDoc.exists) {
 			  console.error(`❌ Producto ${detalle.producto_id} NO EXISTE`);
@@ -840,11 +861,11 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 			const productoData = productoDoc.data();
 			console.log(`✅ Producto encontrado: ${productoData.nombre}, creando stock_sucursal...`);
 			
-			// Crear registro de stock_sucursal
+            // Crear registro de stock_sucursal en el tenant
 			const stockInicial = parseInt(productoData.stock_actual || 0);
 			const stockId = `${detalle.producto_id}_${venta.sucursal_id}`;
 			
-			await db.collection('stock_sucursal').doc(stockId).set({
+            await db.collection('companies').doc(companyId).collection('stock_sucursal').doc(stockId).set({
 			  producto_id: detalle.producto_id,
 			  sucursal_id: venta.sucursal_id,
 			  cantidad: stockInicial,
@@ -860,10 +881,16 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		
 		// CONTINUAR CON LA CREACIÓN DE LA VENTA
 		
-		// Obtener información del cliente si existe
+        // Obtener información del cliente si existe (tenant primero, luego global)
 		let cliente_info = null;
 		if (venta.cliente_id) {
-		  const clienteDoc = await db.collection('clientes').doc(venta.cliente_id).get();
+          let clienteDoc = await db.collection('companies').doc(companyId).collection('clientes').doc(venta.cliente_id).get();
+          if (!clienteDoc.exists) {
+            const legacyCliente = await db.collection('clientes').doc(venta.cliente_id).get();
+            if (legacyCliente.exists && (!legacyCliente.get('orgId') || legacyCliente.get('orgId') === companyId)) {
+              clienteDoc = legacyCliente;
+            }
+          }
 		  if (clienteDoc.exists) {
 			const clienteData = clienteDoc.data();
 			cliente_info = {
@@ -877,19 +904,15 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		  }
 		}
 		
-		// Generar número de venta
-		const contador = await db.collection('contadores').doc('ventas').get();
+		// Generar número de venta (multi-tenant)
+		const contador = await db.collection('companies').doc(companyId).collection('contadores').doc('ventas').get();
 		let numeroVenta = 1;
 		
 		if (contador.exists) {
 		  numeroVenta = (contador.data().ultimo || 0) + 1;
-		  await db.collection('contadores').doc('ventas').update({
-			ultimo: numeroVenta
-		  });
+		  await db.collection('companies').doc(companyId).collection('contadores').doc('ventas').update({ ultimo: numeroVenta });
 		} else {
-		  await db.collection('contadores').doc('ventas').set({
-			ultimo: numeroVenta
-		  });
+		  await db.collection('companies').doc(companyId).collection('contadores').doc('ventas').set({ ultimo: numeroVenta });
 		}
 		
 		const numeroFormateado = `V-${String(numeroVenta).padStart(6, '0')}`;
@@ -926,7 +949,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		// USAR TRANSACCIÓN PARA ASEGURAR CONSISTENCIA
 		const resultado = await db.runTransaction(async (transaction) => {
 		  // Crear la venta
-		  const ventaRef = db.collection('ventas').doc();
+		  const ventaRef = db.collection('companies').doc(companyId).collection('ventas').doc();
 		  transaction.set(ventaRef, ventaFirebase);
 		  
 		  // ACTUALIZAR STOCK EN LA SUCURSAL
@@ -934,7 +957,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		  
 		  for (const detalle of detalles) {
 			// Buscar el stock en la sucursal
-			const stockQuery = await db.collection('stock_sucursal')
+			const stockQuery = await db.collection('companies').doc(companyId).collection('stock_sucursal')
 			  .where('producto_id', '==', detalle.producto_id)
 			  .where('sucursal_id', '==', venta.sucursal_id)
 			  .limit(1)
@@ -957,7 +980,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 			  });
 			  
 			  // Registrar movimiento
-			  const movimientoRef = db.collection('movimientos_stock').doc();
+			  const movimientoRef = db.collection('companies').doc(companyId).collection('movimientos_stock').doc();
 			  transaction.set(movimientoRef, {
 				sucursal_id: venta.sucursal_id,
 				producto_id: detalle.producto_id,
@@ -978,30 +1001,37 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		});
 		
 		console.log('✅ Venta procesada correctamente con ID:', resultado);
-		// 💰 Registrar movimiento en caja (INGRESO)
-		try {
-		  const fechaISO = new Date().toISOString();
-		  const fechaDia = fechaISO.split('T')[0];
-		  const montoIngreso = parseFloat(ventaFirebase.total_pagado || ventaFirebase.total || 0) || 0;
-		  await db.collection('movimientos_caja').add({
-			 tipo: 'ingreso',
-			 monto: montoIngreso,
-			 concepto: `Venta ${ventaFirebase.numero} a ${ventaFirebase?.cliente_info?.nombre_completo || ventaFirebase?.cliente_info?.nombre || 'Cliente'}`,
-			 usuario: req.user?.email || req.user?.uid || 'sistema',
-			 observaciones: ventaFirebase.metodo_pago ? `Método: ${ventaFirebase.metodo_pago}` : '',
-			 fecha: fechaDia,
-			 hora: fechaISO.split('T')[1]?.slice(0,8) || '',
-			 referencia_tipo: 'venta',
-			 referencia_id: resultado,
-			 cliente_id: venta.cliente_id || null,
-			 cliente_nombre: ventaFirebase?.cliente_info?.nombre_completo || null,
-			 sucursal_id: venta.sucursal_id || null,
-			 fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
-		  });
-		  console.log('💰 [CAJA] Ingreso registrado por venta:', { id: resultado, monto: montoIngreso });
-		} catch (e) {
-		  console.warn('⚠️ [CAJA] No se pudo registrar ingreso por venta:', e.message);
-		}
+        // 💰 Registrar movimiento en caja (INGRESO por sucursal y medio de pago)
+        try {
+          const montoPagado = parseFloat(ventaFirebase.total_pagado || 0) || 0;
+          if (montoPagado > 0) {
+            const fechaISO = new Date().toISOString();
+            const fechaDia = fechaISO.split('T')[0];
+            const medio = venta.metodo_pago || 'efectivo';
+            await db.collection('companies').doc(companyId).collection('caja')
+              .doc(venta.sucursal_id).collection('movimientos').add({
+                tipo: 'ingreso',
+                monto: montoPagado,
+                medio_pago: medio,
+                concepto: `Venta ${ventaFirebase.numero} a ${ventaFirebase?.cliente_info?.nombre_completo || ventaFirebase?.cliente_info?.nombre || 'Cliente'}`,
+                usuario: req.user?.email || req.user?.uid || 'sistema',
+                observaciones: ventaFirebase.metodo_pago ? `Método: ${ventaFirebase.metodo_pago}` : '',
+                fecha: fechaDia,
+                hora: fechaISO.split('T')[1]?.slice(0,8) || '',
+                referencia_tipo: 'venta',
+                referencia_id: resultado,
+                cliente_id: venta.cliente_id || null,
+                cliente_nombre: ventaFirebase?.cliente_info?.nombre_completo || null,
+                sucursal_id: venta.sucursal_id || null,
+                fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
+              });
+            console.log('💰 [CAJA] Ingreso registrado por venta:', { id: resultado, monto: montoPagado, medio });
+          } else {
+            console.log('💰 [CAJA] Venta a crédito - no registra ingreso inicial');
+          }
+        } catch (e) {
+          console.warn('⚠️ [CAJA] No se pudo registrar ingreso por venta:', e.message);
+        }
 		
 		res.status(201).json({
 		  success: true,
@@ -1470,87 +1500,108 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
       return true;
     }
     
-    // POST /ventas/:id/pagos - Registrar pago
+    // POST /ventas/:id/pagos - Registrar pago (multi-tenant + caja por sucursal)
     if (path.match(/^\/ventas\/[^\/]+\/pagos$/) && req.method === 'POST') {
       const ventaId = path.split('/')[2];
-      const pagoData = req.body;
+      const pagoData = req.body || {};
       
       try {
         console.log(`💰 Registrando pago para venta ${ventaId}`);
         
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido' });
+        }
+        
         // Validar datos del pago
-        if (!pagoData.monto || parseFloat(pagoData.monto) <= 0) {
-          res.status(400).json({
-            success: false,
-            message: 'El monto del pago debe ser mayor a 0'
-          });
-          return true;
-        }
-        
-        // Obtener venta
-        const ventaDoc = await db.collection('ventas').doc(ventaId).get();
-        
-        if (!ventaDoc.exists) {
-          res.status(404).json({
-            success: false,
-            message: 'Venta no encontrada'
-          });
-          return true;
-        }
-        
-        const venta = ventaDoc.data();
-        const totalPagado = parseFloat(venta.total_pagado || 0);
         const montoPago = parseFloat(pagoData.monto);
-        const nuevoTotalPagado = totalPagado + montoPago;
-        const saldoPendiente = parseFloat(venta.total) - nuevoTotalPagado;
-        
-        // Crear registro de pago
-        const pago = {
-          ...pagoData,
-          monto: montoPago,
-          fecha: admin.firestore.FieldValue.serverTimestamp(),
-          usuario_id: req.user?.uid || 'sistema',
-          created_at: admin.firestore.FieldValue.serverTimestamp()
-        };
-        
-        await db.collection('ventas').doc(ventaId).collection('pagos').add(pago);
-        
-        // Actualizar venta
-        const actualizacionVenta = {
-          total_pagado: nuevoTotalPagado,
-          saldo_pendiente: Math.max(0, saldoPendiente),
-          fechaActualizacion: admin.firestore.FieldValue.serverTimestamp()
-        };
-        
-        // Actualizar estado de pago
-        if (saldoPendiente <= 0) {
-          actualizacionVenta.estado_pago = 'pagado';
-        } else {
-          actualizacionVenta.estado_pago = 'parcial';
+        if (!montoPago || montoPago <= 0) {
+          res.status(400).json({ success: false, message: 'El monto del pago debe ser mayor a 0' });
+          return true;
         }
         
-        await db.collection('ventas').doc(ventaId).update(actualizacionVenta);
+        const ventaRef = db.collection('companies').doc(companyId).collection('ventas').doc(ventaId);
+        const pagoRef = ventaRef.collection('pagos').doc();
+        
+        // Ejecutar operación atómica sobre la venta + creación del pago
+        const resultadoTx = await db.runTransaction(async (transaction) => {
+          const ventaSnap = await transaction.get(ventaRef);
+          if (!ventaSnap.exists) {
+            throw new Error('Venta no encontrada');
+          }
+          const venta = ventaSnap.data();
+          const total = parseFloat(venta.total || 0);
+          const totalPagadoActual = parseFloat(venta.total_pagado || 0);
+          const sucursalId = venta.sucursal_id;
+          
+          // Calcular nuevos importes sin sobrepagar
+          const pagoAplicable = Math.min(montoPago, Math.max(0, total - totalPagadoActual));
+          const nuevoTotalPagado = totalPagadoActual + pagoAplicable;
+          const nuevoSaldo = Math.max(0, total - nuevoTotalPagado);
+          const nuevoEstadoPago = nuevoSaldo <= 0 ? 'pagado' : (nuevoTotalPagado > 0 ? 'parcial' : 'pendiente');
+          
+          // Crear pago
+          const pago = {
+            monto: pagoAplicable,
+            medio_pago: pagoData.medio_pago || pagoData.metodo_pago || venta.metodo_pago || 'efectivo',
+            concepto: pagoData.concepto || `Pago de venta ${venta.numero || ventaId}`,
+            referencia: pagoData.referencia || '',
+            observaciones: pagoData.observaciones || '',
+            fecha: admin.firestore.FieldValue.serverTimestamp(),
+            usuario_id: req.user?.uid || 'sistema',
+            created_at: admin.firestore.FieldValue.serverTimestamp()
+          };
+          transaction.set(pagoRef, pago);
+          
+          // Actualizar venta
+          transaction.update(ventaRef, {
+            total_pagado: nuevoTotalPagado,
+            saldo_pendiente: nuevoSaldo,
+            estado_pago: nuevoEstadoPago,
+            fechaActualizacion: admin.firestore.FieldValue.serverTimestamp()
+          });
+          
+          return { pagoAplicable, sucursalId, medio_pago: pago.medio_pago, numero: venta.numero, cliente_info: venta.cliente_info };
+        });
+        
+        // Registrar movimiento en caja (fuera de la transacción)
+        try {
+          if (resultadoTx.pagoAplicable > 0 && resultadoTx.sucursalId) {
+            const fechaISO = new Date().toISOString();
+            const fechaDia = fechaISO.split('T')[0];
+            await db.collection('companies').doc(companyId).collection('caja')
+              .doc(resultadoTx.sucursalId).collection('movimientos').add({
+                tipo: 'ingreso',
+                monto: resultadoTx.pagoAplicable,
+                medio_pago: resultadoTx.medio_pago,
+                concepto: `Pago venta ${resultadoTx.numero || ventaId}`,
+                usuario: req.user?.email || req.user?.uid || 'sistema',
+                observaciones: '',
+                fecha: fechaDia,
+                hora: fechaISO.split('T')[1]?.slice(0,8) || '',
+                referencia_tipo: 'venta_pago',
+                referencia_id: ventaId,
+                cliente_id: resultadoTx?.cliente_info?.id || null,
+                cliente_nombre: resultadoTx?.cliente_info?.nombre_completo || null,
+                sucursal_id: resultadoTx.sucursalId,
+                fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
+              });
+            console.log('💰 [CAJA] Ingreso registrado por pago de venta:', { id: ventaId, monto: resultadoTx.pagoAplicable });
+          }
+        } catch (cajaErr) {
+          console.warn('⚠️ [CAJA] No se pudo registrar ingreso por pago:', cajaErr.message);
+        }
         
         console.log(`✅ Pago registrado correctamente para venta ${ventaId}`);
-        
-        res.json({
-          success: true,
-          message: 'Pago registrado correctamente'
-        });
+        res.json({ success: true, message: 'Pago registrado correctamente' });
         
       } catch (error) {
         console.error('❌ Error al registrar pago:', error);
-        res.status(500).json({
-          success: false,
-          message: 'Error al registrar pago',
-          error: error.message
-        });
+        res.status(500).json({ success: false, message: 'Error al registrar pago', error: error.message });
       }
-      
       return true;
     }
     
-    // DELETE /ventas/:id - Eliminar venta (solo si está pendiente)
+    // DELETE /ventas/:id - Eliminar venta (solo si está pendiente) [LEGACY - se mantiene por compatibilidad]
     if (path.match(/^\/ventas\/[^\/]+$/) && req.method === 'DELETE') {
       const ventaId = path.split('/')[2];
       
@@ -1708,14 +1759,17 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
       return true;
     }
     
-    // GET /ventas/:id/pagos - Obtener historial completo de pagos
+    // GET /ventas/:id/pagos - Obtener historial completo de pagos (multi-tenant)
     if (path.match(/^\/ventas\/[^\/]+\/pagos$/) && req.method === 'GET') {
       const ventaId = path.split('/')[2];
       
       try {
         console.log(`💰 Obteniendo historial de pagos para venta ${ventaId}`);
         
-        const pagosSnapshot = await db.collection('ventas').doc(ventaId)
+        const pagosSnapshot = await (companyId
+          ? db.collection('companies').doc(companyId).collection('ventas')
+              .doc(ventaId)
+          : db.collection('ventas').doc(ventaId))
           .collection('pagos')
           .orderBy('fecha', 'desc')
           .get();
@@ -1775,7 +1829,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
         const { cliente_id, sucursal_id, desde, hasta } = req.query;
         
         // Query base: ventas con saldo pendiente > 0
-        let query = db.collection('ventas')
+        let query = db.collection('companies').doc(companyId).collection('ventas')
           .where('saldo_pendiente', '>', 0)
           .where('estado', '!=', 'cancelada');
         

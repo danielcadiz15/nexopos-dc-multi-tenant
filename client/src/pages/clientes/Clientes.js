@@ -80,7 +80,7 @@ const ZONAS_CONDINEA = [
 const ImportacionExcel = ({ isOpen, onClose, onImportar }) => {
   const [archivo, setArchivo] = useState(null);
   const [procesando, setProcesando] = useState(false);
-  const { currentUser } = useAuth();
+  const { currentUser, orgId } = useAuth();
 
   const procesarImportacion = async () => {
     if (!archivo || !currentUser?.id) {
@@ -112,7 +112,8 @@ const ImportacionExcel = ({ isOpen, onClose, onImportar }) => {
 
       const resultado = await clientesService.importarMasivoConSaldos(
         clientesFormateados,
-        currentUser.id
+        currentUser.id,
+        orgId
       );
 
       toast.success(
@@ -177,6 +178,7 @@ const ImportacionExcel = ({ isOpen, onClose, onImportar }) => {
 
 const Clientes = () => {
   const navigate = useNavigate();
+  const { orgId } = useAuth();
   
   // Estados
   const [clientes, setClientes] = useState([]);
@@ -238,7 +240,7 @@ const Clientes = () => {
   const cargarClientes = async () => {
 	  try {
 		setLoading(true);
-		const data = await clientesService.obtenerTodos();
+		const data = await clientesService.obtenerTodos(orgId);
 		
 		// Filtrar por tipo y categoría
 		let clientesFiltrados = data;
@@ -293,7 +295,7 @@ const Clientes = () => {
   const cargarClientesConSaldos = async () => {
 	  try {
 		setCargandoSaldos(true);
-		const clientesConSaldos = await clientesService.obtenerTodosConSaldos();
+		const clientesConSaldos = await clientesService.obtenerTodosConSaldos(orgId);
 		
 		// Filtrar por tipo y categoría
 		let clientesFiltrados = clientesConSaldos;

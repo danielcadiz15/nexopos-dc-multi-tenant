@@ -250,8 +250,10 @@ const productosRoutes = async (req, res, path) => {
             }
           }
           
-          // Obtener stock en sucursal específica
-          const stockQuery = await db.collection('stock_sucursal')
+          // Obtener stock en sucursal específica (multi-tenant)
+          const stockQuery = await (companyId
+            ? db.collection('companies').doc(companyId).collection('stock_sucursal')
+            : db.collection('stock_sucursal'))
             .where('producto_id', '==', doc.id)
             .where('sucursal_id', '==', sucursalId)
             .limit(1)
@@ -355,8 +357,10 @@ const productosRoutes = async (req, res, path) => {
         const productoDoc = productosSnapshot.docs[0];
         const productoData = productoDoc.data();
         
-        // Obtener stock en sucursal específica
-        const stockQuery = await db.collection('stock_sucursal')
+        // Obtener stock en sucursal específica (multi-tenant)
+        const stockQuery = await (companyId
+          ? db.collection('companies').doc(companyId).collection('stock_sucursal')
+          : db.collection('stock_sucursal'))
           .where('producto_id', '==', productoDoc.id)
           .where('sucursal_id', '==', sucursalId)
           .limit(1)
@@ -422,8 +426,10 @@ const productosRoutes = async (req, res, path) => {
         for (const doc of productosSnapshot.docs) {
           const productoData = doc.data();
           
-          // Obtener stock en todas las sucursales del tenant
-          let stockQuery = db.collection('stock_sucursal')
+          // Obtener stock en todas las sucursales del tenant (multi-tenant)
+          let stockQuery = (companyId
+            ? db.collection('companies').doc(companyId).collection('stock_sucursal')
+            : db.collection('stock_sucursal'))
             .where('producto_id', '==', doc.id);
           
           if (companyId) {

@@ -30,7 +30,7 @@ import SearchBar from '../../components/common/SearchBar';
 import { 
   FaBoxOpen, FaSearch, FaEdit, FaHistory, 
   FaExclamationTriangle, FaFilter, FaStore,
-  FaExchangeAlt, FaPlus, FaSyncAlt, FaMoneyBillWave,
+  FaExchangeAlt, FaSyncAlt, FaMoneyBillWave,
   FaClipboardCheck
 } from 'react-icons/fa';
 
@@ -42,7 +42,7 @@ import {
  */
 const Stock = () => {
   const navigate = useNavigate();
-  const { sucursalSeleccionada, sucursalesDisponibles, esAdmin } = useAuth();
+  const { sucursalSeleccionada, sucursalesDisponibles, esAdmin, orgId } = useAuth();
   const location = useLocation();
 
   // Mover hooks aquí, al inicio del componente
@@ -215,7 +215,7 @@ const Stock = () => {
   const cargarStock = async () => {
     try {
       setLoading(true);
-      const data = await stockSucursalService.obtenerStockPorSucursal(sucursalSeleccionada.id);
+      const data = await stockSucursalService.obtenerStockPorSucursal(sucursalSeleccionada.id, orgId);
       setProductos(data);
       setStockBajoFiltro(false);
     } catch (error) {
@@ -232,7 +232,7 @@ const Stock = () => {
   const cargarResumenStock = async () => {
     try {
       // Obtener stock bajo
-      const stockBajo = await stockSucursalService.obtenerStockBajo(sucursalSeleccionada.id);
+      const stockBajo = await stockSucursalService.obtenerStockBajo(sucursalSeleccionada.id, orgId);
       
       setResumenStock({
         totalProductos: productos.length,
@@ -250,7 +250,7 @@ const Stock = () => {
   const cargarStockBajo = async () => {
     try {
       setLoading(true);
-      const data = await stockSucursalService.obtenerStockBajo(sucursalSeleccionada.id);
+      const data = await stockSucursalService.obtenerStockBajo(sucursalSeleccionada.id, orgId);
       setProductos(data);
       setStockBajoFiltro(true);
     } catch (error) {
@@ -274,7 +274,7 @@ const Stock = () => {
       }
       
       // Primero obtener todos los productos del stock
-      const stockCompleto = await stockSucursalService.obtenerStockPorSucursal(sucursalSeleccionada.id);
+      const stockCompleto = await stockSucursalService.obtenerStockPorSucursal(sucursalSeleccionada.id, orgId);
       
       // Filtrar localmente por término de búsqueda
       const terminoLower = searchTerm.toLowerCase();
@@ -334,12 +334,7 @@ const Stock = () => {
     });
   };
   
-  /**
-   * Inicializa stock para productos nuevos
-   */
-  const inicializarStock = () => {
-    navigate('/stock/inicializar');
-  };
+  
   
   /**
    * Navega al control de inventario
@@ -591,20 +586,9 @@ const Stock = () => {
                     ? 'Intenta con otros términos de búsqueda'
                     : stockBajoFiltro
                       ? 'Todos los productos tienen stock suficiente'
-                      : 'Inicializa el stock de productos para esta sucursal'}
+                      : 'Para ingresar stock, registra una compra para esta sucursal'}
                 </p>
                 
-                {!searchTerm && !stockBajoFiltro && (
-                  <div className="mt-4">
-                    <Button
-                      color="primary"
-                      icon={<FaPlus />}
-                      onClick={inicializarStock}
-                    >
-                      Inicializar Stock
-                    </Button>
-                  </div>
-                )}
               </div>
             ) : (
               <Table

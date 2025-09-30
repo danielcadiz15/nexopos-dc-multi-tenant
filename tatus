@@ -1,0 +1,10 @@
+[33m4fd4bfb[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m CORRECCIÓN FINAL: usar sintaxis correcta de Firestore - collection().collection() en lugar de collection('caja/movimientos')
+[33m49b0429[m CORRECCIÓN: arreglar sintaxis de Firestore - usar caja/movimientos en lugar de caja.collection(movimientos)
+[33m551dd2b[m CRÍTICO: separar caja por empresa - usar companies/{orgId}/caja/ en lugar de colecciones globales
+[33m5634a62[m TEMPORAL: forzar habilitación completa de compras para TODOS los usuarios
+[33m11ce05a[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m TEMPORAL: forzar habilitación de compras.ver para usuarios básicos (rolId '1')
+[33m8aa19b0[m AuthContext: integrar configuración de módulos desde Firestore en cálculo de permisos
+[33m577f211[m AuthContext: corregir acceso a Firestore usando estructura multi-tenant companies/{orgId}/usuarios
+[33md8a2a9b[m Caja: separar por empresa usando orgId en todas las llamadas API
+[33m419430c[m Permisos básicos: habilitar compras.ver para rol Usuario (rolId '1')
+[33m5236380[m Config: ocultar botones de Licencia y Gestionar Módulos para todos salvo superadmin

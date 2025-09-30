@@ -55,7 +55,6 @@ import Stock from './pages/stock/Stock';
 import AjusteStock from './pages/stock/AjusteStock';
 import TransferenciasStock from './pages/stock/TransferenciasStock';
 import NuevaTransferencia from './pages/stock/NuevaTransferencia';
-import InicializarStock from './pages/stock/InicializarStock';
 import TransferenciaDetalle from './pages/stock/TransferenciaDetalle';
 import MovimientosProducto from './pages/stock/MovimientosProducto';
 
@@ -179,7 +178,7 @@ const AppContent = () => {
             <Route path="/stock/ajuste/:id" element={<AjusteStock />} />
             <Route path="/stock/transferencias" element={<TransferenciasStock />} />
             <Route path="/stock/transferencias/nueva" element={<NuevaTransferencia />} />
-            <Route path="/stock/inicializar" element={<ProtectedRoute><InicializarStock /></ProtectedRoute>} />
+            
 		    <Route path="/stock/transferencias/:id" element={<TransferenciaDetalle />} />
 			{/* Historial de movimientos de producto */}
             <Route path="/stock/movimientos/:productoId" element={<MovimientosProducto />} />

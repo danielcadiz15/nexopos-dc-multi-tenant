@@ -195,6 +195,12 @@ class VentasServiceOptimizado extends FirebaseService {
       });
       
       const resultado = await this.post('', ventaCompleta);
+      // Validar respuesta: esperar data.id
+      const idCreado = resultado?.data?.id || resultado?.id;
+      if (!idCreado) {
+        const mensaje = resultado?.data?.message || 'La API no devolvió un ID de venta';
+        throw new Error(`No se pudo crear la venta. ${mensaje}`);
+      }
       
       console.log('✅ Venta creada exitosamente:', resultado);
       return resultado;
@@ -219,7 +225,9 @@ class VentasServiceOptimizado extends FirebaseService {
       
       const pagoDatos = {
         monto: parseFloat(pago.monto),
-        metodo_pago: pago.metodo_pago || 'efectivo',
+        // Enviar ambos por compatibilidad, backend usa medio_pago
+        medio_pago: pago.medio_pago || pago.metodo_pago || 'efectivo',
+        metodo_pago: pago.metodo_pago || pago.medio_pago || 'efectivo',
         concepto: pago.concepto || 'Pago de venta',
         referencia: pago.referencia || '',
         observaciones: pago.observaciones || ''

@@ -2,13 +2,13 @@
   "name": "functions",
   "description": "Cloud Functions for Firebase",
   "scripts": {
-    "serve": "firebase emulators:start --only functions",
-    "shell": "firebase functions:shell",
+    "serve": "firebase emulators:start --only functions --project nexopos-dc",
+    "shell": "firebase functions:shell --project nexopos-dc",
     "start": "npm run shell",
     "build": "echo 'No build step required for Node.js functions'",
-    "deploy": "firebase deploy --only functions",
+    "deploy": "firebase deploy --only functions --project nexopos-dc",
     "make-admin": "node scripts/make-admin.js",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log --project nexopos-dc"
   },
   "engines": {
     "node": "22"

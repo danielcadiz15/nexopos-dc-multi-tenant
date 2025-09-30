@@ -27,15 +27,21 @@ class ClientesService extends FirebaseService {
 
   /**
    * Obtiene todos los clientes
-   * 🆕 ACTUALIZADO: Usa límite alto para obtener todos los clientes
+   * 🆕 ACTUALIZADO: Usa límite alto para obtener todos los clientes y separa por empresa
+   * @param {string} orgId - ID de la empresa
    * @returns {Promise<Array>} Lista de clientes
    */
-  async obtenerTodos() {
+  async obtenerTodos(orgId = null) {
     try {
-      console.log('🔄 Obteniendo todos los clientes...');
+      console.log('🔄 Obteniendo todos los clientes...', orgId ? `para empresa: ${orgId}` : '');
       
       // Usar límite alto para obtener todos los clientes
-      const payload = await this.get('', { limit: 2000 });
+      const params = { limit: 2000 };
+      if (orgId) {
+        params.orgId = orgId;
+      }
+      
+      const payload = await this.get('', params);
       const raw = payload?.data ?? payload;
       // Asegurar que siempre sea un array
       const clientesArray = this.ensureArray(raw);
@@ -131,11 +137,11 @@ class ClientesService extends FirebaseService {
    * 🆕 NUEVO: Obtiene todos los clientes con sus saldos calculados
    * @returns {Promise<Array>} Lista de clientes con saldos
    */
-  async obtenerTodosConSaldos() {
+  async obtenerTodosConSaldos(orgId = null) {
     try {
-      console.log('🔄 Obteniendo clientes con saldos calculados...');
+      console.log('🔄 Obteniendo clientes con saldos calculados...', orgId ? `para empresa: ${orgId}` : '');
       
-      const clientes = await this.obtenerTodos();
+      const clientes = await this.obtenerTodos(orgId);
       
       // Calcular saldos en paralelo para mejor rendimiento
       const clientesConSaldos = await Promise.all(
@@ -445,9 +451,9 @@ class ClientesService extends FirebaseService {
    * @param {Object} cliente - Datos del cliente
    * @returns {Promise<Object>} Cliente creado
    */
-  async crear(cliente) {
+  async crear(cliente, orgId = null) {
     try {
-      console.log('🆕 Creando cliente:', cliente);
+      console.log('🆕 Creando cliente:', cliente, orgId ? `para empresa: ${orgId}` : '');
       
       // Formatear datos del cliente (SIN campos de saldo estáticos)
       const clienteFormateado = {
@@ -463,6 +469,11 @@ class ClientesService extends FirebaseService {
         notas: cliente.notas?.trim() || '',
         activo: cliente.activo !== false // Por defecto true
       };
+      
+      // Agregar orgId si está disponible
+      if (orgId) {
+        clienteFormateado.orgId = orgId;
+      }
       
       // Validación básica
       if (!clienteFormateado.nombre) {
@@ -521,9 +532,9 @@ class ClientesService extends FirebaseService {
    * @param {Object} cliente - Nuevos datos del cliente
    * @returns {Promise<Object>} Respuesta de la actualización
    */
-  async actualizar(id, cliente) {
+  async actualizar(id, cliente, orgId = null) {
     try {
-      console.log(`🔄 Actualizando cliente ${id}:`, cliente);
+      console.log(`🔄 Actualizando cliente ${id}:`, cliente, orgId ? `para empresa: ${orgId}` : '');
       
       // Actualización PARCIAL: solo incluir campos provistos en 'cliente'
       const payload = {};
@@ -541,6 +552,11 @@ class ClientesService extends FirebaseService {
       setIfDefined('zona', cliente.zona);
       setIfDefined('notas', cliente.notas?.trim());
       setIfDefined('activo', cliente.activo);
+      
+      // Agregar orgId si está disponible
+      if (orgId) {
+        payload.orgId = orgId;
+      }
 
       // Validar solo si se intenta cambiar 'nombre'
       if (Object.prototype.hasOwnProperty.call(payload, 'nombre') && (!payload.nombre || payload.nombre.trim() === '')) {
@@ -567,10 +583,16 @@ class ClientesService extends FirebaseService {
    * @param {string} id - ID del cliente
    * @returns {Promise<Object>} Respuesta de la eliminación
    */
-  async eliminar(id) {
+  async eliminar(id, orgId = null) {
     try {
-      console.log(`🗑️ Eliminando cliente ${id}`);
-      const resultado = await this.delete(`/${id}`);
+      console.log(`🗑️ Eliminando cliente ${id}`, orgId ? `de empresa: ${orgId}` : '');
+      
+      const params = {};
+      if (orgId) {
+        params.orgId = orgId;
+      }
+      
+      const resultado = await this.delete(`/${id}`, params);
       console.log('✅ Cliente eliminado:', resultado);
       
       return resultado;
@@ -587,19 +609,23 @@ class ClientesService extends FirebaseService {
    * @param {string} startAfter - ID del último cliente para paginación
    * @returns {Promise<Array>} Lista de clientes que coinciden
    */
-  async buscar(termino, startAfter = null) {
+  async buscar(termino, startAfter = null, orgId = null) {
     try {
-      console.log(`🔍 Buscando clientes con término: "${termino}"`);
+      console.log(`🔍 Buscando clientes con término: "${termino}"`, orgId ? `en empresa: ${orgId}` : '');
       
       if (!termino || termino.trim() === '') {
         console.log('⚠️ Término de búsqueda vacío, retornando todos los clientes');
-        return await this.obtenerTodos();
+        return await this.obtenerTodos(orgId);
       }
       
       const params = { 
         termino: termino.trim(),
         limit: 2000  // 🆕 Límite alto para búsquedas completas
       };
+      
+      if (orgId) {
+        params.orgId = orgId;
+      }
       if (startAfter) params.startAfter = startAfter;
       
       const payload = await this.get('/buscar', params);
