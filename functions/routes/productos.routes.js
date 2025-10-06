@@ -564,36 +564,43 @@ const productosRoutes = async (req, res, path) => {
         activo: nuevoProducto.activo !== false
       };
       
-      // Si tiene stock inicial, crear registro en stock_sucursal
+      // Si tiene stock inicial, crear registro en stock_sucursal del tenant
+      const docRef = await db.collection('productos').add(productoFirebase);
       if (parseInt(productoFirebase.stock_actual) > 0 && nuevoProducto.sucursal_id) {
-        const docRef = await db.collection('productos').add(productoFirebase);
-        
-        // Crear registro de stock en sucursal
-        await db.collection('stock_sucursal').add({
+        const stockRef = (companyId
+          ? db.collection('companies').doc(companyId).collection('stock_sucursal')
+          : db.collection('stock_sucursal')).doc(`${docRef.id}_${nuevoProducto.sucursal_id}`);
+        await stockRef.set({
           producto_id: docRef.id,
           sucursal_id: nuevoProducto.sucursal_id,
           cantidad: productoFirebase.stock_actual,
           stock_minimo: productoFirebase.stock_minimo,
           ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        // Registrar movimiento inicial
+        const movRef = (companyId
+          ? db.collection('companies').doc(companyId).collection('movimientos_stock')
+          : db.collection('movimientos_stock')).doc();
+        await movRef.set({
+          producto_id: docRef.id,
+          sucursal_id: nuevoProducto.sucursal_id,
+          tipo: 'entrada',
+          cantidad: productoFirebase.stock_actual,
+          cantidad_anterior: 0,
+          cantidad_nueva: productoFirebase.stock_actual,
+          motivo: 'Alta de producto - Stock inicial',
+          fecha: admin.firestore.FieldValue.serverTimestamp(),
+          usuario_id: req.user?.uid || 'sistema'
         });
-        
         res.status(201).json({
           success: true,
-          data: {
-            id: docRef.id,
-            ...productoFirebase
-          },
+          data: { id: docRef.id, ...productoFirebase },
           message: 'Producto creado correctamente con stock inicial'
         });
       } else {
-        const docRef = await db.collection('productos').add(productoFirebase);
-        
         res.status(201).json({
           success: true,
-          data: {
-            id: docRef.id,
-            ...productoFirebase
-          },
+          data: { id: docRef.id, ...productoFirebase },
           message: 'Producto creado correctamente'
         });
       }
@@ -625,7 +632,9 @@ const productosRoutes = async (req, res, path) => {
       
       try {
         // Verificar que la sucursal existe
-        const sucursalDoc = await db.collection('sucursales').doc(sucursal_id).get();
+        const sucursalDoc = await (companyId
+          ? db.collection('companies').doc(companyId).collection('sucursales').doc(sucursal_id)
+          : db.collection('sucursales').doc(sucursal_id)).get();
         if (!sucursalDoc.exists) {
           res.status(404).json({
             success: false,
@@ -718,7 +727,9 @@ const productosRoutes = async (req, res, path) => {
             }
             
             // Crear/actualizar stock por sucursal
-            const stockSucursalRef = db.collection('stock_sucursal').doc(`${productoId}_${sucursal_id}`);
+            const stockSucursalRef = (companyId
+              ? db.collection('companies').doc(companyId).collection('stock_sucursal')
+              : db.collection('stock_sucursal')).doc(`${productoId}_${sucursal_id}`);
             const stockInicial = parseInt(producto.stock_inicial || producto.cantidad_inicial || 0);
             
             const datosStock = {
@@ -733,7 +744,9 @@ const productosRoutes = async (req, res, path) => {
             
             // Registrar movimiento de stock inicial si es nuevo producto
             if (!esActualizacion && stockInicial > 0) {
-              const movimientoRef = db.collection('movimientos_stock').doc();
+              const movimientoRef = (companyId
+                ? db.collection('companies').doc(companyId).collection('movimientos_stock')
+                : db.collection('movimientos_stock')).doc();
               batch.set(movimientoRef, {
                 producto_id: productoId,
                 sucursal_id: sucursal_id,

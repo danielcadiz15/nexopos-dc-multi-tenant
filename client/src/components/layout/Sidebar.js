@@ -144,8 +144,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       permission: null,
       submenu: [
         { path: '/caja', label: 'Caja', module: 'caja', permission: null },
-        { path: '/gastos', label: 'Gastos', module: 'gastos', permission: 'gastos.ver' },
-        { path: '/transferencias', label: 'Transferencias', module: 'transferencias', permission: 'transferencias.ver' }
+        { path: '/gastos', label: 'Gastos', module: 'gastos', permission: 'gastos.ver' }
       ]
     },
     {
@@ -187,12 +186,6 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       ]
     },
     {
-      path: '/vehiculos',
-      label: 'Vehículos',
-      icon: FaCar,
-      permission: 'vehiculos'
-    },
-    {
       icon: FaCog,
       label: 'Configuración',
       permission: 'configuracion',
@@ -215,9 +208,15 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
 
   const filteredMenuItems = menuItems
     .map(item => {
+      // Limpiar entradas WIP o sin implementación declaradas con module==='wip'
+      if (item.submenu) {
+        item.submenu = item.submenu.filter(sub => sub.module !== 'wip');
+      }
       // Filtrar subitems por módulos y permisos
       let submenu = item.submenu?.filter(sub => {
         const modKey = sub.module || (sub.permission ? sub.permission.split('.')[0] : null);
+        // Si es superAdmin, ignora módulos y permisos para ver todo
+        if (superAdmin) return true;
         const modOk = moduleEnabled(modKey);
         const permOk = !sub.permission || hasPermission(sub.permission.split('.')[0], sub.permission.split('.')[1]);
         // Bloquear gestión de módulos/licencias para no superadmin
@@ -229,12 +228,13 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       return { ...item, submenu };
     })
     .filter(item => {
+      // Si es superAdmin, muestra todas las secciones
+      if (superAdmin) return true;
       // Filtrar items por módulo y permisos
       const modOk = moduleEnabled(item.permission);
       if (!modOk) return false;
       // Ocultar completamente la sección de Configuración sensible para no superadmin
       if (item.label === 'Configuración' && !superAdmin) {
-        // Permitimos sólo sucursales y datos empresa; no gestor de módulos/licencias
         if (item.submenu) {
           item.submenu = item.submenu.filter(s => ['/sucursales','/configuracion/empresa','/auditoria'].includes(s.path));
         }

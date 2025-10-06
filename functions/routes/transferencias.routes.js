@@ -27,12 +27,15 @@ const transferenciasRoutes = async (req, res, path) => {
   try {
     console.log(`🔄 [TRANSFERENCIAS] Procesando: ${req.method} ${path}`);
 
-    // GET /transferencias - Obtener todas las transferencias
+    // GET /transferencias - Obtener todas las transferencias (multi-tenant opcional por sucursal)
     if (path === '/transferencias' && req.method === 'GET') {
       try {
         const { estado, sucursal_id } = req.query;
-        
-        let query = db.collection('transferencias').orderBy('fecha_solicitud', 'desc');
+        const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido (orgId)' });
+        }
+        let query = db.collection('companies').doc(companyId).collection('transferencias').orderBy('fecha_solicitud', 'desc');
         
         // Aplicar filtros si se proporcionan
         if (estado) {
@@ -51,10 +54,12 @@ const transferenciasRoutes = async (req, res, path) => {
           
           // Enriquecer con información de sucursales
           try {
-            const [sucursalOrigen, sucursalDestino] = await Promise.all([
-              db.collection('sucursales').doc(transferencia.sucursal_origen_id).get(),
-              db.collection('sucursales').doc(transferencia.sucursal_destino_id).get()
+            const [sucOriTenant, sucDesTenant] = await Promise.all([
+              db.collection('companies').doc(companyId).collection('sucursales').doc(transferencia.sucursal_origen_id).get(),
+              db.collection('companies').doc(companyId).collection('sucursales').doc(transferencia.sucursal_destino_id).get()
             ]);
+            const sucursalOrigen = sucOriTenant.exists ? sucOriTenant : await db.collection('sucursales').doc(transferencia.sucursal_origen_id).get();
+            const sucursalDestino = sucDesTenant.exists ? sucDesTenant : await db.collection('sucursales').doc(transferencia.sucursal_destino_id).get();
             
             transferencia.sucursal_origen = sucursalOrigen.exists ? {
               id: sucursalOrigen.id,
@@ -129,7 +134,11 @@ const transferenciasRoutes = async (req, res, path) => {
     // GET /transferencias/pendientes - Obtener transferencias pendientes
     if (path === '/transferencias/pendientes' && req.method === 'GET') {
       try {
-        const transferenciasSnapshot = await db.collection('transferencias')
+        const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido (orgId)' });
+        }
+        const transferenciasSnapshot = await db.collection('companies').doc(companyId).collection('transferencias')
           .where('estado', '==', 'pendiente')
           .orderBy('fecha_solicitud', 'desc')
           .get();
@@ -144,10 +153,12 @@ const transferenciasRoutes = async (req, res, path) => {
           
           // Enriquecer con información básica de sucursales
           try {
-            const [sucursalOrigen, sucursalDestino] = await Promise.all([
-              db.collection('sucursales').doc(transferencia.sucursal_origen_id).get(),
-              db.collection('sucursales').doc(transferencia.sucursal_destino_id).get()
+            const [sucOriTenant, sucDesTenant] = await Promise.all([
+              db.collection('companies').doc(companyId).collection('sucursales').doc(transferencia.sucursal_origen_id).get(),
+              db.collection('companies').doc(companyId).collection('sucursales').doc(transferencia.sucursal_destino_id).get()
             ]);
+            const sucursalOrigen = sucOriTenant.exists ? sucOriTenant : await db.collection('sucursales').doc(transferencia.sucursal_origen_id).get();
+            const sucursalDestino = sucDesTenant.exists ? sucDesTenant : await db.collection('sucursales').doc(transferencia.sucursal_destino_id).get();
             
             transferencia.sucursal_origen = sucursalOrigen.exists ? {
               id: sucursalOrigen.id,
@@ -193,6 +204,10 @@ const transferenciasRoutes = async (req, res, path) => {
       const { estado, motivo_rechazo, usuario_aprueba_id } = req.body;
       
       try {
+        const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido (orgId)' });
+        }
         // Validar estado
         if (!['aprobada', 'rechazada'].includes(estado)) {
           res.status(400).json({
@@ -203,7 +218,7 @@ const transferenciasRoutes = async (req, res, path) => {
         }
         
         // Obtener transferencia
-        const transferenciaDoc = await db.collection('transferencias').doc(transferenciaId).get();
+        const transferenciaDoc = await db.collection('companies').doc(companyId).collection('transferencias').doc(transferenciaId).get();
         
         if (!transferenciaDoc.exists) {
           res.status(404).json({
@@ -227,10 +242,12 @@ const transferenciasRoutes = async (req, res, path) => {
         console.log(`🔄 [TRANSFERENCIAS] ${estado === 'aprobada' ? 'Aprobando' : 'Rechazando'} transferencia ${transferenciaId}`);
         
         // Obtener información de sucursales para notificaciones
-        const [sucursalOrigen, sucursalDestino] = await Promise.all([
-          db.collection('sucursales').doc(transferencia.sucursal_origen_id).get(),
-          db.collection('sucursales').doc(transferencia.sucursal_destino_id).get()
+        const [sucOriTenant, sucDesTenant] = await Promise.all([
+          db.collection('companies').doc(companyId).collection('sucursales').doc(transferencia.sucursal_origen_id).get(),
+          db.collection('companies').doc(companyId).collection('sucursales').doc(transferencia.sucursal_destino_id).get()
         ]);
+        const sucursalOrigen = sucOriTenant.exists ? sucOriTenant : await db.collection('sucursales').doc(transferencia.sucursal_origen_id).get();
+        const sucursalDestino = sucDesTenant.exists ? sucDesTenant : await db.collection('sucursales').doc(transferencia.sucursal_destino_id).get();
         
         // Actualizar estado
         const actualizacion = {
@@ -288,7 +305,7 @@ const transferenciasRoutes = async (req, res, path) => {
           
           for (const producto of transferencia.productos) {
             // Reducir stock en origen
-            const stockOrigenQuery = await db.collection('stock_sucursal')
+            const stockOrigenQuery = await db.collection('companies').doc(companyId).collection('stock_sucursal')
               .where('producto_id', '==', producto.producto_id)
               .where('sucursal_id', '==', transferencia.sucursal_origen_id)
               .limit(1)
@@ -305,7 +322,7 @@ const transferenciasRoutes = async (req, res, path) => {
               });
               
               // Registrar movimiento de salida
-              const movimientoSalida = db.collection('movimientos_stock').doc();
+              const movimientoSalida = db.collection('companies').doc(companyId).collection('movimientos_stock').doc();
               batch.set(movimientoSalida, {
                 sucursal_id: transferencia.sucursal_origen_id,
                 producto_id: producto.producto_id,
@@ -322,7 +339,7 @@ const transferenciasRoutes = async (req, res, path) => {
             }
             
             // Aumentar stock en destino
-            const stockDestinoQuery = await db.collection('stock_sucursal')
+            const stockDestinoQuery = await db.collection('companies').doc(companyId).collection('stock_sucursal')
               .where('producto_id', '==', producto.producto_id)
               .where('sucursal_id', '==', transferencia.sucursal_destino_id)
               .limit(1)
@@ -333,7 +350,7 @@ const transferenciasRoutes = async (req, res, path) => {
             
             if (stockDestinoQuery.empty) {
               // Crear nuevo registro
-              const nuevoStock = db.collection('stock_sucursal').doc();
+              const nuevoStock = db.collection('companies').doc(companyId).collection('stock_sucursal').doc();
               batch.set(nuevoStock, {
                 producto_id: producto.producto_id,
                 sucursal_id: transferencia.sucursal_destino_id,
@@ -354,7 +371,7 @@ const transferenciasRoutes = async (req, res, path) => {
             }
             
             // Registrar movimiento de entrada
-            const movimientoEntrada = db.collection('movimientos_stock').doc();
+            const movimientoEntrada = db.collection('companies').doc(companyId).collection('movimientos_stock').doc();
             batch.set(movimientoEntrada, {
               sucursal_id: transferencia.sucursal_destino_id,
               producto_id: producto.producto_id,

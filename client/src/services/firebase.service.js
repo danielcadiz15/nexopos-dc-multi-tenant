@@ -151,22 +151,50 @@ class FirebaseService {
 
   async get(endpoint = '', params = {}) {
     const response = await this.api.get(endpoint, params);
-    return unwrapApiPayload(response);
+    const { data, status } = response || {};
+    if (typeof status === 'number' && status >= 400) {
+      const message = (data && (data.message || data.error)) || 'Error en la solicitud GET';
+      const error = new Error(message);
+      error.response = { status, data };
+      throw error;
+    }
+    return unwrapApiPayload({ data, status });
   }
 
   async post(endpoint = '', data = {}) {
     const response = await this.api.post(endpoint, data);
-    return unwrapApiPayload(response);
+    const { data: respData, status } = response || {};
+    if (typeof status === 'number' && status >= 400) {
+      const message = (respData && (respData.message || respData.error)) || 'Error en la solicitud POST';
+      const error = new Error(message);
+      error.response = { status, data: respData };
+      throw error;
+    }
+    return unwrapApiPayload({ data: respData, status });
   }
 
   async put(endpoint = '', data = {}) {
     const response = await this.api.put(endpoint, data);
-    return unwrapApiPayload(response);
+    const { data: respData, status } = response || {};
+    if (typeof status === 'number' && status >= 400) {
+      const message = (respData && (respData.message || respData.error)) || 'Error en la solicitud PUT';
+      const error = new Error(message);
+      error.response = { status, data: respData };
+      throw error;
+    }
+    return unwrapApiPayload({ data: respData, status });
   }
 
   async delete(endpoint = '', data = {}) {
     const response = await this.api.delete(endpoint, data);
-    return unwrapApiPayload(response);
+    const { data: respData, status } = response || {};
+    if (typeof status === 'number' && status >= 400) {
+      const message = (respData && (respData.message || respData.error)) || 'Error en la solicitud DELETE';
+      const error = new Error(message);
+      error.response = { status, data: respData };
+      throw error;
+    }
+    return unwrapApiPayload({ data: respData, status });
   }
 
   ensureArray(value) {

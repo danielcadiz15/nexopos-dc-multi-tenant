@@ -369,6 +369,12 @@ class ReportesService extends FirebaseService {
       throw error;
     }
   }
+
+  async descargarReporteVentas(params){
+    // Reutiliza el endpoint de ventas y llama a generarCSVVentas
+    const data = await this.obtenerReporteVentas(params);
+    this.generarCSVVentas(data, params);
+  }
   
   /**
    * ✅ NUEVO: Valida respuesta del servidor y muestra errores útiles

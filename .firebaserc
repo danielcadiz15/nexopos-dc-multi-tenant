@@ -1,7 +1,1 @@
-{
-  "projects": {
-    "default": "nexopos-dc"
-  },
-  "targets": {},
-  "etags": {}
-}
+﻿{ projects:{default:nexopos-dc}}

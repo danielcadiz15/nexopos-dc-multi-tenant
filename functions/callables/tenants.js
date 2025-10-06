@@ -12,6 +12,10 @@ exports.createTenant = onCall(async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Debe iniciar sesión');
     }
+    // Requerir email verificado para crear empresa
+    if (!request.auth.token?.email_verified) {
+      throw new HttpsError('failed-precondition', 'Debe verificar su email antes de crear una empresa');
+    }
     const uid = request.auth.uid;
     const { nombre, slug } = request.data || {};
     
@@ -45,14 +49,25 @@ exports.createTenant = onCall(async (request) => {
       updatedAt: now
     });
 
-    // Sucursal principal opcional
+    // Sucursal principal opcional (en tenants y en companies)
     const sucRef = orgRef.collection('sucursales').doc();
     await sucRef.set({
       nombre: 'Sucursal Principal',
       direccion: '',
+      tipo: 'principal',
+      activa: true,
       createdAt: now,
       updatedAt: now
     });
+    // Crear también en companies/{orgId}/sucursales
+    await db.collection('companies').doc(orgRef.id).collection('sucursales').doc(sucRef.id).set({
+      nombre: 'Sucursal Principal',
+      direccion: '',
+      tipo: 'principal',
+      activa: true,
+      createdAt: now,
+      updatedAt: now
+    }, { merge: true });
 
     // También crear en la colección principal de sucursales con orgId
     await db.collection('sucursales').doc(sucRef.id).set({
@@ -75,8 +90,46 @@ exports.createTenant = onCall(async (request) => {
       updatedAt: now
     }, { merge: true });
 
+    // Crear registro de usuario dentro de la empresa con rol Administrador
+    try {
+      const permisosAdmin = {
+        productos: { ver: true, crear: true, editar: true, eliminar: true },
+        categorias: { ver: true, crear: true, editar: true, eliminar: true },
+        compras: { ver: true, crear: true, editar: true, eliminar: true },
+        ventas: { ver: true, crear: true, editar: true, eliminar: true },
+        stock: { ver: true, crear: true, editar: true, eliminar: true },
+        reportes: { ver: true, crear: true, editar: true, eliminar: true },
+        promociones: { ver: true, crear: true, editar: true, eliminar: true },
+        usuarios: { ver: true, crear: true, editar: true, eliminar: true, configurar_roles: true },
+        sucursales: { ver: true, crear: true, editar: true, eliminar: true },
+        materias_primas: { ver: true, crear: true, editar: true, eliminar: true },
+        recetas: { ver: true, crear: true, editar: true, eliminar: true },
+        produccion: { ver: true, crear: true, editar: true, eliminar: true },
+        clientes: { ver: true, crear: true, editar: true, eliminar: true },
+        caja: { ver: true, crear: true, editar: true, eliminar: true },
+        gastos: { ver: true, crear: true, editar: true, eliminar: true },
+        devoluciones: { ver: true, crear: true, editar: true, eliminar: true },
+        listas_precios: { ver: true, crear: true, editar: true, eliminar: true },
+        transferencias: { ver: true, crear: true, editar: true, eliminar: true },
+        auditoria: { ver: true, crear: true, editar: true, eliminar: true },
+        configuracion: { ver: true, crear: true, editar: true, eliminar: true }
+      };
+      await db.collection('companies').doc(orgRef.id).collection('usuarios').doc(uid).set({
+        uid,
+        email: ownerEmail,
+        rol: 'Administrador',
+        permisos: permisosAdmin,
+        activo: true,
+        sucursales: [sucRef.id],
+        createdAt: now,
+        updatedAt: now
+      }, { merge: true });
+    } catch (e) {
+      console.warn('No se pudo crear usuario administrador de la empresa:', e.message);
+    }
+
     // Custom claims para compatibilidad multi-tenant (companies/{companyId})
-    await admin.auth().setCustomUserClaims(uid, { companyId: orgRef.id, role: 'owner' });
+    await admin.auth().setCustomUserClaims(uid, { companyId: orgRef.id, role: 'admin' });
 
     // Crear documento espejo en companies para apps que lo esperan
     await db.collection('companies').doc(orgRef.id).set({
@@ -183,6 +236,10 @@ exports.joinTenant = onCall(async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Debe iniciar sesión');
+    }
+    // Requerir email verificado para unirse
+    if (!request.auth.token?.email_verified) {
+      throw new HttpsError('failed-precondition', 'Debe verificar su email antes de unirse a una empresa');
     }
     const uid = request.auth.uid;
     const { joinCode } = request.data || {};

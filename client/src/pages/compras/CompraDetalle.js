@@ -204,7 +204,7 @@ const DetalleCompra = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="w-full px-4 lg:px-6 space-y-6">
       {/* Header con información principal */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center space-y-4 lg:space-y-0">
@@ -305,10 +305,136 @@ const DetalleCompra = () => {
         </div>
       </div>
       
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+      {/* Detalle de productos a ancho completo */}
+      <Card
+        title="Detalle de Productos"
+        icon={<FaBoxOpen />}
+      >
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 table-auto">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/5">
+                  Producto
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                  Código
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                  Cantidad
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                  Precio Unit.
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                  Total
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                  Categoría
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {compra.detalles.map((detalle, index) => (
+                <tr key={index} className="hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-gray-800">
+                      {detalle.producto_nombre}
+                    </div>
+                    {detalle.producto_descripcion && (
+                      <div className="text-sm text-gray-500 mt-1 line-clamp-2">
+                        {detalle.producto_descripcion}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <FaBarcode className="text-gray-400 mr-1" />
+                      <span className="font-mono text-sm bg-gray-100 px-2 py-1 rounded">
+                        {detalle.producto_codigo || 'Sin código'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-center">
+                    <div className="flex items-center justify-center">
+                      <FaTag className="text-blue-500 mr-1" />
+                      <span className="font-bold text-lg text-blue-600">
+                        {detalle.cantidad}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-right">
+                    <div className="text-xs text-gray-500">Precio unitario</div>
+                    <div className="font-semibold text-green-600">
+                      ${formatearNumero(detalle.precio_unitario)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-right">
+                    <div className="text-xs text-gray-500">Total</div>
+                    <div className="font-bold text-lg text-indigo-600">
+                      ${formatearNumero(detalle.precio_total)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="text-xs text-gray-500">Categoría</div>
+                    <div className="text-sm font-medium bg-gray-100 px-2 py-1 rounded">
+                      {detalle.producto_categoria || 'Sin categoría'}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        
+        {/* Resumen de productos */}
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <div className="text-gray-500">Total de Productos</div>
+              <div className="font-semibold text-lg">{compra.detalles.length}</div>
+            </div>
+            <div>
+              <div className="text-gray-500">Total de Unidades</div>
+              <div className="font-semibold text-lg">
+                {compra.detalles.reduce((sum, detalle) => sum + detalle.cantidad, 0)}
+              </div>
+            </div>
+            <div>
+              <div className="text-gray-500">Subtotal</div>
+              <div className="font-semibold text-lg">${formatearNumero(calcularSubtotal())}</div>
+            </div>
+            <div>
+              <div className="text-gray-500">Total Final</div>
+              <div className="font-bold text-lg text-indigo-600">${formatearNumero(calcularTotal())}</div>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Bloque inferior con información secundaria */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        {/* Panel izquierdo: Datos generales */}
+        <div className="space-y-6">
+          <Card
+            title="Información General"
+            icon={<FaInfoCircle />}
+          >
+            <div className="space-y-4">
+              <div className="flex items-center">
+                <FaIdCard className="text-gray-500 mr-2" />
+                <div>
+                  <div className="text-sm text-gray-500">Número de Compra</div>
+                  <div className="font-semibold text-lg">#{compra.numero}</div>
+                </div>
+              </div>
+              {/* resto del contenido sin cambios */}
+            </div>
+          </Card>
+        </div>
         {/* Panel izquierdo: Datos generales */}
         <div className="xl:col-span-1 space-y-6">
-          <Card
+        <Card
             title="Información General"
             icon={<FaInfoCircle />}
           >
@@ -552,32 +678,32 @@ const DetalleCompra = () => {
           </Card>
         </div>
         
-        {/* Panel derecho: Detalles */}
+        {/* Panel derecho: Detalles - expandido */}
         <Card
           title="Detalle de Productos"
           icon={<FaBoxOpen />}
           className="xl:col-span-4"
         >
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-gray-200 table-auto">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/5">
                     Producto
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
                     Código
                   </th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
                     Cantidad
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
                     Precio Unit.
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
                     Total
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
                     Categoría
                   </th>
                 </tr>

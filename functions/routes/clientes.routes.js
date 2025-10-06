@@ -10,8 +10,7 @@ const clientesRoutes = async (req, res, path) => {
     const companyId = req.companyId || req.user?.companyId || null;
     // CLIENTES - GET todos
     if (path === '/clientes' && req.method === 'GET') {
-      let ref = db.collection('clientes');
-      if (companyId) ref = ref.where('orgId', '==', companyId);
+      let ref = db.collection('companies').doc(companyId).collection('clientes');
       const clientesSnapshot = await ref.get();
       const clientes = [];
       
@@ -35,8 +34,7 @@ const clientesRoutes = async (req, res, path) => {
     
     // CLIENTES - GET activos
     else if (path === '/clientes/activos' && req.method === 'GET') {
-      let ref = db.collection('clientes').where('activo', '==', true);
-      if (companyId) ref = ref.where('orgId', '==', companyId);
+      let ref = db.collection('companies').doc(companyId).collection('clientes').where('activo', '==', true);
       const clientesSnapshot = await ref.get();
       
       const clientes = [];
@@ -62,8 +60,7 @@ const clientesRoutes = async (req, res, path) => {
       
       if (!termino) {
         // Si no hay término, devolver todos los clientes
-        let ref = db.collection('clientes');
-        if (companyId) ref = ref.where('companyId', '==', companyId);
+        let ref = db.collection('companies').doc(companyId).collection('clientes');
         const clientesSnapshot = await ref.get();
         const clientes = [];
         
@@ -83,8 +80,7 @@ const clientesRoutes = async (req, res, path) => {
       }
       
       // Búsqueda flexible por nombre, apellido, teléfono o email
-      let refAll = db.collection('clientes');
-      if (companyId) refAll = refAll.where('companyId', '==', companyId);
+      let refAll = db.collection('companies').doc(companyId).collection('clientes');
       const clientesSnapshot = await refAll.get();
       const clientes = [];
       const terminoLower = termino.toLowerCase();
@@ -110,7 +106,7 @@ const clientesRoutes = async (req, res, path) => {
             // Buscar ventas con saldo pendiente para este cliente
             let deudas = [];
             try {
-              const ventasSnapshot = await db.collection('ventas')
+              const ventasSnapshot = await db.collection('companies').doc(companyId).collection('ventas')
                 .where('cliente_id', '==', doc.id)
                 .where('saldo_pendiente', '>', 0)
                 .get();
@@ -163,7 +159,7 @@ const clientesRoutes = async (req, res, path) => {
           const MILISEGUNDOS_15_DIAS = 15 * 24 * 60 * 60 * 1000;
           const hoy = new Date();
           // Traer todas las ventas con saldo pendiente > 0
-          const ventasSnapshot = await db.collection('ventas')
+          const ventasSnapshot = await db.collection('companies').doc(companyId).collection('ventas')
             .where('saldo_pendiente', '>', 0)
             .get();
           // Agrupar deudas por cliente_id
@@ -252,7 +248,7 @@ const clientesRoutes = async (req, res, path) => {
           const fechaFinISO = fechaFinObj.toISOString();
           
           // Obtener todos los clientes
-          const clientesSnapshot = await db.collection('clientes').get();
+          const clientesSnapshot = await db.collection('companies').doc(companyId).collection('clientes').get();
           const clientesSinCompras = [];
           
           // Procesar cada cliente
@@ -260,7 +256,7 @@ const clientesRoutes = async (req, res, path) => {
             const cliente = { id: doc.id, ...doc.data() };
             
             // Verificar si tiene ventas en el período
-            const ventasSnapshot = await db.collection('ventas')
+            const ventasSnapshot = await db.collection('companies').doc(companyId).collection('ventas')
               .where('cliente_id', '==', cliente.id)
               .where('fecha', '>=', fechaInicioISO)
               .where('fecha', '<=', fechaFinISO)
@@ -269,7 +265,7 @@ const clientesRoutes = async (req, res, path) => {
             // Si no tiene ventas en el período, agregarlo a la lista
             if (ventasSnapshot.empty) {
               // Obtener la última compra para mostrar información adicional
-              const ultimaVentaSnapshot = await db.collection('ventas')
+              const ultimaVentaSnapshot = await db.collection('companies').doc(companyId).collection('ventas')
                 .where('cliente_id', '==', cliente.id)
                 .orderBy('fecha', 'desc')
                 .limit(1)
@@ -283,7 +279,7 @@ const clientesRoutes = async (req, res, path) => {
                 ultimaCompra = ultimaVenta.fecha;
                 
                 // Calcular total histórico
-                const todasLasVentas = await db.collection('ventas')
+                const todasLasVentas = await db.collection('companies').doc(companyId).collection('ventas')
                   .where('cliente_id', '==', cliente.id)
                   .get();
                 
@@ -340,7 +336,7 @@ const clientesRoutes = async (req, res, path) => {
           console.log(`🔍 Obteniendo deudas para cliente ID: ${clienteId}`);
           
           // Verificar que el cliente existe
-          const clienteDoc = await db.collection('clientes').doc(clienteId).get();
+          const clienteDoc = await db.collection('companies').doc(companyId).collection('clientes').doc(clienteId).get();
           if (!clienteDoc.exists) {
             res.status(404).json({
               success: false,
@@ -350,7 +346,7 @@ const clientesRoutes = async (req, res, path) => {
           }
           
           // 🆕 CORREGIDO: Obtener tanto ventas pendientes como calcular saldo total
-          const ventasSnapshot = await db.collection('ventas')
+          const ventasSnapshot = await db.collection('companies').doc(companyId).collection('ventas')
             .where('cliente_id', '==', clienteId)
             .get();
           
@@ -512,37 +508,37 @@ const clientesRoutes = async (req, res, path) => {
       return true;
     }
 
-    // CLIENTE - GET por ID
+    // CLIENTE - GET por ID (multi-tenant primero, legacy fallback)
     else if (path.startsWith('/clientes/') && req.method === 'GET') {
       const clienteId = path.split('/clientes/')[1];
       
-      // Verificar si es una ruta especial
       if (clienteId === 'activos' || clienteId === 'buscar') {
-        return false; // Ya manejado arriba
+        return false;
       }
       
-      const clienteDoc = await db.collection('clientes').doc(clienteId).get();
-      if (companyId && clienteDoc.exists && clienteDoc.data().orgId && clienteDoc.data().orgId !== companyId) {
-        return res.status(403).json({ success:false, message: 'No autorizado' });
+      try {
+        let clienteDoc = null;
+        if (companyId) {
+          clienteDoc = await db.collection('companies').doc(companyId).collection('clientes').doc(clienteId).get();
+        }
+        if (!clienteDoc || !clienteDoc.exists) {
+          const legacy = await db.collection('clientes').doc(clienteId).get();
+          if (legacy.exists) {
+            const data = legacy.data() || {};
+            if (companyId && data.orgId && data.orgId !== companyId) {
+              return res.status(404).json({ success:false, message:'Cliente no encontrado' });
+            }
+            return res.json({ success:true, data: { id: legacy.id, ...data }, message:'Cliente obtenido (legacy)' });
+          }
+        }
+        if (!clienteDoc || !clienteDoc.exists) {
+          return res.status(404).json({ success:false, message:'Cliente no encontrado' });
+        }
+        return res.json({ success:true, data: { id: clienteDoc.id, ...clienteDoc.data() }, message:'Cliente obtenido correctamente' });
+      } catch (e) {
+        console.error('❌ Error al obtener cliente por ID:', e);
+        return res.status(500).json({ success:false, message:'Error al obtener cliente', error: e.message });
       }
-      
-      if (!clienteDoc.exists) {
-        res.status(404).json({
-          success: false,
-          message: 'Cliente no encontrado'
-        });
-        return true;
-      }
-      
-      res.json({
-        success: true,
-        data: {
-          id: clienteDoc.id,
-          ...clienteDoc.data()
-        },
-        message: 'Cliente obtenido correctamente'
-      });
-      return true;
     }
     
     // CLIENTES - POST crear nuevo
@@ -576,7 +572,7 @@ const clientesRoutes = async (req, res, path) => {
         ...(companyId ? { orgId: companyId } : {})
       };
       
-      const docRef = await db.collection('clientes').add(clienteFirebase);
+      const docRef = await db.collection('companies').doc(companyId).collection('clientes').add(clienteFirebase);
       
       res.status(201).json({
         success: true,
@@ -608,7 +604,7 @@ const clientesRoutes = async (req, res, path) => {
       // Agregar timestamp de actualización
       datosLimpios.fechaActualizacion = admin.firestore.FieldValue.serverTimestamp();
       
-      await db.collection('clientes').doc(clienteId).update(datosLimpios);
+      await db.collection('companies').doc(companyId).collection('clientes').doc(clienteId).update(datosLimpios);
       
       res.json({
         success: true,
@@ -625,7 +621,7 @@ const clientesRoutes = async (req, res, path) => {
     else if (path.startsWith('/clientes/') && req.method === 'DELETE') {
       const clienteId = path.split('/clientes/')[1];
       
-      await db.collection('clientes').doc(clienteId).delete();
+      await db.collection('companies').doc(companyId).collection('clientes').doc(clienteId).delete();
       
       res.json({
         success: true,

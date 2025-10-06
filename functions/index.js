@@ -347,7 +347,7 @@ exports.api = functions.https.onRequest(async (req, res) => {
         path.startsWith('/usuarios') || 
         path.startsWith('/productos') ||
         path.startsWith('/clientes') ||
-        path.startsWith('/compras') || path.startsWith('/stock') || path.startsWith('/caja')) {
+        path.startsWith('/compras') || path.startsWith('/stock') || path.startsWith('/caja') || path.startsWith('/reportes')) {
       await authenticateUser(req, res, () => {});
       const lic = await checkLicense(req, res);
       if (!lic.ok) { return res.status(402).json({ success:false, message: lic.reason || 'Licencia inválida' }); }
@@ -587,6 +587,51 @@ exports.api = functions.https.onRequest(async (req, res) => {
             results.push({ id: companyId, name: d.get('name') || '', ownerUid, ownerEmail, license: lic, daysLeft });
           }));
           return res.json({ success:true, data: results });
+        }
+
+        // DELETE /admin/empresas/:id -> eliminar empresa (solo super admin panel)
+        if (path.match(/^\/admin\/empresas\/[^/]+$/) && req.method === 'DELETE') {
+          const companyId = path.split('/')[3];
+          // Borrar información principal en companies y tenants, y documentos relacionados básicos
+          try {
+            // Eliminar subcolecciones críticas de companies: config (license/modules/empresa), caja, usuarios, sucursales, transferencias, compras, ventas, stock_sucursal, movimientos_stock
+            async function deleteCollectionRecursive(colRef) {
+              const snap = await colRef.get();
+              const batchSize = 400;
+              let docs = snap.docs;
+              while (docs.length > 0) {
+                const batch = db.batch();
+                const portion = docs.slice(0, batchSize);
+                portion.forEach(d => batch.delete(d.ref));
+                await batch.commit();
+                docs = docs.slice(batchSize);
+              }
+            }
+
+            const companyRef = db.collection('companies').doc(companyId);
+            const tenantRef = db.collection('tenants').doc(companyId);
+
+            // Borrar subcolecciones conocidas de companies
+            const subcols = ['config','caja','usuarios','sucursales','transferencias','compras','ventas','stock_sucursal','movimientos_stock'];
+            for (const sc of subcols) {
+              try {
+                await deleteCollectionRecursive(companyRef.collection(sc));
+              } catch {}
+            }
+            // Borrar doc company
+            await companyRef.delete().catch(()=>{});
+            // Borrar subcolecciones conocidas de tenants
+            for (const sc of ['config','sucursales']) {
+              try { await deleteCollectionRecursive(tenantRef.collection(sc)); } catch {}
+            }
+            await tenantRef.delete().catch(()=>{});
+            // Limpiar licencia central
+            await db.collection('licenses').doc(companyId).delete().catch(()=>{});
+
+            return res.json({ success:true });
+          } catch (e) {
+            return res.status(500).json({ success:false, message: e.message });
+          }
         }
 
         // PUT /admin/empresas/:id/licencia -> actualizar licencia centralizada

@@ -253,6 +253,12 @@ const autorizarSolicitud = async (req, res) => {
     const solicitud = solicitudDoc.data();
     console.log('🔍 [AUTORIZAR] Datos de la solicitud:', solicitud);
 
+    // Contexto multi-tenant
+    const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+    if (!companyId) {
+      return res.status(400).json({ success:false, message:'CompanyId requerido' });
+    }
+
     // Aplicar ajustes de stock
     if (solicitud.ajustes && solicitud.ajustes.length > 0) {
       console.log('🔍 [AUTORIZAR] Aplicando', solicitud.ajustes.length, 'ajustes');
@@ -264,7 +270,7 @@ const autorizarSolicitud = async (req, res) => {
         // Buscar el stock en la sucursal
         console.log('🔍 [AUTORIZAR] Buscando stock para producto:', ajuste.producto_id, 'en sucursal:', solicitud.sucursal_id);
         
-        const stockQuery = db.collection('stock-sucursal')
+        const stockQuery = db.collection('companies').doc(companyId).collection('stock_sucursal')
           .where('sucursal_id', '==', solicitud.sucursal_id)
           .where('producto_id', '==', ajuste.producto_id);
         
@@ -283,7 +289,7 @@ const autorizarSolicitud = async (req, res) => {
           
           batch.update(stockDoc.ref, {
             cantidad: nuevoStock,
-            fecha_actualizacion: new Date().toISOString()
+            ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp()
           });
         } else {
           console.log('⚠️ [AUTORIZAR] No se encontró stock para producto:', ajuste.producto_id);
@@ -299,15 +305,14 @@ const autorizarSolicitud = async (req, res) => {
               // CREAR NUEVO REGISTRO DE STOCK para este producto en esta sucursal
               console.log('🔍 [AUTORIZAR] Creando nuevo registro de stock para producto:', ajuste.producto_id);
               
-              const nuevoStockRef = db.collection('stock-sucursal').doc();
+              const nuevoStockRef = db.collection('companies').doc(companyId).collection('stock_sucursal').doc();
               const nuevoStockData = {
                 producto_id: ajuste.producto_id,
                 sucursal_id: solicitud.sucursal_id,
                 cantidad: ajuste.cantidad_ajuste, // Stock inicial = cantidad del ajuste
                 stock_minimo: productoData.stock_minimo || 0,
                 stock_maximo: productoData.stockMaximo || 0,
-                fecha_creacion: new Date().toISOString(),
-                fecha_actualizacion: new Date().toISOString(),
+                ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp(),
                 activo: true
               };
               
@@ -321,7 +326,7 @@ const autorizarSolicitud = async (req, res) => {
           
           // Verificar si hay algún registro en stock-sucursal para este producto
           try {
-            const stockGeneralQuery = db.collection('stock-sucursal')
+            const stockGeneralQuery = db.collection('companies').doc(companyId).collection('stock_sucursal')
               .where('producto_id', '==', ajuste.producto_id);
             const stockGeneralSnapshot = await stockGeneralQuery.get();
             console.log('🔍 [AUTORIZAR] Registros de stock-sucursal para este producto:', stockGeneralSnapshot.size);

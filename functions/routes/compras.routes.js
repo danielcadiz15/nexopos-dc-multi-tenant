@@ -365,7 +365,7 @@ const comprasRoutes = async (req, res, path) => {
 	  }
 	}
     
-    // COMPRAS - POST crear nueva (SIN CAMBIOS - YA ESTÁ BIEN)
+    // COMPRAS - POST crear nueva (crear compra, registrar pago según origen, no tocar stock)
     if (req.method === 'POST' && pathParts.length === 1) {
       const nuevaCompra = req.body;
       
@@ -419,7 +419,11 @@ const comprasRoutes = async (req, res, path) => {
           fecha: nuevaCompra.fecha || new Date().toISOString(),
           fechaCreacion: admin.firestore.FieldValue.serverTimestamp(),
           fechaActualizacion: admin.firestore.FieldValue.serverTimestamp(),
-          estado: nuevaCompra.estado || 'pendiente',
+          // Siempre iniciar como pendiente; el stock se aplicará al recibir
+          estado: 'pendiente',
+          // Estado de pago
+          estado_pago: nuevaCompra.estado_pago || 'pendiente',
+          pago: nuevaCompra.pago || null,
           activo: nuevaCompra.activo !== false,
           ...(companyId ? { orgId: companyId } : {})
         };
@@ -427,100 +431,71 @@ const comprasRoutes = async (req, res, path) => {
         // Crear la compra
         const docRef = await db.collection('companies').doc(companyId).collection('compras').add(compraFirebase);
         console.log('✅ Compra creada con ID:', docRef.id);
-        
-        // Si la compra está completada, actualizar stock
-        if (compraFirebase.estado === 'completada' && Array.isArray(compraFirebase.detalles)) {
-          const destinoSucursalId = compraFirebase.sucursal_id || sucursalPrincipalId;
-          console.log(`🔄 Actualizando stock en sucursal destino: ${destinoSucursalId}`);
-          
-          const batch = db.batch();
-          
-          for (const detalle of compraFirebase.detalles) {
-            if (detalle.producto_id && detalle.cantidad) {
-              console.log(`  📦 Procesando producto ${detalle.producto_id}, cantidad: ${detalle.cantidad}`);
-              
-              // Buscar stock existente
-              const stockQuery = await db.collection('companies').doc(companyId).collection('stock_sucursal')
-                .where('producto_id', '==', detalle.producto_id)
-                .where('sucursal_id', '==', destinoSucursalId)
-                .limit(1)
-                .get();
-              
-              if (stockQuery.empty) {
-                // Crear nuevo registro de stock
-                console.log(`  🆕 Creando stock para producto ${detalle.producto_id}`);
-                
-                const nuevoStockRef = db.collection('companies').doc(companyId).collection('stock_sucursal').doc();
-                batch.set(nuevoStockRef, {
-                  producto_id: detalle.producto_id,
-                  sucursal_id: destinoSucursalId,
-                  cantidad: parseFloat(parseFloat(detalle.cantidad).toFixed(3)),
-                  stock_minimo: 5,
-                  ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp()
-                });
-              } else {
-                // Actualizar stock existente
-                const stockDoc = stockQuery.docs[0];
-                const stockData = stockDoc.data();
-                const stockActual = parseFloat(stockData.cantidad || 0);
-                const nuevoStock = parseFloat((stockActual + parseFloat(detalle.cantidad)).toFixed(3));
-				console.log(`📊 DEBUG STOCK:`);
-				console.log(`  - Stock actual: ${stockActual} (tipo: ${typeof stockActual})`);
-				console.log(`  - Cantidad a sumar: ${parseFloat(detalle.cantidad)} (tipo: ${typeof parseFloat(detalle.cantidad)})`);
-				console.log(`  - Nuevo stock calculado: ${nuevoStock}`);
-				console.log(`  - Nuevo stock con toFixed: ${parseFloat(nuevoStock.toFixed(3))}`);
-                
-                console.log(`  🔄 Actualizando stock: ${stockActual} + ${detalle.cantidad} = ${nuevoStock}`);
-                
-                batch.update(stockDoc.ref, {
-                  cantidad: parseFloat(nuevoStock.toFixed(3)),
-                  ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp()
-                });
-              }
-              
-              // Crear movimiento de stock
-              const movimientoRef = db.collection('companies').doc(companyId).collection('movimientos_stock').doc();
-              batch.set(movimientoRef, {
-                sucursal_id: destinoSucursalId,
-                producto_id: detalle.producto_id,
-                tipo: 'entrada',
-                cantidad: parseFloat(detalle.cantidad),
-                motivo: 'Compra a proveedor',
-                referencia_tipo: 'compra',
-                referencia_id: docRef.id,
-                fecha: admin.firestore.FieldValue.serverTimestamp(),
-                usuario_id: nuevaCompra.usuario_id || 'sistema'
+        // 💸 Registrar pago según origen: 'caja' (egreso con validación) o 'externo' (sin caja)
+        try {
+          const pago = nuevaCompra.pago || {};
+          const origen = (pago.origen || pago.tipo || '').toLowerCase(); // 'caja' | 'externo'
+          const medioPago = pago.medio_pago || 'efectivo';
+          const permitirNegativo = pago.permitir_negativo === true;
+          const montoEgreso = parseFloat(nuevaCompra.total || nuevaCompra.subtotal || 0) || 0;
+          const sucursalPagoId = compraFirebase.sucursal_id || sucursalPrincipalId;
+
+          // Helper: calcular saldo de caja de la sucursal
+          async function obtenerSaldoCaja(companyIdArg, sucursalIdArg) {
+            const movsSnap = await db.collection('companies').doc(companyIdArg).collection('caja')
+              .doc(sucursalIdArg).collection('movimientos').get();
+            let saldo = 0;
+            movsSnap.forEach(m => {
+              const d = m.data();
+              const monto = parseFloat(d.monto || 0) || 0;
+              if ((d.tipo || '').toLowerCase() === 'ingreso') saldo += monto;
+              else if ((d.tipo || '').toLowerCase() === 'egreso') saldo -= monto;
+            });
+            return saldo;
+          }
+
+          if (origen === 'caja' && montoEgreso > 0) {
+            const saldo = await obtenerSaldoCaja(companyId, sucursalPagoId);
+            console.log('💸 [CAJA] Validación de saldo:', { saldo, montoEgreso, permitirNegativo });
+            if (saldo < montoEgreso && !permitirNegativo) {
+              return res.status(400).json({
+                success: false,
+                message: 'Saldo de caja insuficiente para cubrir la compra',
+                saldo_actual: saldo,
+                requiere_confirmacion: true,
+                compra_id: docRef.id
               });
             }
+            const fechaISO = new Date().toISOString();
+            const fechaDia = fechaISO.split('T')[0];
+            await db.collection('companies').doc(companyId).collection('caja').doc(sucursalPagoId).collection('movimientos').add({
+              tipo: 'egreso',
+              monto: montoEgreso,
+              medio_pago: medioPago,
+              concepto: `Compra ${docRef.id} a ${compraFirebase.proveedor_nombre || compraFirebase.proveedor || 'Proveedor'}`,
+              usuario: nuevaCompra.usuario_email || nuevaCompra.usuario_id || 'sistema',
+              observaciones: `Pago desde caja${permitirNegativo && saldo < montoEgreso ? ' (saldo negativo)' : ''}`,
+              fecha: fechaDia,
+              hora: fechaISO.split('T')[1]?.slice(0,8) || '',
+              referencia_tipo: 'compra',
+              referencia_id: docRef.id,
+              proveedor_id: compraFirebase.proveedor_id || null,
+              sucursal_id: sucursalPagoId,
+              fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
+            });
+            // Marcar pagada
+            await docRef.update({ estado_pago: 'pagada', pago: { ...pago, origen: 'caja', medio_pago: medioPago } });
+            console.log('💸 [CAJA] Egreso registrado por compra en caja:', { id: docRef.id, monto: montoEgreso });
+          } else if (origen === 'externo') {
+            // No afecta caja, marcar pagada
+            await docRef.update({ estado_pago: 'pagada', pago: { ...pago, origen: 'externo' } });
+            console.log('🧾 [COMPRAS] Pago externo registrado (sin caja)');
+          } else {
+            // Sin pago o pendiente
+            await docRef.update({ estado_pago: 'pendiente' });
           }
-          
-          // Ejecutar todas las operaciones
-          await batch.commit();
-          console.log('✅ Stock actualizado correctamente');
-        }
-        
-        // 💸 Registrar movimiento en caja (EGRESO)
-        try {
-          const fechaISO = new Date().toISOString();
-          const fechaDia = fechaISO.split('T')[0];
-          const montoEgreso = parseFloat(compraFirebase.total || compraFirebase.subtotal || 0) || 0;
-          await db.collection('companies').doc(companyId).collection('caja').doc('principal').collection('movimientos').add({
-            tipo: 'egreso',
-            monto: montoEgreso,
-            concepto: `Compra ${docRef.id} a ${compraFirebase.proveedor_nombre || compraFirebase.proveedor || 'Proveedor'}`,
-            usuario: nuevaCompra.usuario_email || nuevaCompra.usuario_id || 'sistema',
-            observaciones: compraFirebase.estado ? `Estado: ${compraFirebase.estado}` : '',
-            fecha: fechaDia,
-            hora: fechaISO.split('T')[1]?.slice(0,8) || '',
-            referencia_tipo: 'compra',
-            referencia_id: docRef.id,
-            proveedor_id: compraFirebase.proveedor_id || null,
-            sucursal_id: compraFirebase.sucursal_id || sucursalPrincipalId || null,
-            fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
-          });
-          console.log('💸 [CAJA] Egreso registrado por compra:', { id: docRef.id, monto: montoEgreso });
         } catch (e) {
-          console.warn('⚠️ [CAJA] No se pudo registrar egreso por compra:', e.message);
+          console.warn('⚠️ [COMPRAS] Error al registrar pago:', e.message);
         }
 
         res.status(201).json({
@@ -771,6 +746,74 @@ const comprasRoutes = async (req, res, path) => {
     }
     // Resto de rutas existentes...
     // (PUT, PATCH, etc. - mantener como están)
+    
+    // POST /compras/:id/pagos - Registrar pago de compra (caja o externo)
+    if (req.method === 'POST' && pathParts.length === 3 && pathParts[2] === 'pagos') {
+      try {
+        if (!companyId) return res.status(400).json({ success:false, message:'CompanyId requerido' });
+        const compraId = pathParts[1];
+        const body = req.body || {};
+        const origen = (body.origen || body.tipo || '').toLowerCase(); // 'caja' | 'externo'
+        const medioPago = body.medio_pago || 'efectivo';
+        const permitirNegativo = body.permitir_negativo === true;
+        const monto = parseFloat(body.monto || 0) || 0;
+        if (!monto || monto <= 0) return res.status(400).json({ success:false, message:'Monto inválido' });
+        
+        const compraRef = db.collection('companies').doc(companyId).collection('compras').doc(compraId);
+        const compraSnap = await compraRef.get();
+        if (!compraSnap.exists) return res.status(404).json({ success:false, message:'Compra no encontrada' });
+        const compra = compraSnap.data();
+        const sucursalPagoId = compra.sucursal_id;
+        
+        // Helper: saldo de caja
+        async function obtenerSaldoCaja(companyIdArg, sucursalIdArg) {
+          const movsSnap = await db.collection('companies').doc(companyIdArg).collection('caja')
+            .doc(sucursalIdArg).collection('movimientos').get();
+          let saldo = 0;
+          movsSnap.forEach(m => {
+            const d = m.data();
+            const v = parseFloat(d.monto || 0) || 0;
+            if ((d.tipo || '').toLowerCase() === 'ingreso') saldo += v;
+            else if ((d.tipo || '').toLowerCase() === 'egreso') saldo -= v;
+          });
+          return saldo;
+        }
+        
+        if (origen === 'caja') {
+          const saldo = await obtenerSaldoCaja(companyId, sucursalPagoId);
+          if (saldo < monto && !permitirNegativo) {
+            return res.status(400).json({ success:false, message:'Saldo de caja insuficiente', saldo_actual: saldo, requiere_confirmacion: true });
+          }
+          const fechaISO = new Date().toISOString();
+          const fechaDia = fechaISO.split('T')[0];
+          await db.collection('companies').doc(companyId).collection('caja').doc(sucursalPagoId).collection('movimientos').add({
+            tipo: 'egreso',
+            monto: monto,
+            medio_pago: medioPago,
+            concepto: `Pago compra ${compraId}`,
+            usuario: req.user?.email || req.user?.uid || 'sistema',
+            observaciones: permitirNegativo && saldo < monto ? 'Saldo negativo autorizado' : '',
+            fecha: fechaDia,
+            hora: fechaISO.split('T')[1]?.slice(0,8) || '',
+            referencia_tipo: 'compra_pago',
+            referencia_id: compraId,
+            proveedor_id: compra.proveedor_id || null,
+            sucursal_id: sucursalPagoId,
+            fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
+          });
+          await compraRef.update({ estado_pago: 'pagada' });
+          return res.json({ success:true, message:'Pago registrado desde caja' });
+        } else if (origen === 'externo') {
+          await compraRef.update({ estado_pago: 'pagada' });
+          return res.json({ success:true, message:'Pago externo registrado (sin afectar caja)' });
+        }
+        
+        return res.status(400).json({ success:false, message:'Origen de pago inválido (use caja o externo)' });
+      } catch (error) {
+        console.error('❌ [COMPRAS] Error al registrar pago:', error);
+        return res.status(500).json({ success:false, message:'Error al registrar pago', error: error.message });
+      }
+    }
     // PATCH /compras/:id/recibir - Recibir mercadería (NUEVO - FALTABA ESTO)
     if (req.method === 'PATCH' && pathParts.length === 3 && pathParts[2] === 'recibir') {
       try {

@@ -58,9 +58,9 @@ const cajaRoutes = async (req, res, path) => {
       return true;
     }
 
-    // GET /caja/movimientos?fecha=YYYY-MM-DD - Listar movimientos de un día
+    // GET /caja/movimientos?fecha=YYYY-MM-DD[&sucursalId=...] - Listar movimientos de un día
     if (path === '/caja/movimientos' && req.method === 'GET') {
-      const { fecha } = req.query;
+      const { fecha, sucursalId } = req.query;
       console.log('💰 [CAJA] Consultando movimientos para fecha:', fecha);
       
       if (!fecha) {
@@ -74,8 +74,9 @@ const cajaRoutes = async (req, res, path) => {
           return res.status(400).json({ success: false, message: 'CompanyId requerido' });
         }
         
-        // Consultar movimientos usando estructura separada por empresa
-        const query = db.collection('companies').doc(companyId).collection('caja').doc('principal').collection('movimientos').where('fecha', '==', fecha);
+        // Consultar movimientos usando estructura separada por empresa y sucursal
+        const cajaDocId = sucursalId || 'principal';
+        const query = db.collection('companies').doc(companyId).collection('caja').doc(cajaDocId).collection('movimientos').where('fecha', '==', fecha);
         console.log(`💰 [CAJA] Obteniendo movimientos para empresa: ${companyId} y fecha: ${fecha}`);
 
         const snapshot = await query.get();
@@ -84,9 +85,12 @@ const cajaRoutes = async (req, res, path) => {
 
         // Ordenar en memoria para evitar índices compuestos
         movimientos.sort((a, b) => {
+          // Ordenar por fechaCreacion desc; fallback: por hora string si existe
           const ta = (a.fechaCreacion?.toMillis?.() || 0);
           const tb = (b.fechaCreacion?.toMillis?.() || 0);
-          return ta - tb;
+          if (ta !== tb) return tb - ta;
+          if (a.hora && b.hora) return a.hora.localeCompare(b.hora);
+          return 0;
         });
 
         console.log(`✅ [CAJA] Encontrados ${movimientos.length} movimientos`);
@@ -144,9 +148,9 @@ const cajaRoutes = async (req, res, path) => {
       }
     }
 
-    // GET /caja/resumen?fecha=YYYY-MM-DD - Totales del día
+    // GET /caja/resumen?fecha=YYYY-MM-DD[&sucursalId=...] - Totales del día con medios de pago
     if (path === '/caja/resumen' && req.method === 'GET') {
-      const { fecha } = req.query;
+      const { fecha, sucursalId } = req.query;
       console.log('💰 [CAJA] Calculando resumen para fecha:', fecha);
       
       if (!fecha) {
@@ -160,25 +164,36 @@ const cajaRoutes = async (req, res, path) => {
           return res.status(400).json({ success: false, message: 'CompanyId requerido' });
         }
         
-        // Usar estructura separada por empresa
-        const query = db.collection('companies').doc(companyId).collection('caja').doc('principal').collection('movimientos').where('fecha', '==', fecha);
+        // Usar estructura separada por empresa y sucursal
+        const cajaDocId = sucursalId || 'principal';
+        const query = db.collection('companies').doc(companyId).collection('caja').doc(cajaDocId).collection('movimientos').where('fecha', '==', fecha);
         console.log(`💰 [CAJA] Calculando resumen para empresa: ${companyId} y fecha: ${fecha}`);
         
         const movimientosSnapshot = await query.get();
         
         let ingresos = 0;
         let egresos = 0;
+        const ingresosPorMedio = { efectivo: 0, transferencia: 0, tarjeta: 0, mercadopago: 0 };
+        const egresosPorMedio = { efectivo: 0, transferencia: 0, tarjeta: 0, mercadopago: 0 };
         
         movimientosSnapshot.forEach(doc => {
           const mov = doc.data();
-          if (mov.tipo === 'ingreso') ingresos += parseFloat(mov.monto);
-          if (mov.tipo === 'egreso') egresos += parseFloat(mov.monto);
+          const monto = parseFloat(mov.monto) || 0;
+          const medio = (mov.medio_pago || '').toLowerCase();
+          if (mov.tipo === 'ingreso') {
+            ingresos += monto;
+            if (medio && ingresosPorMedio.hasOwnProperty(medio)) ingresosPorMedio[medio] += monto;
+          }
+          if (mov.tipo === 'egreso') {
+            egresos += monto;
+            if (medio && egresosPorMedio.hasOwnProperty(medio)) egresosPorMedio[medio] += monto;
+          }
         });
         
         const saldo = ingresos - egresos;
         console.log(`✅ [CAJA] Resumen - Ingresos: ${ingresos}, Egresos: ${egresos}, Saldo: ${saldo}`);
         
-        res.json({ success: true, ingresos, egresos, saldo });
+        res.json({ success: true, ingresos, egresos, saldo, ingresosPorMedio, egresosPorMedio });
         return true;
         
       } catch (error) {

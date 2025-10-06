@@ -215,6 +215,7 @@ const RegistrarPagoDialog = ({ isOpen, onClose, venta, onPagoRegistrado }) => {
               <option value="tarjeta">Tarjeta</option>
               <option value="transferencia">Transferencia</option>
               <option value="credito">Crédito</option>
+              <option value="mercadopago">MercadoPago</option>
             </select>
           </div>
 

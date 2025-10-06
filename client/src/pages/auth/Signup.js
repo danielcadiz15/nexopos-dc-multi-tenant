@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/common/Button';
-import { createTenant, setActiveTenant } from '../../services/firebase.service';
+import { auth } from '../../firebase/config';
 
 const Signup = () => {
   const { signUp } = useAuth();
@@ -23,12 +23,10 @@ const Signup = () => {
     setLoading(true);
     try {
       await signUp(email, password);
-      // Crear empresa y activar tenant inmediatamente (demo 7 días se crea en backend)
-      const res = await createTenant(empresa.trim(), empresa.trim().toLowerCase().replace(/\s+/g,'-'));
-      if (res?.orgId) {
-        await setActiveTenant(res.orgId);
-      }
-      navigate('/', { replace: true });
+      // Enviar verificación de email y pedir confirmación antes de crear empresa
+      try { await auth.currentUser?.sendEmailVerification(); } catch {}
+      alert('Te enviamos un correo para verificar tu email. Veríficalo y luego inicia sesión para crear tu empresa.');
+      navigate('/login', { replace: true });
     } catch (e) {
       alert(e.message || 'Error al registrarse');
     } finally {

@@ -5,6 +5,7 @@ const db = admin.firestore();
 // Función para manejar todas las rutas de stock por sucursal
 const stockSucursalRoutes = async (req, res, path) => {
   try {
+    const companyIdCtx = req.companyId || req.user?.companyId || req.query?.orgId || null;
     // STOCK-SUCURSAL - GET stock de una sucursal específica
     if (path.match(/^\/stock-sucursal\/sucursal\/[^\/]+$/) && req.method === 'GET') {
       const sucursalId = path.split('/sucursal/')[1];
@@ -133,7 +134,7 @@ const stockSucursalRoutes = async (req, res, path) => {
       }
       return true;
     }
-	// POST /stock-sucursal/transferir - Crear nueva transferencia
+    // POST /stock-sucursal/transferir - Crear nueva transferencia (multi-tenant)
 	if (path === '/stock-sucursal/transferir' && req.method === 'POST') {
 	  try {
 		const {
@@ -149,6 +150,11 @@ const stockSucursalRoutes = async (req, res, path) => {
 		  destino: sucursal_destino_id,
 		  productos: productos?.length
 		});
+
+        const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido (orgId)' });
+        }
 
 		// Validaciones básicas
 		if (!sucursal_origen_id || !sucursal_destino_id) {
@@ -172,22 +178,17 @@ const stockSucursalRoutes = async (req, res, path) => {
 		  });
 		}
 
-		// Verificar que las sucursales existen
-		const [sucursalOrigen, sucursalDestino] = await Promise.all([
-		  db.collection('sucursales').doc(sucursal_origen_id).get(),
-		  db.collection('sucursales').doc(sucursal_destino_id).get()
-		]);
-
-		if (!sucursalOrigen.exists || !sucursalDestino.exists) {
-		  return res.status(404).json({
-			success: false,
-			message: 'Una o ambas sucursales no existen'
-		  });
-		}
+        // Intentar obtener sucursales (tenant primero, luego global). No bloquear si no existen.
+        const [sucOriTenant, sucDesTenant] = await Promise.all([
+          db.collection('companies').doc(companyId).collection('sucursales').doc(sucursal_origen_id).get(),
+          db.collection('companies').doc(companyId).collection('sucursales').doc(sucursal_destino_id).get()
+        ]);
+        const sucursalOrigen = sucOriTenant.exists ? sucOriTenant : await db.collection('sucursales').doc(sucursal_origen_id).get();
+        const sucursalDestino = sucDesTenant.exists ? sucDesTenant : await db.collection('sucursales').doc(sucursal_destino_id).get();
 
 		// Verificar stock disponible en sucursal origen
 		for (const producto of productos) {
-		  const stockQuery = await db.collection('stock_sucursal')
+          const stockQuery = await db.collection('companies').doc(companyId).collection('stock_sucursal')
 			.where('producto_id', '==', producto.producto_id)
 			.where('sucursal_id', '==', sucursal_origen_id)
 			.limit(1)
@@ -246,7 +247,7 @@ const stockSucursalRoutes = async (req, res, path) => {
 		  })
 		);
 
-		// CRÍTICO: Crear la transferencia en la colección 'transferencias'
+        // CRÍTICO: Crear la transferencia en la colección tenant 'companies/{orgId}/transferencias'
 		const transferenciaData = {
 		  sucursal_origen_id,
 		  sucursal_destino_id,
@@ -259,8 +260,8 @@ const stockSucursalRoutes = async (req, res, path) => {
 		  fecha_creacion: admin.firestore.FieldValue.serverTimestamp()
 		};
 
-		// Crear el documento en la colección transferencias
-		const transferenciaRef = await db.collection('transferencias').add(transferenciaData);
+        // Crear el documento en la colección transferencias del tenant
+        const transferenciaRef = await db.collection('companies').doc(companyId).collection('transferencias').add(transferenciaData);
 		
 		console.log(`✅ [STOCK-SUCURSAL] Transferencia creada con ID: ${transferenciaRef.id}`);
 
@@ -268,14 +269,8 @@ const stockSucursalRoutes = async (req, res, path) => {
 		const respuestaData = {
 		  id: transferenciaRef.id,
 		  ...transferenciaData,
-		  sucursal_origen: {
-			id: sucursalOrigen.id,
-			nombre: sucursalOrigen.data().nombre
-		  },
-		  sucursal_destino: {
-			id: sucursalDestino.id,
-			nombre: sucursalDestino.data().nombre
-		  }
+          sucursal_origen: sucursalOrigen?.exists ? { id: sucursalOrigen.id, nombre: sucursalOrigen.data().nombre } : { id: sucursal_origen_id },
+          sucursal_destino: sucursalDestino?.exists ? { id: sucursalDestino.id, nombre: sucursalDestino.data().nombre } : { id: sucursal_destino_id }
 		};
 
 		res.status(201).json({
@@ -421,9 +416,10 @@ const stockSucursalRoutes = async (req, res, path) => {
       return true;
     }
 
-    // STOCK-SUCURSAL - POST ajustar stock (sumar o restar)
+    // STOCK-SUCURSAL - POST ajustar stock (sumar o restar) - multi-tenant
     else if (path === '/stock-sucursal/ajustar' && req.method === 'POST') {
       const { sucursal_id, producto_id, ajuste, motivo } = req.body;
+      const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
       
       try {
         // Validaciones
@@ -437,12 +433,23 @@ const stockSucursalRoutes = async (req, res, path) => {
         
         const ajusteNum = parseFloat(ajuste);
         
-        // Buscar el stock actual
-        const stockQuery = await db.collection('stock_sucursal')
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido (orgId)' });
+        }
+
+        // Buscar el stock actual (tenant primero, luego fallback global)
+        let stockQuery = await db.collection('companies').doc(companyId).collection('stock_sucursal')
           .where('sucursal_id', '==', sucursal_id)
           .where('producto_id', '==', producto_id)
           .limit(1)
           .get();
+        if (stockQuery.empty) {
+          stockQuery = await db.collection('stock_sucursal')
+            .where('sucursal_id', '==', sucursal_id)
+            .where('producto_id', '==', producto_id)
+            .limit(1)
+            .get();
+        }
         
         if (stockQuery.empty) {
           res.status(404).json({
@@ -463,7 +470,7 @@ const stockSucursalRoutes = async (req, res, path) => {
         });
         
         // Registrar movimiento
-        await db.collection('movimientos_stock').add({
+        await db.collection('companies').doc(companyId).collection('movimientos_stock').add({
           sucursal_id,
           producto_id,
           tipo: ajusteNum > 0 ? 'entrada' : 'salida',
@@ -767,7 +774,7 @@ const stockSucursalRoutes = async (req, res, path) => {
       error: error.message
     });
     return true;
-  }
+  } 
 };
 
 module.exports = stockSucursalRoutes;

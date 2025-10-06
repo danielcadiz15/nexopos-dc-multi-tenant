@@ -64,6 +64,23 @@ const AdminPanel = () => {
     }
   };
 
+  const eliminarEmpresa = async (empresaId) => {
+    try {
+      if (!window.confirm('¿Seguro que deseas eliminar esta empresa? Esta acción es irreversible.')) return;
+      const { status, data } = await api.delete(`/empresas/${empresaId}`);
+      if (status === 200 && data?.success) {
+        toast.success('Empresa eliminada');
+        await cargar();
+      } else if (status === 403) {
+        toast.error('Solo administradores');
+      } else {
+        toast.error(data?.message || 'No se pudo eliminar');
+      }
+    } catch (e) {
+      toast.error('Error al eliminar empresa');
+    }
+  };
+
   if (loading) return (
     <div className="flex justify-center items-center h-64">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -105,6 +122,7 @@ const AdminPanel = () => {
                   <td className="px-4 py-2 space-x-2">
                     <button className="px-2 py-1 bg-indigo-600 text-white rounded" onClick={()=> setEditLic({ id:e.id, plan: lic.plan||'basic', paidUntil: lic.paidUntil||'', blocked: !!lic.blocked, reason: lic.reason||'' })}>Licencia</button>
                     <button className="px-2 py-1 bg-gray-700 text-white rounded" onClick={()=> abrirModulos(e.id)}>Módulos</button>
+                    <button className="px-2 py-1 bg-red-600 text-white rounded" onClick={()=> eliminarEmpresa(e.id)}>Eliminar</button>
                   </td>
                 </tr>
               );

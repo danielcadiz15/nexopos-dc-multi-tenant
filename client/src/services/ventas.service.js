@@ -760,9 +760,15 @@ async buscarPorNumero(numeroVenta) {
       console.log(`🗑️ Eliminando venta ${id} con motivo: ${motivo}`);
       
       const resultado = await this.delete(`/${id}`, { motivo });
-      
-      console.log('✅ Venta eliminada correctamente:', resultado);
-      return resultado;
+      // Normalizar respuesta
+      const status = resultado?.status ?? 200;
+      const success = resultado?.data?.success ?? resultado?.success ?? (status < 400);
+      if (!success) {
+        const msg = resultado?.data?.message || resultado?.message || `Error al eliminar venta (status ${status})`;
+        throw new Error(msg);
+      }
+      console.log('✅ Venta eliminada correctamente:', resultado?.data || resultado);
+      return resultado?.data || resultado;
       
     } catch (error) {
       console.error(`❌ Error al eliminar venta ${id}:`, error);

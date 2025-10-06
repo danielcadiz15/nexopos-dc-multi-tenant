@@ -15,6 +15,7 @@ import { useAuth } from '../../contexts/AuthContext';
 // Servicios
 import comprasService from '../../services/compras.service';
 import productosService from '../../services/productos.service';
+import stockSucursalService from '../../services/stock-sucursal.service';
 import proveedoresService from '../../services/proveedores.service';
 
 // Componentes
@@ -55,6 +56,10 @@ const CompraForm = () => {
   const [loadingProductos, setLoadingProductos] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [total, setTotal] = useState(0);
+  // Pago en creación: origen 'caja' o 'externo'
+  const [pagoOrigen, setPagoOrigen] = useState('');
+  const [pagoMedio, setPagoMedio] = useState('efectivo');
+  const [permitirNegativo, setPermitirNegativo] = useState(false);
   
   // Estados para búsqueda de productos
   const [busquedaProductos, setBusquedaProductos] = useState('');
@@ -120,7 +125,7 @@ const CompraForm = () => {
         
         return a.nombre.localeCompare(b.nombre);
       })
-      .slice(0, 8); // Máximo 8 sugerencias
+      .slice(0, 20); // Mostrar más coincidencias (hasta 20)
 
     setProductosSugeridos(resultados);
     setMostrandoSugerencias(true);
@@ -172,7 +177,7 @@ const CompraForm = () => {
   /**
    * Selecciona un producto de las sugerencias
    */
-  const seleccionarProducto = (producto, index) => {
+  const seleccionarProducto = async (producto, index) => {
     const nuevosDetalles = [...detalles];
     nuevosDetalles[index] = {
       ...nuevosDetalles[index],
@@ -183,7 +188,7 @@ const CompraForm = () => {
         codigo: producto.codigo,
         nombre: producto.nombre,
         precio_costo: producto.precio_costo,
-        stock_actual: producto.stock_actual
+        stock_actual: 0
       }
     };
 
@@ -191,6 +196,21 @@ const CompraForm = () => {
     const cantidad = parseFloat(nuevosDetalles[index].cantidad) || 0;
     const precio = parseFloat(nuevosDetalles[index].precio_unitario) || 0;
     nuevosDetalles[index].subtotal = cantidad * precio;
+
+    // Obtener stock correcto por sucursal seleccionada
+    try {
+      if (sucursalSeleccionada?.id) {
+        const stockSucursales = await stockSucursalService.obtenerStockPorProducto(producto.id);
+        const stockDeSucursal = Array.isArray(stockSucursales)
+          ? stockSucursales.find(s => s.sucursal_id === sucursalSeleccionada.id)
+          : null;
+        if (stockDeSucursal && typeof stockDeSucursal.cantidad !== 'undefined') {
+          nuevosDetalles[index].producto_info.stock_actual = parseFloat(stockDeSucursal.cantidad) || 0;
+        }
+      }
+    } catch (e) {
+      console.warn('No se pudo cargar stock por sucursal:', e.message);
+    }
 
     setDetalles(nuevosDetalles);
     setBusquedaProductos('');
@@ -365,6 +385,14 @@ const CompraForm = () => {
       sucursal_nombre: sucursalSeleccionada.nombre,
       notas: formData.notas
     };
+    // Adjuntar pago si se seleccionó origen
+    if (pagoOrigen) {
+      compra.pago = {
+        origen: pagoOrigen, // 'caja' | 'externo'
+        medio_pago: pagoMedio,
+        permitir_negativo: permitirNegativo
+      };
+    }
     
     // Preparar detalles sin el campo subtotal (se calcula en el backend)
     const detallesLimpios = detalles.map(({ subtotal, producto_info, ...rest }) => ({
@@ -378,6 +406,21 @@ const CompraForm = () => {
       
       toast.success('Compra registrada correctamente');
       const compraId = response.data?.id || response.id || response;
+
+      // Si el backend no ejecutó el pago (por ejemplo, por validación), hacer POST /compras/:id/pagos
+      if (pagoOrigen) {
+        try {
+          await comprasService.pagar(compraId, {
+            origen: pagoOrigen,
+            medio_pago: pagoOrigen === 'caja' ? pagoMedio : undefined,
+            monto: total,
+            permitir_negativo: permitirNegativo
+          });
+        } catch (pagoErr) {
+          // Si el backend respondió con saldo insuficiente, mostrar y no bloquear navegación
+          console.warn('Pago diferido/pendiente:', pagoErr?.message);
+        }
+      }
       navigate(`/compras/${compraId}`);
     } catch (error) {
       console.error('Error al crear compra:', error);
@@ -564,7 +607,7 @@ const CompraForm = () => {
                                 
                                 {/* Sugerencias de productos */}
                                 {mostrandoSugerencias && filaActivaBusqueda === index && productosSugeridos.length > 0 && (
-                                  <div className="absolute z-20 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200 max-h-60 overflow-y-auto">
+                                  <div className="absolute z-20 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200 max-h-96 overflow-y-auto">
                                     {productosSugeridos.map((producto, suggestionIndex) => (
                                       <div
                                         key={producto.id}
@@ -573,23 +616,22 @@ const CompraForm = () => {
                                         }`}
                                         onClick={() => seleccionarProducto(producto, index)}
                                       >
-                                        <div className="flex justify-between items-start">
+                                        <div className="flex justify-between items-start gap-3">
                                           <div className="flex-1 min-w-0">
                                             <p className="font-medium text-sm text-gray-900 truncate">
                                               {producto.nombre}
                                             </p>
-                                            <div className="flex items-center text-xs text-gray-500">
-                                              <span>Código: {producto.codigo}</span>
-                                              <span className="mx-1">•</span>
-                                              <span className="text-blue-600">
-                                                ${producto.precio_costo?.toLocaleString() || 0}
-                                              </span>
+                                            <div className="flex items-center gap-2 text-xs text-gray-600 mt-0.5">
+                                              <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">{producto.codigo}</span>
+                                              <span className="text-blue-600 font-semibold">${producto.precio_costo?.toLocaleString() || 0}</span>
                                             </div>
                                           </div>
-                                          <div className="text-right ml-2">
-                                            <p className="text-xs text-gray-500">
-                                              Stock: {producto.stock_actual}
-                                            </p>
+                                          <div className="text-right shrink-0">
+                                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                              (producto.stock_actual || 0) > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                                            }`}>
+                                              Stock: {producto.stock_actual || 0}
+                                            </span>
                                           </div>
                                         </div>
                                       </div>
@@ -688,6 +730,38 @@ const CompraForm = () => {
         
         {/* Botones de acción - Movidos abajo */}
         <div className="flex justify-end space-x-2 mt-6">
+          {/* Selector de pago al finalizar compra */}
+          <div className="flex-1 text-right mr-4">
+            <div className="inline-flex gap-2 items-center">
+              <label className="text-sm text-gray-700">Pago:</label>
+              <select
+                value={pagoOrigen}
+                onChange={e => setPagoOrigen(e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="">Seleccionar</option>
+                <option value="caja">Caja</option>
+                <option value="externo">Pago externo</option>
+              </select>
+              {pagoOrigen === 'caja' && (
+                <>
+                  <select
+                    value={pagoMedio}
+                    onChange={e => setPagoMedio(e.target.value)}
+                    className="border rounded px-2 py-1 text-sm"
+                  >
+                    <option value="efectivo">Efectivo</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="tarjeta">Tarjeta</option>
+                  </select>
+                  <label className="inline-flex items-center gap-1 text-sm text-gray-700">
+                    <input type="checkbox" checked={permitirNegativo} onChange={e=> setPermitirNegativo(e.target.checked)} />
+                    Permitir saldo negativo
+                  </label>
+                </>
+              )}
+            </div>
+          </div>
           <Button
             type="button"
             color="secondary"

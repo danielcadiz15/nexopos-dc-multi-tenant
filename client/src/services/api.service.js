@@ -18,7 +18,9 @@ class ApiService {
         root = defaultRoot;
       }
     } catch {}
-    this.baseURL = root;
+    // Asegurar prefijo /api para Cloud Run (Functions v2)
+    const needsApiPrefix = !/\/api(\/|$)/i.test(root);
+    this.baseURL = needsApiPrefix ? `${root}/api` : root;
     try { console.log('🌐 [API] baseURL:', this.baseURL); } catch {}
     this.basePath = basePath; // ej: '/productos'
   }

@@ -4,12 +4,13 @@ import Spinner from '../../components/common/Spinner';
 import { FaPlus, FaMoneyBill, FaMinus, FaCalendarAlt, FaTrash, FaCheck, FaTimes, FaCalculator, FaEye } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
+import { FaCreditCard, FaUniversity, FaMobileAlt } from 'react-icons/fa';
 
 // URL de Firebase Functions - ajustar según tu proyecto
 const API_URL = process.env.REACT_APP_API_URL || 'https://api-5q2i5764zq-uc.a.run.app';
 
 const Caja = () => {
-  const { orgId, getAccessToken } = useAuth();
+  const { orgId, getAccessToken, sucursalSeleccionada } = useAuth();
   const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10));
   const [movimientos, setMovimientos] = useState([]);
   const [resumen, setResumen] = useState({ ingresos: 0, egresos: 0, saldo: 0 });
@@ -27,7 +28,7 @@ const Caja = () => {
   useEffect(() => {
     if (!orgId) return; // No cargar si no hay orgId
     
-    console.log('💰 [FRONTEND] Fecha actual en el componente:', fecha, 'orgId:', orgId);
+    console.log('💰 [FRONTEND] Fecha actual en el componente:', fecha, 'orgId:', orgId, 'sucursal:', sucursalSeleccionada?.id);
     if (modoVista === 'diario') {
       cargarMovimientos();
       cargarResumen();
@@ -36,7 +37,7 @@ const Caja = () => {
       cargarSaldoAcumulado();
     }
     // eslint-disable-next-line
-  }, [fecha, modoVista, orgId]);
+  }, [fecha, modoVista, orgId, sucursalSeleccionada?.id]);
 
   const cargarMovimientos = async () => {
     if (!orgId) {
@@ -48,7 +49,8 @@ const Caja = () => {
     try {
       console.log('💰 [FRONTEND] Cargando movimientos para fecha:', fecha, 'orgId:', orgId);
       const token = await getAccessToken();
-      const res = await fetch(`${API_URL}/caja/movimientos?fecha=${fecha}&orgId=${orgId}`, {
+      const suc = sucursalSeleccionada?.id || 'principal';
+      const res = await fetch(`${API_URL}/caja/movimientos?fecha=${fecha}&sucursalId=${suc}&orgId=${orgId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -181,7 +183,8 @@ const Caja = () => {
     try {
       console.log('💰 [FRONTEND] Cargando resumen para fecha:', fecha);
       const token = await getAccessToken();
-      const res = await fetch(`${API_URL}/caja/resumen?fecha=${fecha}&orgId=${orgId}`, {
+      const suc = sucursalSeleccionada?.id || 'principal';
+      const res = await fetch(`${API_URL}/caja/resumen?fecha=${fecha}&sucursalId=${suc}&orgId=${orgId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -194,7 +197,13 @@ const Caja = () => {
       const data = await res.json();
       console.log('💰 [FRONTEND] Datos de resumen:', data);
       
-      setResumen({ ingresos: data.ingresos || 0, egresos: data.egresos || 0, saldo: data.saldo || 0 });
+      setResumen({
+        ingresos: data.ingresos || 0,
+        egresos: data.egresos || 0,
+        saldo: data.saldo || 0,
+        ingresosPorMedio: data.ingresosPorMedio || {},
+        egresosPorMedio: data.egresosPorMedio || {}
+      });
     } catch (e) {
       console.error('❌ [FRONTEND] Error cargando resumen:', e);
       setResumen({ ingresos: 0, egresos: 0, saldo: 0 });
@@ -411,6 +420,56 @@ const Caja = () => {
                 <p className="text-orange-600 text-xs mt-1">Total registrados</p>
               </div>
               <FaEye className="text-orange-500 text-2xl" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tarjetas por medio de pago (ingresos) */}
+      {modoVista === 'diario' && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm">Efectivo</p>
+                <p className="text-2xl font-bold text-gray-800">
+                  ${((resumen.ingresosPorMedio||{}).efectivo||0).toFixed(2)}
+                </p>
+              </div>
+              <FaMoneyBill className="text-green-500 text-2xl" />
+            </div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm">Transferencia</p>
+                <p className="text-2xl font-bold text-gray-800">
+                  ${((resumen.ingresosPorMedio||{}).transferencia||0).toFixed(2)}
+                </p>
+              </div>
+              <FaUniversity className="text-blue-500 text-2xl" />
+            </div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm">Tarjeta</p>
+                <p className="text-2xl font-bold text-gray-800">
+                  ${((resumen.ingresosPorMedio||{}).tarjeta||0).toFixed(2)}
+                </p>
+              </div>
+              <FaCreditCard className="text-purple-500 text-2xl" />
+            </div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm">MercadoPago</p>
+                <p className="text-2xl font-bold text-gray-800">
+                  ${((resumen.ingresosPorMedio||{}).mercadopago||0).toFixed(2)}
+                </p>
+              </div>
+              <FaMobileAlt className="text-indigo-500 text-2xl" />
             </div>
           </div>
         </div>

@@ -87,7 +87,7 @@ class ComprasService extends FirebaseService {
         ...compra,
         detalles: detalles,
         fecha: compra.fecha || new Date().toISOString(),
-        estado: compra.estado || 'pendiente',
+        estado: 'pendiente',
         total: detalles.reduce((sum, item) => sum + (item.cantidad * item.precio_unitario), 0)
       };
       
@@ -97,6 +97,22 @@ class ComprasService extends FirebaseService {
       return resultado;
     } catch (error) {
       console.error('❌ Error al crear compra:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Paga una compra existente (origen: 'caja' o 'externo')
+   */
+  async pagar(id, { origen, medio_pago = 'efectivo', monto, permitir_negativo = false }) {
+    try {
+      if (!id) throw new Error('ID de compra requerido');
+      if (!origen) throw new Error('Origen de pago requerido (caja|externo)');
+      const body = { origen, medio_pago, monto, permitir_negativo };
+      const resp = await this.post(`/${id}/pagos`, body);
+      return resp;
+    } catch (error) {
+      console.error('❌ Error al pagar compra:', error);
       throw error;
     }
   }

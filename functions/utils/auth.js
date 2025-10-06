@@ -65,6 +65,30 @@ async function authenticateUser(req, res, next) {
           userData.companyId = userOrg.orgId;
         }
       }
+
+      // NUEVO: Leer permisos y rol a nivel de empresa para que los cambios a roles/permiso sean efectivos sin relogin
+      try {
+        const effectiveCompanyId = req.companyId || userData.companyId || companyId;
+        if (effectiveCompanyId) {
+          const companyUserRef = admin.firestore()
+            .doc(`companies/${effectiveCompanyId}/usuarios/${decodedToken.uid}`);
+          const companyUserSnap = await companyUserRef.get();
+          if (companyUserSnap.exists) {
+            const companyUser = companyUserSnap.data();
+            // Fusionar datos de empresa (rol/permisos/activo/sucursales)
+            userData.rol = companyUser.rol || userData.rol;
+            userData.permisos = companyUser.permisos || userData.permisos || {};
+            if (typeof companyUser.activo === 'boolean') {
+              userData.activo = companyUser.activo;
+            }
+            if (Array.isArray(companyUser.sucursales)) {
+              userData.sucursales = companyUser.sucursales;
+            }
+          }
+        }
+      } catch (permError) {
+        console.warn('⚠️ [AUTH] No se pudieron leer permisos por empresa:', permError.message);
+      }
       
       console.log('👤 [AUTH] Datos del usuario:', {
         email: userData.email,
@@ -126,9 +150,12 @@ function requireAdmin(req, res, next) {
   }
   
   const esAdmin = req.user.email === 'danielcadiz15@gmail.com' ||
-                  req.user.rol === 'Administrador' ||
-                  req.user.rol === 'admin' ||
-                  req.user.rol === 'Admin';
+                  (typeof req.user.rol === 'string' && ['administrador','admin','Administrador','Admin'].includes(req.user.rol)) ||
+                  (req.user.permisos && (
+                    req.user.permisos.usuarios?.configurar_roles === true ||
+                    req.user.permisos.usuarios?.editar === true ||
+                    req.user.permisos.ventas?.eliminar === true
+                  ));
   
   if (!esAdmin) {
     return res.status(403).json({

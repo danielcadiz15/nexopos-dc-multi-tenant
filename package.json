@@ -8,7 +8,9 @@
     "server": "npx firebase emulators:start --only functions --project nexopos-dc",
     "client": "npm --prefix client start",
     "install-all": "npm install && cd functions && npm install && cd ../client && npm install",
-    "build": "cd client && npm run build && cd ../functions && npm run build"
+    "build": "cd client && npm run build && cd ../functions && npm run build",
+    "grant-admin": "node scripts/grant-admin.js",
+    "enable-modules": "node scripts/enable-modules.js"
   },
   "keywords": [
     "despensa",

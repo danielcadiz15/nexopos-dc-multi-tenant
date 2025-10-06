@@ -319,37 +319,30 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 	  return true;
 	}
 
-	// GET /ventas/estadisticas/dia - Estadísticas del día con filtro opcional
+	// GET /ventas/estadisticas/dia - Estadísticas del día (multi-tenant, evitar compuestos)
 	if (path === '/ventas/estadisticas/dia' && req.method === 'GET') {
 	  try {
 		console.log('📊 Obteniendo estadísticas del día');
 		
 		const { sucursal_id } = req.query;
 		
+		if (!companyId) {
+		  return res.status(400).json({ success:false, message:'CompanyId requerido' });
+		}
+		
 		// Obtener fecha de inicio y fin del día actual
 		const hoy = new Date();
 		hoy.setHours(0, 0, 0, 0);
 		const inicioHoy = admin.firestore.Timestamp.fromDate(hoy);
-		
 		const mañana = new Date(hoy);
 		mañana.setDate(mañana.getDate() + 1);
 		const finHoy = admin.firestore.Timestamp.fromDate(mañana);
 		
-		// Construir query base
-		let query = db.collection('ventas')
+		// Construir query base en tenant (solo por fecha para evitar índice compuesto)
+		let query = db.collection('companies').doc(companyId).collection('ventas')
 		  .where('fechaCreacion', '>=', inicioHoy)
-		  .where('fechaCreacion', '<', finHoy);
-		
-		// Aplicar filtro multi-tenant
-		if (companyId) {
-		  query = query.where('orgId', '==', companyId);
-		  console.log(`🔍 [MULTI-TENANT] Filtrando estadísticas por companyId: ${companyId}`);
-		}
-		
-		// Aplicar filtro de sucursal si existe
-		if (sucursal_id) {
-		  query = query.where('sucursal_id', '==', sucursal_id);
-		}
+		  .where('fechaCreacion', '<', finHoy)
+		  .limit(1000);
 		
 		const ventasSnapshot = await query.get();
 		
@@ -367,6 +360,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		
 		ventasSnapshot.forEach(doc => {
 		  const venta = doc.data();
+		  if (sucursal_id && venta.sucursal_id !== sucursal_id) return; // filtrar sucursal en memoria
 		  totalVentas++;
 		  montoTotal += parseFloat(venta.total || 0);
 		  totalPagado += parseFloat(venta.total_pagado || 0);
@@ -488,15 +482,14 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		
 		console.log(`📅 Período: ${inicioDate.toLocaleDateString()} - ${finDate.toLocaleDateString()}`);
 		
-		// Construir query base
-		let query = db.collection('ventas')
-		  .where('fechaCreacion', '>=', inicioTimestamp)
-		  .where('fechaCreacion', '<=', finTimestamp);
-		
-		// Aplicar filtro de sucursal si existe
-		if (sucursal_id) {
-		  query = query.where('sucursal_id', '==', sucursal_id);
+		// Construir query base en tenant (solo por fecha para evitar índices compuestos)
+		if (!companyId) {
+		  return res.status(400).json({ success:false, message:'CompanyId requerido' });
 		}
+		let query = db.collection('companies').doc(companyId).collection('ventas')
+		  .where('fechaCreacion', '>=', inicioTimestamp)
+		  .where('fechaCreacion', '<=', finTimestamp)
+		  .limit(5000);
 		
 		const ventasSnapshot = await query.get();
 		
@@ -550,7 +543,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 			}
 			
 			// Agrupar por día
-			const fechaVenta = venta.fechaCreacion.toDate();
+			const fechaVenta = venta.fechaCreacion?.toDate ? venta.fechaCreacion.toDate() : (venta.fecha ? new Date(venta.fecha) : new Date());
 			const diaKey = fechaVenta.toISOString().split('T')[0];
 			if (!ventasPorDia[diaKey]) {
 			  ventasPorDia[diaKey] = {
@@ -1054,7 +1047,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 	  return true;
 	}
     
-    // PUT /ventas/:id/estado - Cambiar estado de venta
+    // PUT /ventas/:id/estado - Cambiar estado de venta (multi-tenant)
     if (path.match(/^\/ventas\/[^\/]+\/estado$/) && req.method === 'PUT') {
       const ventaId = path.split('/')[2];
       const { estado, motivo, con_transporte } = req.body;
@@ -1101,8 +1094,8 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
           return true;
         }
         
-        // Obtener venta actual
-        const ventaDoc = await db.collection('ventas').doc(ventaId).get();
+        // Obtener venta actual desde tenant
+        const ventaDoc = await db.collection('companies').doc(companyId).collection('ventas').doc(ventaId).get();
         
         if (!ventaDoc.exists) {
           res.status(404).json({
@@ -1120,7 +1113,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
           
           // Revertir stock para cada producto
           for (const detalle of ventaData.detalles || []) {
-            const stockQuery = await db.collection('stock_sucursal')
+            const stockQuery = await db.collection('companies').doc(companyId).collection('stock_sucursal')
               .where('producto_id', '==', detalle.producto_id)
               .where('sucursal_id', '==', ventaData.sucursal_id)
               .limit(1)
@@ -1137,7 +1130,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
               });
               
               // Registrar movimiento
-              await db.collection('movimientos_stock').add({
+              await db.collection('companies').doc(companyId).collection('movimientos_stock').add({
                 sucursal_id: ventaData.sucursal_id,
                 producto_id: detalle.producto_id,
                 tipo: 'entrada',
@@ -1168,12 +1161,12 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
         
         console.log('🔍 [ESTADO VENTA] Actualizando venta con:', actualizacion);
         
-        await db.collection('ventas').doc(ventaId).update(actualizacion);
+        await db.collection('companies').doc(companyId).collection('ventas').doc(ventaId).update(actualizacion);
         
         console.log(`✅ Estado de venta ${ventaId} actualizado a ${estado}`);
         
         // Verificar que se actualizó correctamente
-        const ventaActualizada = await db.collection('ventas').doc(ventaId).get();
+        const ventaActualizada = await db.collection('companies').doc(companyId).collection('ventas').doc(ventaId).get();
         const datosActualizados = ventaActualizada.data();
         console.log('🔍 [ESTADO VENTA] Verificación post-actualización:', {
           estadoActual: datosActualizados.estado,
@@ -1242,9 +1235,23 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
       
       try {
         console.log(`🗑️ Eliminando venta ${ventaId}`);
+        console.log('🔍 [ELIMINAR VENTA] Contexto:', { companyId, user: req.user });
         
-        // Obtener venta actual
-        const ventaDoc = await db.collection('ventas').doc(ventaId).get();
+        // Obtener venta actual (TENANT primero, fallback legacy)
+        let ventaDoc = null;
+        if (companyId) {
+          ventaDoc = await db.collection('companies').doc(companyId).collection('ventas').doc(ventaId).get();
+        }
+        if (!ventaDoc || !ventaDoc.exists) {
+          const legacyDoc = await db.collection('ventas').doc(ventaId).get();
+          if (legacyDoc.exists) {
+            // Si la venta está en legacy pero tenemos companyId, evitamos operar para no cruzar tenants
+            if (companyId && legacyDoc.get('orgId') && legacyDoc.get('orgId') !== companyId) {
+              return res.status(404).json({ success:false, message:'Venta no encontrada' });
+            }
+            ventaDoc = legacyDoc;
+          }
+        }
         
         if (!ventaDoc.exists) {
           res.status(404).json({
@@ -1260,7 +1267,9 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
         console.log('🔄 Restaurando stock por eliminación...');
         
         for (const detalle of ventaData.detalles || []) {
-          const stockQuery = await db.collection('stock_sucursal')
+          const stockQuery = await (companyId
+            ? db.collection('companies').doc(companyId).collection('stock_sucursal')
+            : db.collection('stock_sucursal'))
             .where('producto_id', '==', detalle.producto_id)
             .where('sucursal_id', '==', ventaData.sucursal_id)
             .limit(1)
@@ -1277,7 +1286,10 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
             });
             
             // Registrar movimiento
-            await db.collection('movimientos_stock').add({
+            await (companyId
+              ? db.collection('companies').doc(companyId).collection('movimientos_stock')
+              : db.collection('movimientos_stock'))
+              .add({
               sucursal_id: ventaData.sucursal_id,
               producto_id: detalle.producto_id,
               tipo: 'entrada',
@@ -1294,10 +1306,13 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
           }
         }
         
-        // Guardar en ventas_eliminadas antes de eliminar
+        // Guardar en ventas_eliminadas antes de eliminar (tenant)
         const motivo = req.body?.motivo || 'Eliminación sin motivo especificado';
         
-        await db.collection('ventas_eliminadas').doc(ventaId).set({
+        const ventasEliminadasRef = companyId
+          ? db.collection('companies').doc(companyId).collection('ventas_eliminadas').doc(ventaId)
+          : db.collection('ventas_eliminadas').doc(ventaId);
+        await ventasEliminadasRef.set({
           ...ventaData,
           eliminado_por: req.user?.email || 'sistema',
           fecha_eliminacion: admin.firestore.FieldValue.serverTimestamp(),
@@ -1306,9 +1321,76 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
         });
         
         console.log(`📝 Venta ${ventaId} guardada en ventas_eliminadas`);
-        
+
+        // 💰 Registrar EGRESOS en caja por montos cobrados (por medio de pago)
+        try {
+          const sucursalId = ventaData.sucursal_id;
+          const cajaMovsCol = companyId
+            ? db.collection('companies').doc(companyId).collection('caja').doc(sucursalId).collection('movimientos')
+            : null;
+
+          // Sumar pagos registrados en subcolección
+          let sumaPagosPorMedio = {};
+          let sumaPagosTotal = 0;
+          if (companyId && sucursalId) {
+            const pagosSnap = await db.collection('companies').doc(companyId)
+              .collection('ventas').doc(ventaId).collection('pagos').get();
+            pagosSnap.forEach(docP => {
+              const p = docP.data();
+              const medio = p.medio_pago || p.metodo_pago || ventaData.metodo_pago || 'efectivo';
+              const monto = parseFloat(p.monto || 0) || 0;
+              sumaPagosPorMedio[medio] = (sumaPagosPorMedio[medio] || 0) + monto;
+              sumaPagosTotal += monto;
+            });
+
+            // Considerar pago inicial registrado al crear la venta (si no generó doc en pagos)
+            const totalPagadoVenta = parseFloat(ventaData.total_pagado || 0) || 0;
+            const restanteInicial = totalPagadoVenta - sumaPagosTotal;
+            if (restanteInicial > 0) {
+              const medioInicial = ventaData.metodo_pago || 'efectivo';
+              sumaPagosPorMedio[medioInicial] = (sumaPagosPorMedio[medioInicial] || 0) + restanteInicial;
+            }
+
+            // Generar egresos por cada medio
+            const fechaISO = new Date().toISOString();
+            const fechaDia = fechaISO.split('T')[0];
+            for (const [medio, monto] of Object.entries(sumaPagosPorMedio)) {
+              if (monto > 0 && cajaMovsCol) {
+                await cajaMovsCol.add({
+                  tipo: 'egreso',
+                  monto: monto,
+                  medio_pago: medio,
+                  concepto: `Anulación/Reembolso venta ${ventaData.numero || ventaId}`,
+                  usuario: req.user?.email || req.user?.uid || 'sistema',
+                  observaciones: 'Reverso por eliminación de venta',
+                  fecha: fechaDia,
+                  hora: fechaISO.split('T')[1]?.slice(0,8) || '',
+                  referencia_tipo: 'venta_anulada',
+                  referencia_id: ventaId,
+                  cliente_id: ventaData?.cliente_id || null,
+                  sucursal_id: sucursalId,
+                  fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
+                });
+              }
+            }
+
+            // Opcional: eliminar documentos de pagos asociados
+            const pagosSnap2 = await db.collection('companies').doc(companyId)
+              .collection('ventas').doc(ventaId).collection('pagos').get();
+            const batch = db.batch();
+            pagosSnap2.forEach(d => batch.delete(d.ref));
+            await batch.commit();
+          }
+        } catch (cajaEgresoErr) {
+          console.warn('⚠️ [CAJA] No se pudieron registrar egresos por eliminación:', cajaEgresoErr.message);
+        }
+
         // Eliminar la venta
-        await db.collection('ventas').doc(ventaId).delete();
+        if (companyId) {
+          await db.collection('companies').doc(companyId).collection('ventas').doc(ventaId).delete();
+        } else {
+          await db.collection('ventas').doc(ventaId).delete();
+        }
         
         console.log(`✅ Venta ${ventaId} eliminada correctamente`);
         
@@ -1727,7 +1809,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
     
     // RUTA ELIMINADA: Se movió al principio del archivo para evitar conflictos con rutas dinámicas
     
-    // PUT /ventas/:id/notas - Actualizar notas de una venta
+    // PUT /ventas/:id/notas - Actualizar notas de una venta (multi-tenant)
     if (path.match(/^\/ventas\/[^\/]+\/notas$/) && req.method === 'PUT') {
       const ventaId = path.split('/')[2];
       const { notas } = req.body;
@@ -1735,7 +1817,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
       try {
         console.log(`📝 Actualizando notas de venta ${ventaId}`);
         
-        await db.collection('ventas').doc(ventaId).update({
+        await db.collection('companies').doc(companyId).collection('ventas').doc(ventaId).update({
           notas: notas || '',
           fechaActualizacion: admin.firestore.FieldValue.serverTimestamp()
         });
@@ -1932,7 +2014,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
       return true;
     }
     
-    // POST /ventas/:id/recordatorio - Enviar recordatorio de pago
+    // POST /ventas/:id/recordatorio - Enviar recordatorio de pago (multi-tenant)
     if (path.match(/^\/ventas\/[^\/]+\/recordatorio$/) && req.method === 'POST') {
       const ventaId = path.split('/')[2];
       const { medio, mensaje, destinatario } = req.body;
@@ -1941,7 +2023,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
         console.log(`📧 Enviando recordatorio para venta ${ventaId}`);
         
         // Obtener datos de la venta
-        const ventaDoc = await db.collection('ventas').doc(ventaId).get();
+        const ventaDoc = await db.collection('companies').doc(companyId).collection('ventas').doc(ventaId).get();
         
         if (!ventaDoc.exists) {
           res.status(404).json({
@@ -1954,7 +2036,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
         const venta = ventaDoc.data();
         
         // Registrar el recordatorio
-        await db.collection('ventas').doc(ventaId).collection('recordatorios').add({
+        await db.collection('companies').doc(companyId).collection('ventas').doc(ventaId).collection('recordatorios').add({
           medio: medio || 'email',
           mensaje: mensaje || `Recordatorio de pago pendiente por ${venta.saldo_pendiente}`,
           destinatario: destinatario || venta.cliente_info?.email || '',
@@ -1985,14 +2067,14 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
       return true;
     }
     
-    // GET /ventas/:id/intereses-mora - Calcular intereses por mora
+    // GET /ventas/:id/intereses-mora - Calcular intereses por mora (multi-tenant)
     if (path.match(/^\/ventas\/[^\/]+\/intereses-mora$/) && req.method === 'GET') {
       const ventaId = path.split('/')[2];
       
       try {
         console.log(`💰 Calculando intereses de mora para venta ${ventaId}`);
         
-        const ventaDoc = await db.collection('ventas').doc(ventaId).get();
+        const ventaDoc = await db.collection('companies').doc(companyId).collection('ventas').doc(ventaId).get();
         
         if (!ventaDoc.exists) {
           res.status(404).json({

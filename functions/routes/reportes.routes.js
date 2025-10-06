@@ -6,6 +6,8 @@ module.exports = async function reportesRoutes(req, res, path) {
   console.log('📊 [REPORTES] Ruta:', path);
   
   try {
+    // Multi-tenant: obtener companyId
+    const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
     // ==================== REPORTE DE VENTAS CORREGIDO ====================
     if (path === '/reportes/ventas' && req.method === 'GET') {
       try {
@@ -19,7 +21,7 @@ module.exports = async function reportesRoutes(req, res, path) {
         }
         
         // ✅ CORRECCIÓN 1: Query sin filtros de fecha (filtrar en memoria)
-        let ventasQuery = db.collection('ventas');
+        let ventasQuery = companyId ? db.collection('companies').doc(companyId).collection('ventas') : db.collection('ventas');
         
         if (sucursal_id) {
           ventasQuery = ventasQuery.where('sucursal_id', '==', sucursal_id);
@@ -285,7 +287,7 @@ module.exports = async function reportesRoutes(req, res, path) {
         mañana.setDate(mañana.getDate() + 1);
         
         // ✅ CORRECCIÓN 5: Query de ventas del día REAL
-        let ventasQuery = db.collection('ventas');
+        let ventasQuery = companyId ? db.collection('companies').doc(companyId).collection('ventas') : db.collection('ventas');
         
         if (sucursal_id) {
           ventasQuery = ventasQuery.where('sucursal_id', '==', sucursal_id);
@@ -459,7 +461,7 @@ module.exports = async function reportesRoutes(req, res, path) {
         fechaFinDate.setHours(23, 59, 59, 999);
         
         // Obtener todas las ventas completadas en el período
-        let ventasQuery = db.collection('ventas');
+        let ventasQuery = companyId ? db.collection('companies').doc(companyId).collection('ventas') : db.collection('ventas');
         const ventasSnapshot = await ventasQuery.get();
         
         // Filtrar ventas en el rango de fechas y completadas
@@ -685,6 +687,172 @@ module.exports = async function reportesRoutes(req, res, path) {
       }
     }
     
+    // ==================== REPORTE DE COMPRAS ====================
+    if (path === '/reportes/compras' && req.method === 'GET') {
+      try {
+        const { fechaInicio, fechaFin, sucursal_id } = req.query;
+        if (!fechaInicio || !fechaFin) {
+          res.status(400).json({ error: 'Fechas requeridas' });
+          return true;
+        }
+
+        let comprasQuery = companyId ? db.collection('companies').doc(companyId).collection('compras') : db.collection('compras');
+        if (sucursal_id) {
+          comprasQuery = comprasQuery.where('sucursal_id', '==', sucursal_id);
+        }
+        const comprasSnap = await comprasQuery.get();
+
+        const fIni = new Date(fechaInicio); fIni.setHours(0,0,0,0);
+        const fFin = new Date(fechaFin); fFin.setHours(23,59,59,999);
+
+        const compras = [];
+        comprasSnap.forEach(d => {
+          const c = d.data();
+          let fecha = null;
+          if (c.fecha && typeof c.fecha === 'string') fecha = new Date(c.fecha);
+          else if (c.fecha && c.fecha.toDate) fecha = c.fecha.toDate();
+          if (!fecha) return;
+          if (fecha >= fIni && fecha <= fFin) {
+            compras.push({ id: d.id, ...c, fechaISO: fecha.toISOString() });
+          }
+        });
+
+        let total = 0; let cantidad = 0; let proveedoresUnicos = new Set(); let productosUnicos = new Set(); let unidades = 0; let pendientes = 0; let pendientePago = 0;
+        const comprasPorDia = {};
+        const comprasPorProveedor = {};
+        const productosMasComprados = {};
+
+        for (const compra of compras) {
+          const t = parseFloat(compra.total || compra.subtotal || 0) || 0;
+          total += t; cantidad++;
+          if (compra.proveedor_id) proveedoresUnicos.add(compra.proveedor_id);
+          const fechaKey = compra.fechaISO.split('T')[0];
+          if (!comprasPorDia[fechaKey]) comprasPorDia[fechaKey] = { fecha: fechaKey, total: 0, cantidad: 0 };
+          comprasPorDia[fechaKey].total += t; comprasPorDia[fechaKey].cantidad++;
+          const provKey = compra.proveedor_id || 'sin_proveedor';
+          if (!comprasPorProveedor[provKey]) comprasPorProveedor[provKey] = { proveedor_id: provKey, nombre: compra.proveedor || compra.proveedor_nombre || 'Proveedor', total: 0, cantidad: 0 };
+          comprasPorProveedor[provKey].total += t; comprasPorProveedor[provKey].cantidad++;
+          if (Array.isArray(compra.detalles)) {
+            for (const det of compra.detalles) {
+              const pid = det.producto_id || 'sin_id';
+              productosUnicos.add(pid);
+              const cant = parseFloat(det.cantidad || 0) || 0; unidades += cant;
+              const subtotal = cant * parseFloat(det.precio_unitario || det.costo || 0);
+              if (!productosMasComprados[pid]) productosMasComprados[pid] = { id: pid, nombre: det.producto_info?.nombre || det.nombre || 'Producto', cantidad: 0, total: 0 };
+              productosMasComprados[pid].cantidad += cant;
+              productosMasComprados[pid].total += subtotal;
+            }
+          }
+          if ((compra.estado || '').toLowerCase() === 'pendiente') pendientes++;
+          if ((compra.estado_pago || 'pendiente') === 'pendiente') pendientePago += t;
+        }
+
+        const comprasPorDiaArr = Object.values(comprasPorDia).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+        const comprasPorProveedorArr = Object.values(comprasPorProveedor).sort((a,b)=>b.total-a.total);
+        const productosMasCompradosArr = Object.values(productosMasComprados).sort((a,b)=>b.cantidad-a.cantidad).slice(0,20);
+
+        res.json({
+          resumen: {
+            total,
+            cantidad_compras: cantidad,
+            proveedores_unicos: proveedoresUnicos.size,
+            productos_unicos: productosUnicos.size,
+            unidades_compradas: unidades,
+            compras_pendientes: pendientes,
+            pendiente_pago: pendientePago
+          },
+          comprasPorDia: comprasPorDiaArr,
+          comprasPorProveedor: comprasPorProveedorArr,
+          productosMasComprados: productosMasCompradosArr
+        });
+        return true;
+      } catch (error) {
+        console.error('❌ Error en reporte compras:', error);
+        res.status(500).json({ error: error.message });
+        return true;
+      }
+    }
+
+    // ==================== VARIANTES: compras/por-dia, compras/por-proveedor, compras/productos-mas-comprados ====================
+    if (path === '/reportes/compras/por-dia' && req.method === 'GET') {
+      try {
+        const { fechaInicio, fechaFin, sucursal_id } = req.query;
+        if (!fechaInicio || !fechaFin) { res.status(400).json({ error:'Fechas requeridas' }); return true; }
+        let comprasQuery = companyId ? db.collection('companies').doc(companyId).collection('compras') : db.collection('compras');
+        if (sucursal_id) comprasQuery = comprasQuery.where('sucursal_id','==',sucursal_id);
+        const snap = await comprasQuery.get();
+        const fIni = new Date(fechaInicio); fIni.setHours(0,0,0,0);
+        const fFin = new Date(fechaFin); fFin.setHours(23,59,59,999);
+        const porDia = {};
+        snap.forEach(d=>{
+          const c = d.data();
+          let fecha=null; if (c.fecha && typeof c.fecha==='string') fecha=new Date(c.fecha); else if (c.fecha && c.fecha.toDate) fecha=c.fecha.toDate();
+          if (!fecha) return; if (fecha < fIni || fecha > fFin) return;
+          const key = fecha.toISOString().split('T')[0];
+          if (!porDia[key]) porDia[key] = { fecha:key, total:0, cantidad:0 };
+          const t = parseFloat(c.total || c.subtotal || 0) || 0;
+          porDia[key].total += t; porDia[key].cantidad++;
+        });
+        res.json(Object.values(porDia).sort((a,b)=>a.fecha.localeCompare(b.fecha)));
+        return true;
+      } catch (e) { res.status(500).json({ error:e.message }); return true; }
+    }
+    if (path === '/reportes/compras/por-proveedor' && req.method === 'GET') {
+      try {
+        const { fechaInicio, fechaFin, sucursal_id } = req.query;
+        if (!fechaInicio || !fechaFin) { res.status(400).json({ error:'Fechas requeridas' }); return true; }
+        let comprasQuery = companyId ? db.collection('companies').doc(companyId).collection('compras') : db.collection('compras');
+        if (sucursal_id) comprasQuery = comprasQuery.where('sucursal_id','==',sucursal_id);
+        const snap = await comprasQuery.get();
+        const fIni = new Date(fechaInicio); fIni.setHours(0,0,0,0);
+        const fFin = new Date(fechaFin); fFin.setHours(23,59,59,999);
+        const porProv = {};
+        snap.forEach(d=>{
+          const c = d.data();
+          let fecha=null; if (c.fecha && typeof c.fecha==='string') fecha=new Date(c.fecha); else if (c.fecha && c.fecha.toDate) fecha=c.fecha.toDate();
+          if (!fecha) return; if (fecha < fIni || fecha > fFin) return;
+          const key = c.proveedor_id || 'sin_proveedor';
+          if (!porProv[key]) porProv[key] = { proveedor_id:key, nombre: c.proveedor || c.proveedor_nombre || 'Proveedor', total:0, cantidad:0 };
+          const t = parseFloat(c.total || c.subtotal || 0) || 0;
+          porProv[key].total += t; porProv[key].cantidad++;
+        });
+        const arr = Object.values(porProv).map(x=>({ ...x, porcentaje: 0 })).sort((a,b)=>b.total-a.total);
+        const sum = arr.reduce((acc,x)=>acc+x.total,0) || 1;
+        arr.forEach(x=> x.porcentaje = (x.total/sum)*100);
+        res.json(arr);
+        return true;
+      } catch (e) { res.status(500).json({ error:e.message }); return true; }
+    }
+    if (path === '/reportes/compras/productos-mas-comprados' && req.method === 'GET') {
+      try {
+        const { fechaInicio, fechaFin, sucursal_id } = req.query;
+        if (!fechaInicio || !fechaFin) { res.status(400).json({ error:'Fechas requeridas' }); return true; }
+        let comprasQuery = companyId ? db.collection('companies').doc(companyId).collection('compras') : db.collection('compras');
+        if (sucursal_id) comprasQuery = comprasQuery.where('sucursal_id','==',sucursal_id);
+        const snap = await comprasQuery.get();
+        const fIni = new Date(fechaInicio); fIni.setHours(0,0,0,0);
+        const fFin = new Date(fechaFin); fFin.setHours(23,59,59,999);
+        const productos = {};
+        snap.forEach(d=>{
+          const c = d.data();
+          let fecha=null; if (c.fecha && typeof c.fecha==='string') fecha=new Date(c.fecha); else if (c.fecha && c.fecha.toDate) fecha=c.fecha.toDate();
+          if (!fecha) return; if (fecha < fIni || fecha > fFin) return;
+          if (Array.isArray(c.detalles)) {
+            c.detalles.forEach(det=>{
+              const pid = det.producto_id || 'sin_id';
+              const cant = parseFloat(det.cantidad||0)||0;
+              const subtotal = cant * parseFloat(det.costo || det.precio_unitario || 0);
+              if (!productos[pid]) productos[pid] = { id: pid, nombre: det.producto_info?.nombre || det.nombre || 'Producto', cantidad: 0, total: 0 };
+              productos[pid].cantidad += cant; productos[pid].total += subtotal;
+            });
+          }
+        });
+        const arr = Object.values(productos).sort((a,b)=>b.cantidad-a.cantidad).slice(0,20);
+        res.json(arr);
+        return true;
+      } catch (e) { res.status(500).json({ error:e.message }); return true; }
+    }
+
     // Agregar más rutas aquí si es necesario...
     
     // Si no coincide ninguna ruta
