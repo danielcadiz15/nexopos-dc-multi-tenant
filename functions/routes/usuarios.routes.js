@@ -8,12 +8,12 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 const MODULOS_VALIDOS = [
-  'productos', 'categorias', 'compras', 'ventas', 'stock', 
+  'productos', 'categorias', 'proveedores', 'compras', 'ventas', 'punto_venta', 'stock',
   'reportes', 'promociones', 'usuarios', 'sucursales',
   'materias_primas', 'recetas', 'produccion',
   // NUEVOS MÓDULOS
-  'clientes', 'caja', 'gastos', 'devoluciones', 
-  'listas_precios', 'transferencias', 'auditoria'
+  'clientes', 'caja', 'gastos', 'devoluciones',
+  'listas_precios', 'transferencias', 'auditoria', 'vehiculos', 'configuracion'
 ];
 // Función para manejar todas las rutas de usuarios
 const usuariosRoutes = async (req, res, path) => {

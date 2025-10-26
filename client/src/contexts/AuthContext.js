@@ -14,6 +14,7 @@ import { toast } from 'react-toastify';
 import sucursalesService from '../services/sucursales.service';
 
 const AuthContext = createContext();
+const SUPER_ADMIN_EMAIL = 'danielcadiz15@gmail.com';
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -236,13 +237,18 @@ export function AuthProvider({ children }) {
       
       // Permisos base segun el rol
       let permisosBase = {};
-      
-      if (usuario.rol === 'Administrador' || usuario.rol === 'admin' || usuario.rolId === 'admin') {
+      const rolesArray = Array.isArray(usuario?.roles) ? usuario.roles : [];
+      const esOwner = usuario?.customClaims?.role === 'owner' || rolesArray.includes('OWNER');
+      const esSuperAdmin = (usuario?.email || '').toLowerCase() === SUPER_ADMIN_EMAIL;
+      const esAdministrador = usuario.rol === 'Administrador' || usuario.rol === 'admin' || usuario.rol === 'Admin' || usuario.rolId === 'admin';
+
+      if (esAdministrador || esOwner || esSuperAdmin) {
         console.log('🔐 [AUTH] Usuario es administrador, asignando todos los permisos');
         // Administrador tiene todos los permisos
         permisosBase = {
           productos: { ver: true, crear: true, editar: true, eliminar: true },
           categorias: { ver: true, crear: true, editar: true, eliminar: true },
+          proveedores: { ver: true, crear: true, editar: true, eliminar: true },
           compras: { ver: true, crear: true, editar: true, eliminar: true },
           ventas: { ver: true, crear: true, editar: true, eliminar: true },
           stock: { ver: true, crear: true, editar: true, eliminar: true },
@@ -260,8 +266,9 @@ export function AuthProvider({ children }) {
           devoluciones: { ver: true, crear: true, editar: true, eliminar: true },
           listas_precios: { ver: true, crear: true, editar: true, eliminar: true },
           transferencias: { ver: true, crear: true, editar: true, eliminar: true },
-          auditoria: { ver: true, crear: false, editar: false, eliminar: false },
-          configuracion: { ver: true, crear: true, editar: true, eliminar: true }
+          auditoria: { ver: true, crear: true, editar: true, eliminar: true },
+          configuracion: { ver: true, crear: true, editar: true, eliminar: true },
+          vehiculos: { ver: true, crear: true, editar: true, eliminar: true }
         };
       } else if (usuario.rol === 'Gerente' || usuario.rolId === 'gerente') {
         console.log('🔐 [AUTH] Usuario es gerente, asignando permisos limitados');
@@ -269,6 +276,7 @@ export function AuthProvider({ children }) {
         permisosBase = {
           productos: { ver: true, crear: true, editar: true, eliminar: false },
           categorias: { ver: true, crear: true, editar: true, eliminar: false },
+          proveedores: { ver: true, crear: true, editar: true, eliminar: false },
           compras: { ver: true, crear: true, editar: true, eliminar: false },
           ventas: { ver: true, crear: true, editar: true, eliminar: false },
           stock: { ver: true, crear: true, editar: true, eliminar: false },
@@ -286,8 +294,9 @@ export function AuthProvider({ children }) {
           devoluciones: { ver: true, crear: true, editar: true, eliminar: false },
           listas_precios: { ver: true, crear: false, editar: false, eliminar: false },
           transferencias: { ver: true, crear: true, editar: false, eliminar: false },
-          auditoria: { ver: true, crear: false, editar: false, eliminar: false },
-          configuracion: { ver: true, crear: false, editar: false, eliminar: false }
+          auditoria: { ver: false, crear: false, editar: false, eliminar: false },
+          configuracion: { ver: true, crear: false, editar: false, eliminar: false },
+          vehiculos: { ver: false, crear: false, editar: false, eliminar: false }
         };
       } else {
         console.log('🔐 [AUTH] Usuario es empleado, asignando permisos básicos');
@@ -295,6 +304,7 @@ export function AuthProvider({ children }) {
         permisosBase = {
            productos: { ver: true, crear: true, editar: true, eliminar: false },
            categorias: { ver: true, crear: true, editar: true, eliminar: false },
+          proveedores: { ver: true, crear: false, editar: false, eliminar: false },
           compras: { ver: true, crear: false, editar: false, eliminar: false },
            ventas: { ver: true, crear: true, editar: false, eliminar: false },
            stock: { ver: true, crear: false, editar: false, eliminar: false, control: { ver: true, crear: true, editar: false, eliminar: false } },
@@ -313,7 +323,8 @@ export function AuthProvider({ children }) {
            listas_precios: { ver: true, crear: false, editar: false, eliminar: false },
            transferencias: { ver: false, crear: false, editar: false, eliminar: false },
            auditoria: { ver: false, crear: false, editar: false, eliminar: false },
-           configuracion: { ver: true, crear: false, editar: false, eliminar: false }
+           configuracion: { ver: true, crear: false, editar: false, eliminar: false },
+           vehiculos: { ver: false, crear: false, editar: false, eliminar: false }
          };
       }
       

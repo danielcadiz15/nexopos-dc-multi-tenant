@@ -13,6 +13,15 @@ import { db, auth } from '../../firebase/config';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
+// Configuración de planes/licencias
+import {
+  PLANES,
+  DEFAULT_PLAN,
+  getModulesForPlan,
+  normalizePlan,
+  ALL_MODULE_KEYS
+} from '../../config/planes';
+
 // Componentes
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
@@ -62,81 +71,100 @@ const ConfiguracionEmpresa = () => {
   // =================== MÓDULOS ===================
   const [showModulos, setShowModulos] = useState(false);
   const [savingModulos, setSavingModulos] = useState(false);
-  const MODULOS_DEFAULT = {
-    productos: true,
-    categorias: true,
-    clientes: true,
-    proveedores: true,
-    compras: true,
-    ventas: true,
-    punto_venta: true,
-    stock: true,
-    listas_precios: true,
-    transferencias: true,
-    reportes: true,
-    promociones: false,
-    caja: true,
-    gastos: true,
-    devoluciones: true,
-    auditoria: false,
-    vehiculos: false,
-    produccion: false,
-    recetas: false,
-    materias_primas: false,
-    configuracion: true
-  };
-  const [modulos, setModulos] = useState(MODULOS_DEFAULT);
+  const [modulos, setModulos] = useState(getModulesForPlan(DEFAULT_PLAN));
+  const superAdminEmail = 'danielcadiz15@gmail.com';
+  const superAdmin = (currentUser?.email || '').toLowerCase() === superAdminEmail;
 
-  const cargarModulos = useCallback(async ()=>{
-    try{
+  const cargarModulos = useCallback(async () => {
+    try {
       const cid = await getCompanyId();
-      if(!cid) return;
+      if (!cid) return;
+
       const refCompany = doc(db, `companies/${cid}/config/modules`);
       const snapCompany = await getDoc(refCompany);
       let data = snapCompany.exists() ? snapCompany.data() : null;
-      if(!data){
+
+      if (!data) {
         const refTenant = doc(db, `tenants/${cid}/config/modules`);
         const snapTenant = await getDoc(refTenant);
         if (snapTenant.exists()) data = snapTenant.data();
       }
-      setModulos({ ...MODULOS_DEFAULT, ...(data || {}) });
-    }catch(e){ console.warn('No se pudieron cargar módulos:', e.message); }
-  },[getCompanyId]);
 
-  const guardarModulos = async ()=>{
-    try{
+      let plan = DEFAULT_PLAN;
+      if (data?.plan) {
+        plan = normalizePlan(data.plan);
+      } else {
+        try {
+          const refLicense = doc(db, `companies/${cid}/config/license`);
+          const snapLicense = await getDoc(refLicense);
+          if (snapLicense.exists()) {
+            plan = normalizePlan(snapLicense.data()?.plan);
+          }
+        } catch (err) {
+          console.warn('No se pudo determinar el plan al cargar módulos:', err.message);
+        }
+      }
+
+      const base = getModulesForPlan(plan);
+      if (data) {
+        ALL_MODULE_KEYS.forEach((key) => {
+          if (typeof data[key] === 'boolean') {
+            base[key] = data[key];
+          }
+        });
+      }
+      setModulos(base);
+    } catch (e) {
+      console.warn('No se pudieron cargar módulos:', e.message);
+    }
+  }, [getCompanyId]);
+
+  const guardarModulos = async () => {
+    if (!superAdmin) {
+      toast.error('Solo el administrador central puede modificar los módulos.');
+      return;
+    }
+    try {
       const cid = await getCompanyId();
-      if(!cid) { toast.error('OrgId no disponible'); return; }
+      if (!cid) { toast.error('OrgId no disponible'); return; }
       setSavingModulos(true);
-      const payload = { ...modulos, updatedAt: new Date().toISOString() };
+      const payload = {
+        ...modulos,
+        plan: normalizePlan(lic.plan),
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser?.email || null
+      };
       await setDoc(doc(db, `companies/${cid}/config/modules`), payload, { merge: true });
       await setDoc(doc(db, `tenants/${cid}/config/modules`), payload, { merge: true });
       toast.success('Módulos guardados');
       setShowModulos(false);
-    }catch(e){ console.error('Error guardando módulos:', e); toast.error('No se pudieron guardar los módulos'); }
-    finally{ setSavingModulos(false); }
+    } catch (e) {
+      console.error('Error guardando módulos:', e);
+      toast.error('No se pudieron guardar los módulos');
+    } finally { setSavingModulos(false); }
   };
 
   // =================== LICENCIA ===================
   const [showLic, setShowLic] = useState(false);
   const [savingLic, setSavingLic] = useState(false);
-  const [lic, setLic] = useState({ paidUntil: '', blocked: false, reason: '', plan: 'basic' });
+  const [lic, setLic] = useState({ paidUntil: '', blocked: false, reason: '', plan: DEFAULT_PLAN });
   const [licDaysLeft, setLicDaysLeft] = useState(null);
 
-  const cargarLicencia = useCallback(async ()=>{
-    try{
+  const cargarLicencia = useCallback(async () => {
+    try {
       const cid = await getCompanyId();
-      if(!cid) return;
+      if (!cid) return;
       const ref = doc(db, `companies/${cid}/config/license`);
       const snap = await getDoc(ref);
-      let data = snap.exists()? snap.data(): null;
-      if(!data){
+      let data = snap.exists() ? snap.data() : null;
+      if (!data) {
         const ref2 = doc(db, `licenses/${cid}`);
         const s2 = await getDoc(ref2);
-        if(s2.exists()) data = s2.data();
+        if (s2.exists()) data = s2.data();
       }
-      const merged = { paidUntil: '', blocked: false, reason: '', plan: 'basic', ...(data||{}) };
-      setLic(merged);
+      const merged = { paidUntil: '', blocked: false, reason: '', plan: DEFAULT_PLAN, ...(data || {}) };
+      const normalizedPlan = normalizePlan(merged.plan);
+      setLic({ ...merged, plan: normalizedPlan });
       // calcular días restantes
       if (merged.paidUntil) {
         const diff = Math.ceil((new Date(merged.paidUntil).getTime() - Date.now())/(1000*60*60*24));
@@ -145,19 +173,44 @@ const ConfiguracionEmpresa = () => {
     }catch(e){ console.warn('No se pudo cargar licencia:', e.message); }
   },[getCompanyId]);
 
-  const guardarLicencia = async ()=>{
-    try{
+  const sincronizarModulosConPlan = async (cid, plan) => {
+    const normalizedPlan = normalizePlan(plan);
+    const modules = getModulesForPlan(normalizedPlan);
+    const payload = {
+      ...modules,
+      plan: normalizedPlan,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser?.email || null,
+      enforcedByPlan: true
+    };
+    await Promise.all([
+      setDoc(doc(db, `companies/${cid}/config/modules`), payload, { merge: true }),
+      setDoc(doc(db, `tenants/${cid}/config/modules`), payload, { merge: true })
+    ]);
+    setModulos(modules);
+  };
+
+  const guardarLicencia = async () => {
+    if (!superAdmin) {
+      toast.error('Solo el administrador central puede modificar la licencia.');
+      return;
+    }
+    try {
       const cid = await getCompanyId();
-      if(!cid) { toast.error('OrgId no disponible'); return; }
+      if (!cid) { toast.error('OrgId no disponible'); return; }
       setSavingLic(true);
-      const payload = { ...lic, updatedAt: new Date().toISOString() };
+      const normalizedPlan = normalizePlan(lic.plan);
+      const payload = { ...lic, plan: normalizedPlan, updatedAt: new Date().toISOString() };
       await setDoc(doc(db, `licenses/${cid}`), payload, { merge: true });
       await setDoc(doc(db, `companies/${cid}/config/license`), payload, { merge: true });
+      await sincronizarModulosConPlan(cid, normalizedPlan);
       toast.success('Licencia actualizada');
       setShowLic(false);
       await cargarLicencia();
-    }catch(e){ console.error('Error guardando licencia:', e); toast.error('No se pudo guardar la licencia'); }
-    finally{ setSavingLic(false); }
+    } catch (e) {
+      console.error('Error guardando licencia:', e);
+      toast.error('No se pudo guardar la licencia');
+    } finally { setSavingLic(false); }
   };
 
   // =================== FORM EMPRESA ===================
@@ -373,10 +426,10 @@ const ConfiguracionEmpresa = () => {
           Configuración Empresarial
         </h1>
         <div className="flex gap-2">
-          { (currentUser?.email||'').toLowerCase() === 'danielcadiz15@gmail.com' && (
+          {superAdmin && (
             <>
-              <Button color="secondary" onClick={()=>{ cargarLicencia(); setShowLic(true); }}>Licencia</Button>
-              <Button color="primary" icon={<FaCogs/>} onClick={()=>{ cargarModulos(); setShowModulos(true); }}>Gestionar Módulos</Button>
+              <Button color="secondary" onClick={() => { cargarLicencia(); setShowLic(true); }}>Licencia</Button>
+              <Button color="primary" icon={<FaCogs />} onClick={() => { cargarModulos(); setShowModulos(true); }}>Gestionar Módulos</Button>
             </>
           )}
         </div>
@@ -827,23 +880,29 @@ const ConfiguracionEmpresa = () => {
 
       {/* Card de Módulos del Sistema */}
       <Card>
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-lg font-semibold mb-2 flex items-center">
               <FaCogs className="mr-2 text-indigo-600" />
               Módulos del Sistema
             </h3>
             <p className="text-sm text-gray-600">
-              Activa o desactiva funcionalidades según las necesidades de tu empresa
+              Plan actual: <strong>{PLANES[lic.plan]?.label || PLANES[DEFAULT_PLAN].label}</strong>. {PLANES[lic.plan]?.descripcion || PLANES[DEFAULT_PLAN].descripcion}
             </p>
           </div>
-          <Button
-            color="primary"
-            //onClick={() => setShowModulosModal(true)}
-            icon={<FaCogs />}
-          >
-            Gestionar Módulos
-          </Button>
+          {superAdmin ? (
+            <Button
+              color="primary"
+              icon={<FaCogs />}
+              onClick={() => { cargarModulos(); setShowModulos(true); }}
+            >
+              Gestionar Módulos
+            </Button>
+          ) : (
+            <p className="text-sm text-gray-500 max-w-xs text-right">
+              Los cambios de módulos y licencia los gestiona el administrador central. Escríbenos si necesitás un upgrade.
+            </p>
+          )}
         </div>
       </Card>
 
@@ -883,50 +942,66 @@ const ConfiguracionEmpresa = () => {
       />
 
       {/* Modal Gestión de Módulos */}
-      <Modal open={showModulos} title="Gestionar Módulos" onClose={()=> setShowModulos(false)}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {Object.keys(MODULOS_DEFAULT).map(key=> (
-            <label key={key} className="flex items-center gap-2 p-2 rounded border">
-              <input type="checkbox" checked={!!modulos[key]} onChange={e=> setModulos(prev=> ({ ...prev, [key]: e.target.checked }))} />
-              <span className="capitalize">{key.replaceAll('_',' ')}</span>
-            </label>
-          ))}
-        </div>
-        <div className="mt-4 flex justify-end gap-3">
-          <button className="px-3 py-2 border rounded" onClick={()=> setShowModulos(false)}>Cancelar</button>
-          <button className="px-3 py-2 rounded text-white bg-indigo-600 disabled:opacity-60" disabled={savingModulos} onClick={guardarModulos}>{savingModulos? 'Guardando...' : 'Guardar'}</button>
-        </div>
-      </Modal>
+      {superAdmin && (
+        <Modal open={showModulos} title="Gestionar Módulos" onClose={() => setShowModulos(false)}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {ALL_MODULE_KEYS.map((key) => (
+              <label key={key} className="flex items-center gap-2 p-2 rounded border">
+                <input
+                  type="checkbox"
+                  checked={!!modulos[key]}
+                  onChange={(e) => setModulos((prev) => ({ ...prev, [key]: e.target.checked }))}
+                />
+                <span className="capitalize">{key.replaceAll('_', ' ')}</span>
+              </label>
+            ))}
+          </div>
+          <div className="mt-4 flex justify-end gap-3">
+            <button className="px-3 py-2 border rounded" onClick={() => setShowModulos(false)}>Cancelar</button>
+            <button className="px-3 py-2 rounded text-white bg-indigo-600 disabled:opacity-60" disabled={savingModulos} onClick={guardarModulos}>{savingModulos ? 'Guardando...' : 'Guardar'}</button>
+          </div>
+        </Modal>
+      )}
 
       {/* Modal Licencia */}
-      <Modal open={showLic} title="Licencia" onClose={()=> setShowLic(false)}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-gray-700 mb-1">Plan</label>
-            <select className="input" value={lic.plan} onChange={e=> setLic(prev=> ({ ...prev, plan: e.target.value }))}>
-              <option value="basic">Basic</option>
-              <option value="pro">Pro</option>
-              <option value="enterprise">Enterprise</option>
-            </select>
+      {superAdmin && (
+        <Modal open={showLic} title="Licencia" onClose={() => setShowLic(false)}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-700 mb-1">Plan</label>
+              <select
+                className="input"
+                value={lic.plan}
+                onChange={(e) => {
+                  const nextPlan = normalizePlan(e.target.value);
+                  setLic((prev) => ({ ...prev, plan: nextPlan }));
+                  setModulos(getModulesForPlan(nextPlan));
+                }}
+              >
+                {Object.entries(PLANES).map(([key, info]) => (
+                  <option key={key} value={key}>{info.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-700 mb-1">Válida hasta</label>
+              <input type="date" className="input" value={lic.paidUntil ? lic.paidUntil.substring(0,10): ''} onChange={e=> setLic(prev=> ({ ...prev, paidUntil: e.target.value ? new Date(e.target.value).toISOString(): '' }))} />
+            </div>
+            <div className="col-span-2 flex items-center gap-2">
+              <input type="checkbox" checked={lic.blocked} onChange={e=> setLic(prev=> ({ ...prev, blocked: e.target.checked }))} />
+              <span>Bloquear empresa</span>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm text-gray-700 mb-1">Motivo</label>
+              <input className="input" placeholder="Motivo del bloqueo o nota" value={lic.reason||''} onChange={e=> setLic(prev=> ({ ...prev, reason: e.target.value }))} />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm text-gray-700 mb-1">Válida hasta</label>
-            <input type="date" className="input" value={lic.paidUntil ? lic.paidUntil.substring(0,10): ''} onChange={e=> setLic(prev=> ({ ...prev, paidUntil: e.target.value ? new Date(e.target.value).toISOString(): '' }))} />
+          <div className="mt-4 flex justify-end gap-3">
+            <button className="px-3 py-2 border rounded" onClick={() => setShowLic(false)}>Cerrar</button>
+            <button className="px-3 py-2 rounded text-white bg-indigo-600 disabled:opacity-60" disabled={savingLic} onClick={guardarLicencia}>{savingLic ? 'Guardando...' : 'Guardar'}</button>
           </div>
-          <div className="col-span-2 flex items-center gap-2">
-            <input type="checkbox" checked={lic.blocked} onChange={e=> setLic(prev=> ({ ...prev, blocked: e.target.checked }))} />
-            <span>Bloquear empresa</span>
-          </div>
-          <div className="col-span-2">
-            <label className="block text-sm text-gray-700 mb-1">Motivo</label>
-            <input className="input" placeholder="Motivo del bloqueo o nota" value={lic.reason||''} onChange={e=> setLic(prev=> ({ ...prev, reason: e.target.value }))} />
-          </div>
-        </div>
-        <div className="mt-4 flex justify-end gap-3">
-          <button className="px-3 py-2 border rounded" onClick={()=> setShowLic(false)}>Cerrar</button>
-          <button className="px-3 py-2 rounded text-white bg-indigo-600 disabled:opacity-60" disabled={savingLic} onClick={guardarLicencia}>{savingLic? 'Guardando...' : 'Guardar'}</button>
-        </div>
-      </Modal>
+        </Modal>
+      )}
     </div>
   );
 };
