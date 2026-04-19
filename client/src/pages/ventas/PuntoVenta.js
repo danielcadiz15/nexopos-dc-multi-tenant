@@ -44,6 +44,23 @@ import {
 
 // Variable para evitar llamadas duplicadas de promociones
 let isApplyingPromotions = false;
+const SEARCH_DEBOUNCE_MS = 220;
+const SCAN_DEBOUNCE_MS = 120;
+const DUPLICATE_SCAN_WINDOW_MS = 800;
+
+const normalizarEntradaBusqueda = (valor = '') =>
+  String(valor).replace(/[\r\n\t]/g, '').trim();
+
+const esCodigoEscaneable = (valor = '') => {
+  const termino = normalizarEntradaBusqueda(valor);
+  if (!termino || termino.length < 6) return false;
+
+  if (/^\d{6,}$/.test(termino)) return true;
+
+  const alfanumericoSimple = /^[A-Za-z0-9._-]+$/.test(termino);
+  const contieneNumero = /\d/.test(termino);
+  return alfanumericoSimple && contieneNumero;
+};
 
 /**
  * Componente de página para el punto de venta
@@ -74,6 +91,8 @@ const PuntoVenta = () => {
                           hasPermission('ventas', 'editar') ||
                           currentUser?.rol === 'Administrador';
   const searchInputRef = useRef(null);
+  const searchDebounceRef = useRef(null);
+  const lastScannedCodeRef = useRef({ code: '', timestamp: 0 });
   const [showTicket, setShowTicket] = useState(false);
   const [ventaCreada, setVentaCreada] = useState(null);
   // Obtener sucursal preseleccionada desde navegación
@@ -135,6 +154,12 @@ const PuntoVenta = () => {
     
     return () => clearTimeout(timer);
   }, [sucursalPreseleccionada, sucursalSeleccionada, sucursalesDisponibles]);
+
+  useEffect(() => () => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+  }, []);
   
   /**
    * Cambiar lista cuando se selecciona un cliente
@@ -185,6 +210,20 @@ const PuntoVenta = () => {
     
     return calcularPrecioConMargen(producto.precio_costo, margenLista);
   };
+
+  const esEscaneoDuplicadoReciente = (codigo) => {
+    const now = Date.now();
+    const isDuplicate = (
+      lastScannedCodeRef.current.code === codigo &&
+      now - lastScannedCodeRef.current.timestamp < DUPLICATE_SCAN_WINDOW_MS
+    );
+
+    if (!isDuplicate) {
+      lastScannedCodeRef.current = { code: codigo, timestamp: now };
+    }
+
+    return isDuplicate;
+  };
   
   /**
    * Busca productos por código o nombre
@@ -231,6 +270,11 @@ const PuntoVenta = () => {
    * Busca un producto por código exacto
    */
   const buscarProductoPorCodigoExacto = async (codigo) => {
+    const codigoNormalizado = normalizarEntradaBusqueda(codigo);
+    if (!codigoNormalizado) {
+      return;
+    }
+
     // Validar que hay sucursal seleccionada
     if (!sucursalVenta) {
       toast.warning('Debe seleccionar una sucursal primero');
@@ -238,26 +282,48 @@ const PuntoVenta = () => {
     }
     
     try {
-      console.log('🔍 Buscando producto por código con stock en sucursal:', codigo, 'sucursal:', sucursalVenta);
+      console.log('🔍 Buscando producto por código con stock en sucursal:', codigoNormalizado, 'sucursal:', sucursalVenta);
       
-      const producto = await productosService.obtenerPorCodigoConStock(codigo, sucursalVenta);
+      const producto = await productosService.obtenerPorCodigoConStock(codigoNormalizado, sucursalVenta);
       
       if (producto) {
         // Verificar stock antes de agregar (ya viene con stock de la sucursal)
         if (producto.stock_actual > 0) {
           agregarAlCarrito(producto);
-          setSearchTerm('');
           console.log('✅ Producto agregado al carrito con stock:', producto.stock_actual);
         } else {
           toast.warning(`Producto ${producto.nombre} sin stock disponible en esta sucursal`);
         }
       } else {
-        toast.warning(`Producto con código ${codigo} no encontrado o sin stock en sucursal`);
+        toast.warning(`Producto con código ${codigoNormalizado} no encontrado o sin stock en sucursal`);
       }
     } catch (error) {
       console.error('❌ Error al buscar producto por código con stock:', error);
       toast.error('Error al buscar producto');
+    } finally {
+      setSearchTerm('');
+      setSearchResults([]);
+      setShowSearchResults(false);
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
     }
+  };
+
+  const procesarTerminoBusqueda = async (valorIngresado = searchTerm) => {
+    const termino = normalizarEntradaBusqueda(valorIngresado);
+
+    if (!termino) return;
+
+    if (esCodigoEscaneable(termino)) {
+      if (esEscaneoDuplicadoReciente(termino)) {
+        return;
+      }
+      await buscarProductoPorCodigoExacto(termino);
+      return;
+    }
+
+    await buscarProductos(termino);
   };
   
   /**
@@ -267,15 +333,34 @@ const PuntoVenta = () => {
   const handleSearchChange = (e) => {
     const valor = e.target.value;
     setSearchTerm(valor);
-    
+    setShowSearchResults(true);
+
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+
+    const terminoNormalizado = normalizarEntradaBusqueda(valor);
+
     // Si el término es menor a 3 caracteres, limpiar resultados
-    if (valor.length < 3) {
+    if (terminoNormalizado.length < 3) {
       setSearchResults([]);
       return;
     }
-    
-    // Realizar búsqueda automática a partir de 3 caracteres
-    buscarProductos(valor);
+
+    // Para códigos escaneables, priorizar búsqueda exacta y evitar ruido en autocompletado.
+    if (esCodigoEscaneable(terminoNormalizado)) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      searchDebounceRef.current = setTimeout(() => {
+        procesarTerminoBusqueda(terminoNormalizado);
+      }, SCAN_DEBOUNCE_MS);
+      return;
+    }
+
+    // Realizar búsqueda automática con debounce para escritura manual.
+    searchDebounceRef.current = setTimeout(() => {
+      buscarProductos(terminoNormalizado);
+    }, SEARCH_DEBOUNCE_MS);
   };
       
   /**
@@ -285,15 +370,12 @@ const PuntoVenta = () => {
   const handleSearchKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      
-      // Los lectores de códigos de barras suelen enviar el código completo seguido de Enter
-      // Si el término tiene al menos 6 caracteres, probablemente sea un código de barras
-      if (searchTerm.length >= 6 && /^[0-9]+$/.test(searchTerm)) {
-        buscarProductoPorCodigoExacto(searchTerm);
-      } else {
-        // Búsqueda normal para términos cortos o que contienen letras
-        buscarProductos();
+
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
       }
+
+      procesarTerminoBusqueda(searchTerm);
     }
   };
   
@@ -2059,7 +2141,7 @@ const PuntoVenta = () => {
               )}
               
               {/* Dropdown de autocompletado */}
-              {searchTerm.length >= 3 && searchResults.length > 0 && (
+              {showSearchResults && searchTerm.length >= 3 && searchResults.length > 0 && (
                 <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200 max-h-[50vh] overflow-y-auto">
                   {searchResults.map(producto => (
                     <div 
@@ -2072,6 +2154,7 @@ const PuntoVenta = () => {
                           agregarAlCarrito(producto);
                           setSearchTerm('');
                           setSearchResults([]);
+                          setShowSearchResults(false);
                         } else {
                           toast.warning(`No hay stock disponible de ${producto.nombre}`);
                         }
