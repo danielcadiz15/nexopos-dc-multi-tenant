@@ -15,6 +15,11 @@ import sucursalesService from '../services/sucursales.service';
 
 const AuthContext = createContext();
 
+const resolveSucursalId = (sucursal) => {
+  const rawId = sucursal?.id ?? sucursal?._id ?? sucursal?.sucursal_id ?? null;
+  return rawId === null || rawId === undefined ? null : String(rawId);
+};
+
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -39,13 +44,16 @@ export function AuthProvider({ children }) {
           const customClaims = tokenResult.claims;
 
           // Establecer orgId inmediatamente desde claims/localStorage (fallback) para evitar redirección temprana
+          let effectiveOrgId = null;
           try {
             const claimCompanyId = customClaims?.companyId || null;
             const storedCompanyId = localStorage.getItem('companyId');
             const initialOrgId = claimCompanyId || storedCompanyId || null;
+            effectiveOrgId = initialOrgId;
             if (initialOrgId) {
               setOrgId(initialOrgId);
               if (claimCompanyId) localStorage.setItem('companyId', claimCompanyId);
+              localStorage.setItem('orgId', initialOrgId);
             }
           } catch {}
           
@@ -74,6 +82,7 @@ export function AuthProvider({ children }) {
               if (snap.exists()) {
                 const data = snap.data();
                 const newOrgId = data.orgId || null;
+                effectiveOrgId = newOrgId;
                 setOrgId(newOrgId);
                 // Guardar en localStorage para que los servicios puedan acceder
                 if (newOrgId) {
@@ -95,6 +104,7 @@ export function AuthProvider({ children }) {
                   
                   if (result.data.success) {
                     console.log('✅ [AUTH] Empresa creada automáticamente en login:', result.data.orgId);
+                    effectiveOrgId = result.data.orgId;
                     setOrgId(result.data.orgId);
                     localStorage.setItem('orgId', result.data.orgId);
                   }
@@ -113,9 +123,9 @@ export function AuthProvider({ children }) {
           }
           
           // MEJORADO: Intentar obtener datos mas completos desde Firestore (solo si tenemos orgId)
-          if (orgId) {
+          if (effectiveOrgId) {
             try {
-              const userDoc = await doc(db, 'companies', orgId, 'usuarios', firebaseUser.uid);
+              const userDoc = await doc(db, 'companies', effectiveOrgId, 'usuarios', firebaseUser.uid);
               const userSnapshot = await getDoc(userDoc);
               
               if (userSnapshot.exists()) {
@@ -147,18 +157,18 @@ export function AuthProvider({ children }) {
             nombre: userData.nombre,
             rol: userData.rol,
             permisosCount: Object.keys(userData.permisos).length,
-            orgId: orgId
+            orgId: effectiveOrgId
           });
           
           setCurrentUser(userData);
           setIsAuthenticated(true);
           
           // Calcular permisos efectivos
-          await calcularPermisosEfectivos(userData, orgId);
+          await calcularPermisosEfectivos(userData, effectiveOrgId);
           
           // Cargar sucursales disponibles para el usuario
           console.log('🏢 [AUTH] Llamando a cargarSucursalesUsuario...');
-          await cargarSucursalesUsuario(userData);
+          await cargarSucursalesUsuario(userData, effectiveOrgId);
           console.log('🏢 [AUTH] cargarSucursalesUsuario completado');
           
         } catch (error) {
@@ -399,14 +409,20 @@ export function AuthProvider({ children }) {
   /**
    * Cargar sucursales disponibles para el usuario
    */
-  const cargarSucursalesUsuario = async (usuario) => {
+  const cargarSucursalesUsuario = async (usuario, orgIdOverride = null) => {
     try {
+      const currentOrgId = orgIdOverride || orgId || null;
+      if (currentOrgId) {
+        localStorage.setItem('orgId', currentOrgId);
+        localStorage.setItem('companyId', currentOrgId);
+      }
+
       console.log('🏢 [AUTH] INICIANDO cargarSucursalesUsuario para usuario:', {
         id: usuario.id,
         email: usuario.email,
         rol: usuario.rol,
         rolId: usuario.rolId,
-        orgId: orgId
+        orgId: currentOrgId
       });
       
       setLoadingSucursales(true);
@@ -435,19 +451,25 @@ export function AuthProvider({ children }) {
       console.log('🏢 [AUTH] Sucursal guardada en localStorage:', sucursalGuardada);
       
       if (sucursalGuardada) {
-        const sucursal = sucursales.find(s => s.id === sucursalGuardada);
+        const sucursal = sucursales.find((s) => resolveSucursalId(s) === sucursalGuardada);
         if (sucursal) {
           console.log('🏢 [AUTH] Usando sucursal guardada:', sucursal);
           setSucursalSeleccionada(sucursal);
         } else if (sucursales.length > 0) {
           console.log('🏢 [AUTH] Sucursal guardada no encontrada, usando primera disponible:', sucursales[0]);
           setSucursalSeleccionada(sucursales[0]);
-          localStorage.setItem('sucursalSeleccionada', sucursales[0].id);
+          const firstSucursalId = resolveSucursalId(sucursales[0]);
+          if (firstSucursalId) {
+            localStorage.setItem('sucursalSeleccionada', firstSucursalId);
+          }
         }
       } else if (sucursales.length > 0) {
         console.log('🏢 [AUTH] No hay sucursal guardada, usando primera disponible:', sucursales[0]);
         setSucursalSeleccionada(sucursales[0]);
-        localStorage.setItem('sucursalSeleccionada', sucursales[0].id);
+        const firstSucursalId = resolveSucursalId(sucursales[0]);
+        if (firstSucursalId) {
+          localStorage.setItem('sucursalSeleccionada', firstSucursalId);
+        }
       } else {
         // Si aún no hay, crear una sucursal virtual temporal para evitar crashes
         console.log('🏢 [AUTH] No hay sucursales disponibles, creando fallback temporal');
@@ -458,7 +480,7 @@ export function AuthProvider({ children }) {
       // DEBUG: Verificar el estado final
       console.log('🏢 [AUTH] Estado final después de selección:', {
         sucursalesDisponibles: sucursales.length,
-        sucursalSeleccionada: sucursales.length > 0 ? sucursales[0] : 'ninguna'
+        sucursalSeleccionada: sucursales.length > 0 ? resolveSucursalId(sucursales[0]) : 'ninguna'
       });
       
     } catch (error) {
@@ -473,10 +495,16 @@ export function AuthProvider({ children }) {
    * Cambiar sucursal seleccionada
    */
   const cambiarSucursal = (sucursalId) => {
-    const sucursal = sucursalesDisponibles.find(s => s.id === sucursalId);
+    const targetSucursalId = sucursalId === null || sucursalId === undefined
+      ? null
+      : String(sucursalId);
+    const sucursal = sucursalesDisponibles.find((s) => resolveSucursalId(s) === targetSucursalId);
     if (sucursal) {
       setSucursalSeleccionada(sucursal);
-      localStorage.setItem('sucursalSeleccionada', sucursalId);
+      const normalizedSucursalId = resolveSucursalId(sucursal);
+      if (normalizedSucursalId) {
+        localStorage.setItem('sucursalSeleccionada', normalizedSucursalId);
+      }
       toast.success(`Cambiado a ${sucursal.nombre}`);
     }
   };
