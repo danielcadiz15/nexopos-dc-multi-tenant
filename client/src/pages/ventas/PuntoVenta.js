@@ -47,6 +47,11 @@ let isApplyingPromotions = false;
 const SEARCH_DEBOUNCE_MS = 220;
 const SCAN_DEBOUNCE_MS = 120;
 const DUPLICATE_SCAN_WINDOW_MS = 800;
+const SCANNER_CONFIG_STORAGE_KEY = 'pos_scanner_config';
+const DEFAULT_SCANNER_CONFIG = {
+  continuousMode: true,
+  notifyOnScan: false
+};
 
 const normalizarEntradaBusqueda = (valor = '') =>
   String(valor).replace(/[\r\n\t]/g, '').trim();
@@ -61,6 +66,13 @@ const esCodigoEscaneable = (valor = '') => {
   const contieneNumero = /\d/.test(termino);
   return alfanumericoSimple && contieneNumero;
 };
+
+const getSucursalId = (sucursal) => (
+  sucursal?.id ||
+  sucursal?._id ||
+  sucursal?.sucursal_id ||
+  ''
+);
 
 /**
  * Componente de página para el punto de venta
@@ -103,6 +115,8 @@ const PuntoVenta = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [scannerConfig, setScannerConfig] = useState(DEFAULT_SCANNER_CONFIG);
+  const sucursalSeleccionadaId = getSucursalId(sucursalSeleccionada);
   
   // Estado del carrito
   const [carrito, setCarrito] = useState([]);
@@ -145,21 +159,45 @@ const PuntoVenta = () => {
     
     // Configurar sucursal inicial
     if (sucursalPreseleccionada) {
-      setSucursalVenta(sucursalPreseleccionada);
-    } else if (sucursalSeleccionada) {
-      setSucursalVenta(sucursalSeleccionada.id);
+      setSucursalVenta(String(sucursalPreseleccionada));
+    } else if (sucursalSeleccionadaId) {
+      setSucursalVenta(String(sucursalSeleccionadaId));
     } else if (sucursalesDisponibles && sucursalesDisponibles.length === 1) {
-      setSucursalVenta(sucursalesDisponibles[0].id);
+      const unicaSucursalId = getSucursalId(sucursalesDisponibles[0]);
+      setSucursalVenta(unicaSucursalId ? String(unicaSucursalId) : '');
     }
     
     return () => clearTimeout(timer);
-  }, [sucursalPreseleccionada, sucursalSeleccionada, sucursalesDisponibles]);
+  }, [sucursalPreseleccionada, sucursalSeleccionadaId, sucursalesDisponibles]);
 
   useEffect(() => () => {
     if (searchDebounceRef.current) {
       clearTimeout(searchDebounceRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      const rawConfig = localStorage.getItem(SCANNER_CONFIG_STORAGE_KEY);
+      if (!rawConfig) return;
+
+      const parsedConfig = JSON.parse(rawConfig);
+      setScannerConfig((prevConfig) => ({
+        ...prevConfig,
+        ...parsedConfig
+      }));
+    } catch (error) {
+      console.warn('No se pudo cargar configuración de escáner:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SCANNER_CONFIG_STORAGE_KEY, JSON.stringify(scannerConfig));
+    } catch (error) {
+      console.warn('No se pudo guardar configuración de escáner:', error);
+    }
+  }, [scannerConfig]);
   
   /**
    * Cambiar lista cuando se selecciona un cliente
@@ -209,6 +247,13 @@ const PuntoVenta = () => {
     const margenLista = margenes[listaSeleccionada] || margenes.interior || 40;
     
     return calcularPrecioConMargen(producto.precio_costo, margenLista);
+  };
+
+  const actualizarScannerConfig = (parcial = {}) => {
+    setScannerConfig((prevConfig) => ({
+      ...prevConfig,
+      ...parcial
+    }));
   };
 
   const esEscaneoDuplicadoReciente = (codigo) => {
@@ -269,7 +314,8 @@ const PuntoVenta = () => {
   /**
    * Busca un producto por código exacto
    */
-  const buscarProductoPorCodigoExacto = async (codigo) => {
+  const buscarProductoPorCodigoExacto = async (codigo, opciones = {}) => {
+    const { silent = false } = opciones;
     const codigoNormalizado = normalizarEntradaBusqueda(codigo);
     if (!codigoNormalizado) {
       return;
@@ -290,6 +336,9 @@ const PuntoVenta = () => {
         // Verificar stock antes de agregar (ya viene con stock de la sucursal)
         if (producto.stock_actual > 0) {
           agregarAlCarrito(producto);
+          if (!silent && scannerConfig.notifyOnScan) {
+            toast.success(`Código leído: ${producto.nombre}`);
+          }
           console.log('✅ Producto agregado al carrito con stock:', producto.stock_actual);
         } else {
           toast.warning(`Producto ${producto.nombre} sin stock disponible en esta sucursal`);
@@ -319,7 +368,7 @@ const PuntoVenta = () => {
       if (esEscaneoDuplicadoReciente(termino)) {
         return;
       }
-      await buscarProductoPorCodigoExacto(termino);
+      await buscarProductoPorCodigoExacto(termino, { silent: scannerConfig.continuousMode });
       return;
     }
 
@@ -351,6 +400,9 @@ const PuntoVenta = () => {
     if (esCodigoEscaneable(terminoNormalizado)) {
       setSearchResults([]);
       setShowSearchResults(false);
+      if (!scannerConfig.continuousMode) {
+        return;
+      }
       searchDebounceRef.current = setTimeout(() => {
         procesarTerminoBusqueda(terminoNormalizado);
       }, SCAN_DEBOUNCE_MS);
@@ -1637,12 +1689,15 @@ const PuntoVenta = () => {
           </div>
           
           <div className="mt-3 flex flex-wrap gap-2">
-            {sucursalesDisponibles.map(sucursal => (
+            {sucursalesDisponibles.map(sucursal => {
+              const sucursalId = getSucursalId(sucursal);
+              if (!sucursalId) return null;
+              return (
               <button
-                key={sucursal.id}
-                onClick={() => setSucursalVenta(sucursal.id)}
+                key={sucursalId}
+                onClick={() => setSucursalVenta(String(sucursalId))}
                 className={`px-3 py-2 lg:px-4 rounded-md flex items-center text-sm lg:text-base ${
-                  sucursalVenta === sucursal.id
+                  sucursalVenta === String(sucursalId)
                     ? 'bg-blue-600 text-white'
                     : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                 }`}
@@ -1650,7 +1705,8 @@ const PuntoVenta = () => {
                 <FaStore className="mr-1 lg:mr-2" size={16} />
                 {sucursal.nombre}
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1662,7 +1718,7 @@ const PuntoVenta = () => {
             <div className="flex items-center">
               <FaStore className="text-blue-600 mr-2" />
               <span className="text-blue-800 font-medium">
-                Facturando en: {sucursalesDisponibles.find(s => s.id === sucursalVenta)?.nombre || 'Sucursal desconocida'}
+                Facturando en: {sucursalesDisponibles.find((s) => String(getSucursalId(s)) === String(sucursalVenta))?.nombre || 'Sucursal desconocida'}
               </span>
             </div>
             {sucursalesDisponibles.length > 1 && (
@@ -2139,6 +2195,50 @@ const PuntoVenta = () => {
 
 
               )}
+
+              <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Escaneo continuo</span>
+                  <button
+                    type="button"
+                    onClick={() => actualizarScannerConfig({ continuousMode: !scannerConfig.continuousMode })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      scannerConfig.continuousMode ? 'bg-indigo-600' : 'bg-gray-300'
+                    }`}
+                    aria-pressed={scannerConfig.continuousMode}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        scannerConfig.continuousMode ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Notificar cada escaneo</span>
+                  <button
+                    type="button"
+                    onClick={() => actualizarScannerConfig({ notifyOnScan: !scannerConfig.notifyOnScan })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      scannerConfig.notifyOnScan ? 'bg-indigo-600' : 'bg-gray-300'
+                    }`}
+                    aria-pressed={scannerConfig.notifyOnScan}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        scannerConfig.notifyOnScan ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-500">
+                  {scannerConfig.continuousMode
+                    ? 'Modo continuo activo: al escanear agrega automáticamente.'
+                    : 'Modo manual: escanea y confirma con Enter.'}
+                </p>
+              </div>
               
               {/* Dropdown de autocompletado */}
               {showSearchResults && searchTerm.length >= 3 && searchResults.length > 0 && (
