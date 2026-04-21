@@ -17,6 +17,14 @@ class ApiService {
       if (/gestionsimple|cloudfunctions\.net/i.test(root)) {
         root = defaultRoot;
       }
+      // Si el frontend corre en un dominio publico (tunel/hosting) no puede consumir localhost.
+      // En ese caso, hacemos fallback al endpoint publico para evitar pantallas sin datos en Android.
+      const isLocalApi = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?/i.test(root);
+      const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+      const isLocalFrontend = /^(localhost|127\.0\.0\.1)$/i.test(currentHost);
+      if (isLocalApi && !isLocalFrontend) {
+        root = defaultRoot;
+      }
     } catch {}
     // Asegurar prefijo /api para Cloud Run (Functions v2)
     const needsApiPrefix = !/\/api(\/|$)/i.test(root);
