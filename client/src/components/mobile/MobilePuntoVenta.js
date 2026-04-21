@@ -70,9 +70,9 @@ const MobilePuntoVenta = () => {
   );
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="bg-blue-600 text-white p-4">
+      <div className="bg-blue-600 text-white p-4 rounded-lg shadow">
         <h1 className="text-xl font-bold">Punto de Venta</h1>
         <div className="mt-2 relative">
           <input
@@ -80,16 +80,17 @@ const MobilePuntoVenta = () => {
             placeholder="Buscar productos..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            className="w-full p-2 pl-10 rounded-lg text-gray-800"
+            className="w-full p-3 pl-10 rounded-lg text-gray-800"
           />
-          <FaSearch className="absolute left-3 top-3 text-gray-400" />
+          <FaSearch className="absolute left-3 top-4 text-gray-400" />
         </div>
       </div>
 
-      <div className="flex-1 flex">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
         {/* Lista de Productos */}
-        <div className="flex-1 p-4 overflow-y-auto">
-          <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white rounded-lg shadow p-4">
+          <h2 className="text-lg font-bold text-gray-800 mb-3">Productos</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[45vh] overflow-y-auto pr-1">
             {productosFiltrados.map(producto => (
               <div
                 key={producto.id}
@@ -104,45 +105,45 @@ const MobilePuntoVenta = () => {
               </div>
             ))}
           </div>
-        </div>
 
-        {/* Carrito */}
-        <div className="w-80 bg-gray-100 p-4 flex flex-col">
-          <h2 className="text-lg font-bold mb-4">Carrito</h2>
-          
           {/* Producto Seleccionado */}
           {productoSeleccionado && (
-            <div className="bg-white p-3 rounded-lg mb-4">
+            <div className="bg-blue-50 p-3 rounded-lg mt-4 border border-blue-200">
               <h3 className="font-semibold">{productoSeleccionado.nombre}</h3>
               <p className="text-green-600 font-bold">${productoSeleccionado.precio}</p>
               <div className="flex items-center justify-between mt-2">
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => setCantidad(Math.max(1, cantidad - 1))}
-                    className="bg-gray-200 p-1 rounded"
+                    className="bg-gray-200 p-2 rounded"
                   >
                     <FaMinus className="text-xs" />
                   </button>
                   <span className="w-8 text-center">{cantidad}</span>
                   <button
                     onClick={() => setCantidad(cantidad + 1)}
-                    className="bg-gray-200 p-1 rounded"
+                    className="bg-gray-200 p-2 rounded"
                   >
                     <FaPlus className="text-xs" />
                   </button>
                 </div>
                 <button
                   onClick={agregarAlCarrito}
-                  className="bg-blue-500 text-white px-3 py-1 rounded text-sm"
+                  className="bg-blue-500 text-white px-3 py-2 rounded text-sm font-semibold"
                 >
                   Agregar
                 </button>
               </div>
             </div>
           )}
+        </div>
+
+        {/* Carrito */}
+        <div className="bg-gray-100 rounded-lg shadow p-4 flex flex-col">
+          <h2 className="text-lg font-bold mb-4">Carrito</h2>
 
           {/* Items del Carrito */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto max-h-[35vh] pr-1">
             {carrito.map(item => (
               <div key={item.id} className="bg-white p-3 rounded-lg mb-2">
                 <div className="flex justify-between items-start">
@@ -192,12 +193,12 @@ const MobilePuntoVenta = () => {
               <button
                 onClick={finalizarVenta}
                 disabled={carrito.length === 0}
-                className="bg-green-500 text-white p-3 rounded-lg font-semibold disabled:bg-gray-300"
+                className="bg-green-500 text-white p-3 rounded-lg font-semibold disabled:bg-gray-300 min-h-[44px]"
               >
                 <FaCreditCard className="inline mr-2" />
                 Cobrar
               </button>
-              <button className="bg-blue-500 text-white p-3 rounded-lg font-semibold">
+              <button className="bg-blue-500 text-white p-3 rounded-lg font-semibold min-h-[44px]">
                 <FaPrint className="inline mr-2" />
                 Ticket
               </button>
