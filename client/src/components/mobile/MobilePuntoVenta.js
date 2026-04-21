@@ -21,10 +21,6 @@ const MobilePuntoVenta = () => {
   const [loadingProductos, setLoadingProductos] = useState(false);
   const [procesandoVenta, setProcesandoVenta] = useState(false);
   const [efectivoRecibido, setEfectivoRecibido] = useState('');
-  const [viewport, setViewport] = useState(() => ({
-    width: typeof window !== 'undefined' ? window.innerWidth : 360,
-    height: typeof window !== 'undefined' ? (window.visualViewport?.height || window.innerHeight) : 740
-  }));
 
   const sucursalIdActiva = useMemo(
     () => getSucursalId(sucursalSeleccionada),
@@ -137,35 +133,6 @@ const MobilePuntoVenta = () => {
   const cambio = useMemo(() => Math.max(0, recibidoNumerico - total), [recibidoNumerico, total]);
   const faltante = useMemo(() => Math.max(0, total - recibidoNumerico), [recibidoNumerico, total]);
   const pagoCompleto = useMemo(() => total > 0 && recibidoNumerico >= total, [total, recibidoNumerico]);
-  const isCompactHeight = viewport.height < 760;
-  const productListHeight = useMemo(
-    () => Math.max(180, Math.round(viewport.height * (isCompactHeight ? 0.24 : 0.3))),
-    [viewport.height, isCompactHeight]
-  );
-  const cartListHeight = useMemo(
-    () => Math.max(160, Math.round(viewport.height * (isCompactHeight ? 0.2 : 0.26))),
-    [viewport.height, isCompactHeight]
-  );
-
-  useEffect(() => {
-    const actualizarViewport = () => {
-      setViewport({
-        width: window.innerWidth,
-        height: window.visualViewport?.height || window.innerHeight
-      });
-    };
-
-    actualizarViewport();
-    window.addEventListener('resize', actualizarViewport);
-    window.addEventListener('orientationchange', actualizarViewport);
-    window.visualViewport?.addEventListener('resize', actualizarViewport);
-
-    return () => {
-      window.removeEventListener('resize', actualizarViewport);
-      window.removeEventListener('orientationchange', actualizarViewport);
-      window.visualViewport?.removeEventListener('resize', actualizarViewport);
-    };
-  }, []);
 
   const finalizarVenta = async () => {
     if (!sucursalIdActiva) {
@@ -259,15 +226,12 @@ const MobilePuntoVenta = () => {
         </div>
       )}
 
-      <div className={`grid grid-cols-1 ${viewport.width >= 1280 ? 'xl:grid-cols-[1fr_360px]' : ''} gap-4`}>
-        <div className="bg-white rounded-lg shadow p-4 flex flex-col min-h-0">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
+        <div className="bg-white rounded-lg shadow p-4">
           <h2 className="text-lg font-bold text-gray-800 mb-3">
             Productos {loadingProductos ? '(cargando...)' : `(${productos.length})`}
           </h2>
-          <div
-            className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto pr-1 flex-1 min-h-[10rem]"
-            style={{ maxHeight: `${productListHeight}px` }}
-          >
+          <div className="grid grid-cols-1 min-[380px]:grid-cols-2 sm:grid-cols-3 gap-3">
             {productos.map((producto) => {
               const stock = parseFloat(producto.stock_actual ?? 0) || 0;
               return (
@@ -290,13 +254,10 @@ const MobilePuntoVenta = () => {
           </div>
         </div>
 
-        <div className="bg-gray-100 rounded-lg shadow p-4 flex flex-col min-h-0">
+        <div className="bg-gray-100 rounded-lg shadow p-4">
           <h2 className="text-lg font-bold mb-4">Carrito ({carrito.length})</h2>
 
-          <div
-            className="flex-1 overflow-y-auto pr-1 min-h-[8rem]"
-            style={{ maxHeight: `${cartListHeight}px` }}
-          >
+          <div className="space-y-2">
             {carrito.map((item) => (
               <div key={item.id} className="bg-white p-3 rounded-lg mb-2">
                 <div className="flex justify-between items-start">
@@ -312,7 +273,7 @@ const MobilePuntoVenta = () => {
                     <FaTrash />
                   </button>
                 </div>
-                <div className="flex items-center justify-between mt-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => actualizarCantidad(item.id, item.cantidad - 1)}
