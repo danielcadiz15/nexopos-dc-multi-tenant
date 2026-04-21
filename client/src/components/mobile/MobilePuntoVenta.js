@@ -21,6 +21,10 @@ const MobilePuntoVenta = () => {
   const [loadingProductos, setLoadingProductos] = useState(false);
   const [procesandoVenta, setProcesandoVenta] = useState(false);
   const [efectivoRecibido, setEfectivoRecibido] = useState('');
+  const [viewport, setViewport] = useState(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 360,
+    height: typeof window !== 'undefined' ? (window.visualViewport?.height || window.innerHeight) : 740
+  }));
 
   const sucursalIdActiva = useMemo(
     () => getSucursalId(sucursalSeleccionada),
@@ -133,6 +137,33 @@ const MobilePuntoVenta = () => {
   const cambio = useMemo(() => Math.max(0, recibidoNumerico - total), [recibidoNumerico, total]);
   const faltante = useMemo(() => Math.max(0, total - recibidoNumerico), [recibidoNumerico, total]);
   const pagoCompleto = useMemo(() => total > 0 && recibidoNumerico >= total, [total, recibidoNumerico]);
+  const isShortScreen = viewport.height < 740;
+  const workspaceHeight = useMemo(
+    () => Math.max(540, viewport.height - 120),
+    [viewport.height]
+  );
+  const productSectionBasis = isShortScreen ? '38%' : '44%';
+  const cartSectionBasis = isShortScreen ? '62%' : '56%';
+
+  useEffect(() => {
+    const actualizarViewport = () => {
+      setViewport({
+        width: window.innerWidth,
+        height: window.visualViewport?.height || window.innerHeight
+      });
+    };
+
+    actualizarViewport();
+    window.addEventListener('resize', actualizarViewport);
+    window.addEventListener('orientationchange', actualizarViewport);
+    window.visualViewport?.addEventListener('resize', actualizarViewport);
+
+    return () => {
+      window.removeEventListener('resize', actualizarViewport);
+      window.removeEventListener('orientationchange', actualizarViewport);
+      window.visualViewport?.removeEventListener('resize', actualizarViewport);
+    };
+  }, []);
 
   const finalizarVenta = async () => {
     if (!sucursalIdActiva) {
@@ -200,7 +231,10 @@ const MobilePuntoVenta = () => {
   };
 
   return (
-    <div className="space-y-4 pb-24">
+    <div
+      className="flex flex-col gap-4 overflow-hidden"
+      style={{ height: `${workspaceHeight}px` }}
+    >
       <div className="bg-blue-600 text-white p-4 rounded-lg shadow">
         <h1 className="text-xl font-bold">Punto de Venta</h1>
         <div className="mt-2 flex items-center text-xs opacity-90">
@@ -226,38 +260,46 @@ const MobilePuntoVenta = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
-        <div className="bg-white rounded-lg shadow p-4">
+      <div className="flex-1 min-h-0 flex flex-col gap-4">
+        <div
+          className="bg-white rounded-lg shadow p-4 flex flex-col min-h-0"
+          style={{ flexBasis: productSectionBasis }}
+        >
           <h2 className="text-lg font-bold text-gray-800 mb-3">
             Productos {loadingProductos ? '(cargando...)' : `(${productos.length})`}
           </h2>
-          <div className="grid grid-cols-1 min-[380px]:grid-cols-2 sm:grid-cols-3 gap-3">
-            {productos.map((producto) => {
-              const stock = parseFloat(producto.stock_actual ?? 0) || 0;
-              return (
-                <button
-                  key={producto.id}
-                  type="button"
-                  onClick={() => agregarAlCarrito(producto)}
-                  className={`text-left bg-white p-3 rounded-lg shadow border-2 ${
-                    stock <= 0 ? 'border-red-200 opacity-70' : 'border-gray-200'
-                  }`}
-                >
-                  <h3 className="font-semibold text-sm line-clamp-2">{producto.nombre}</h3>
-                  <p className="text-green-600 font-bold text-sm">{formatCurrency(producto.precio_venta || 0)}</p>
-                  <p className={`text-xs ${stock <= 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                    Stock: {stock}
-                  </p>
-                </button>
-              );
-            })}
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 min-[380px]:grid-cols-2 sm:grid-cols-3 gap-3">
+              {productos.map((producto) => {
+                const stock = parseFloat(producto.stock_actual ?? 0) || 0;
+                return (
+                  <button
+                    key={producto.id}
+                    type="button"
+                    onClick={() => agregarAlCarrito(producto)}
+                    className={`text-left bg-white p-3 rounded-lg shadow border-2 ${
+                      stock <= 0 ? 'border-red-200 opacity-70' : 'border-gray-200'
+                    }`}
+                  >
+                    <h3 className="font-semibold text-sm line-clamp-2">{producto.nombre}</h3>
+                    <p className="text-green-600 font-bold text-sm">{formatCurrency(producto.precio_venta || 0)}</p>
+                    <p className={`text-xs ${stock <= 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                      Stock: {stock}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
-        <div className="bg-gray-100 rounded-lg shadow p-4">
+        <div
+          className="bg-gray-100 rounded-lg shadow p-4 flex flex-col min-h-0"
+          style={{ flexBasis: cartSectionBasis }}
+        >
           <h2 className="text-lg font-bold mb-4">Carrito ({carrito.length})</h2>
 
-          <div className="space-y-2">
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
             {carrito.map((item) => (
               <div key={item.id} className="bg-white p-3 rounded-lg mb-2">
                 <div className="flex justify-between items-start">
@@ -297,7 +339,7 @@ const MobilePuntoVenta = () => {
             ))}
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="mt-3 space-y-3 shrink-0">
             <div className="bg-white p-3 rounded-lg mb-3">
               <div className="flex justify-between text-lg font-bold">
                 <span>Total:</span>
