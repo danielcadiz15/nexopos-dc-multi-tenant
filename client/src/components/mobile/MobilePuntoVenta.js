@@ -20,6 +20,11 @@ const MobilePuntoVenta = () => {
   const [busqueda, setBusqueda] = useState('');
   const [loadingProductos, setLoadingProductos] = useState(false);
   const [procesandoVenta, setProcesandoVenta] = useState(false);
+  const [efectivoRecibido, setEfectivoRecibido] = useState('');
+  const [viewport, setViewport] = useState(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 360,
+    height: typeof window !== 'undefined' ? (window.visualViewport?.height || window.innerHeight) : 740
+  }));
 
   const sucursalIdActiva = useMemo(
     () => getSucursalId(sucursalSeleccionada),
@@ -125,6 +130,43 @@ const MobilePuntoVenta = () => {
     [carrito]
   );
 
+  const recibidoNumerico = useMemo(
+    () => parseFloat(String(efectivoRecibido).replace(',', '.')) || 0,
+    [efectivoRecibido]
+  );
+  const cambio = useMemo(() => Math.max(0, recibidoNumerico - total), [recibidoNumerico, total]);
+  const faltante = useMemo(() => Math.max(0, total - recibidoNumerico), [recibidoNumerico, total]);
+  const pagoCompleto = useMemo(() => total > 0 && recibidoNumerico >= total, [total, recibidoNumerico]);
+  const isCompactHeight = viewport.height < 760;
+  const productListHeight = useMemo(
+    () => Math.max(180, Math.round(viewport.height * (isCompactHeight ? 0.24 : 0.3))),
+    [viewport.height, isCompactHeight]
+  );
+  const cartListHeight = useMemo(
+    () => Math.max(160, Math.round(viewport.height * (isCompactHeight ? 0.2 : 0.26))),
+    [viewport.height, isCompactHeight]
+  );
+
+  useEffect(() => {
+    const actualizarViewport = () => {
+      setViewport({
+        width: window.innerWidth,
+        height: window.visualViewport?.height || window.innerHeight
+      });
+    };
+
+    actualizarViewport();
+    window.addEventListener('resize', actualizarViewport);
+    window.addEventListener('orientationchange', actualizarViewport);
+    window.visualViewport?.addEventListener('resize', actualizarViewport);
+
+    return () => {
+      window.removeEventListener('resize', actualizarViewport);
+      window.removeEventListener('orientationchange', actualizarViewport);
+      window.visualViewport?.removeEventListener('resize', actualizarViewport);
+    };
+  }, []);
+
   const finalizarVenta = async () => {
     if (!sucursalIdActiva) {
       toast.warning('Selecciona una sucursal antes de cobrar');
@@ -132,6 +174,14 @@ const MobilePuntoVenta = () => {
     }
     if (carrito.length === 0) {
       toast.warning('No hay productos en el carrito');
+      return;
+    }
+    if (recibidoNumerico <= 0) {
+      toast.warning('Ingresa el monto recibido del cliente');
+      return;
+    }
+    if (recibidoNumerico < total) {
+      toast.warning(`Faltan ${formatCurrency(faltante)} para completar el pago`);
       return;
     }
 
@@ -150,7 +200,9 @@ const MobilePuntoVenta = () => {
         monto_pagado: total,
         total_pagado: total,
         saldo_pendiente: 0,
-        estado_pago: 'pagado'
+        estado_pago: 'pagado',
+        efectivo_recibido: recibidoNumerico,
+        cambio
       };
 
       const detalles = carrito.map((item) => ({
@@ -167,9 +219,10 @@ const MobilePuntoVenta = () => {
       }));
 
       await ventasService.crear(venta, detalles, sucursalIdActiva);
-      toast.success('Venta registrada correctamente');
+      toast.success(`Venta registrada. Cambio: ${formatCurrency(cambio)}`);
       setCarrito([]);
       setBusqueda('');
+      setEfectivoRecibido('');
       cargarProductos('');
     } catch (error) {
       console.error('❌ [MOBILE PV] Error al registrar venta:', error);
@@ -180,7 +233,7 @@ const MobilePuntoVenta = () => {
   };
 
   return (
-    <div className="space-y-4 min-h-[calc(100dvh-9rem)]">
+    <div className="space-y-4 pb-24">
       <div className="bg-blue-600 text-white p-4 rounded-lg shadow">
         <h1 className="text-xl font-bold">Punto de Venta</h1>
         <div className="mt-2 flex items-center text-xs opacity-90">
@@ -206,12 +259,15 @@ const MobilePuntoVenta = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4 min-h-[calc(100dvh-18rem)]">
+      <div className={`grid grid-cols-1 ${viewport.width >= 1280 ? 'xl:grid-cols-[1fr_360px]' : ''} gap-4`}>
         <div className="bg-white rounded-lg shadow p-4 flex flex-col min-h-0">
           <h2 className="text-lg font-bold text-gray-800 mb-3">
             Productos {loadingProductos ? '(cargando...)' : `(${productos.length})`}
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto pr-1 flex-1 min-h-[14rem]">
+          <div
+            className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto pr-1 flex-1 min-h-[10rem]"
+            style={{ maxHeight: `${productListHeight}px` }}
+          >
             {productos.map((producto) => {
               const stock = parseFloat(producto.stock_actual ?? 0) || 0;
               return (
@@ -237,7 +293,10 @@ const MobilePuntoVenta = () => {
         <div className="bg-gray-100 rounded-lg shadow p-4 flex flex-col min-h-0">
           <h2 className="text-lg font-bold mb-4">Carrito ({carrito.length})</h2>
 
-          <div className="flex-1 overflow-y-auto pr-1 min-h-[10rem]">
+          <div
+            className="flex-1 overflow-y-auto pr-1 min-h-[8rem]"
+            style={{ maxHeight: `${cartListHeight}px` }}
+          >
             {carrito.map((item) => (
               <div key={item.id} className="bg-white p-3 rounded-lg mb-2">
                 <div className="flex justify-between items-start">
@@ -277,7 +336,7 @@ const MobilePuntoVenta = () => {
             ))}
           </div>
 
-          <div className="mt-4 sticky bottom-0">
+          <div className="mt-4 space-y-3">
             <div className="bg-white p-3 rounded-lg mb-3">
               <div className="flex justify-between text-lg font-bold">
                 <span>Total:</span>
@@ -285,9 +344,46 @@ const MobilePuntoVenta = () => {
               </div>
             </div>
 
+            <div className="bg-white p-3 rounded-lg space-y-2">
+              <label className="text-sm font-medium text-gray-700 block">Recibido del cliente</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                value={efectivoRecibido}
+                onChange={(e) => setEfectivoRecibido(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-base"
+                placeholder="0.00"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEfectivoRecibido(total.toFixed(2))}
+                  className="px-2 py-2 text-sm rounded bg-gray-100 text-gray-700"
+                >
+                  Exacto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEfectivoRecibido(Math.ceil(total / 100) * 100 + '')}
+                  className="px-2 py-2 text-sm rounded bg-gray-100 text-gray-700"
+                >
+                  Redondear
+                </button>
+              </div>
+              <div className="text-sm">
+                {pagoCompleto ? (
+                  <p className="text-green-700 font-medium">Cambio: {formatCurrency(cambio)}</p>
+                ) : (
+                  <p className="text-red-600 font-medium">Falta: {formatCurrency(faltante)}</p>
+                )}
+              </div>
+            </div>
+
             <button
               onClick={finalizarVenta}
-              disabled={carrito.length === 0 || !sucursalIdActiva || procesandoVenta}
+              disabled={carrito.length === 0 || !sucursalIdActiva || procesandoVenta || !pagoCompleto}
               className="w-full bg-green-500 text-white p-3 rounded-lg font-semibold disabled:bg-gray-300 min-h-[44px]"
               type="button"
             >
