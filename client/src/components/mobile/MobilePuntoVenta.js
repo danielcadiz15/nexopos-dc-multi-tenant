@@ -180,7 +180,7 @@ const MobilePuntoVenta = () => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-h-[calc(100dvh-9rem)]">
       <div className="bg-blue-600 text-white p-4 rounded-lg shadow">
         <h1 className="text-xl font-bold">Punto de Venta</h1>
         <div className="mt-2 flex items-center text-xs opacity-90">
@@ -206,12 +206,12 @@ const MobilePuntoVenta = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
-        <div className="bg-white rounded-lg shadow p-4">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4 min-h-[calc(100dvh-18rem)]">
+        <div className="bg-white rounded-lg shadow p-4 flex flex-col min-h-0">
           <h2 className="text-lg font-bold text-gray-800 mb-3">
             Productos {loadingProductos ? '(cargando...)' : `(${productos.length})`}
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[45vh] overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto pr-1 flex-1 min-h-[14rem]">
             {productos.map((producto) => {
               const stock = parseFloat(producto.stock_actual ?? 0) || 0;
               return (
@@ -234,10 +234,10 @@ const MobilePuntoVenta = () => {
           </div>
         </div>
 
-        <div className="bg-gray-100 rounded-lg shadow p-4 flex flex-col">
+        <div className="bg-gray-100 rounded-lg shadow p-4 flex flex-col min-h-0">
           <h2 className="text-lg font-bold mb-4">Carrito ({carrito.length})</h2>
 
-          <div className="flex-1 overflow-y-auto max-h-[35vh] pr-1">
+          <div className="flex-1 overflow-y-auto pr-1 min-h-[10rem]">
             {carrito.map((item) => (
               <div key={item.id} className="bg-white p-3 rounded-lg mb-2">
                 <div className="flex justify-between items-start">
@@ -277,7 +277,7 @@ const MobilePuntoVenta = () => {
             ))}
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 sticky bottom-0">
             <div className="bg-white p-3 rounded-lg mb-3">
               <div className="flex justify-between text-lg font-bold">
                 <span>Total:</span>
