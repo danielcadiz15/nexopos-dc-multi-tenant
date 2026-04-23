@@ -318,8 +318,8 @@ const MobilePuntoVenta = () => {
       style={{ height: `${workspaceHeight}px` }}
     >
       <div className="bg-blue-600 text-white p-4 rounded-lg shadow">
-        <h1 className="text-xl font-bold">Punto de Venta</h1>
-        <div className="mt-2 flex items-center text-xs opacity-90">
+        <h1 className="text-2xl font-bold">Caja Rápida</h1>
+        <div className="mt-2 flex items-center text-sm opacity-90">
           <FaStore className="mr-2" />
           {sucursalIdActiva ? `Sucursal: ${sucursalNombre}` : 'Sin sucursal seleccionada'}
         </div>
@@ -329,10 +329,10 @@ const MobilePuntoVenta = () => {
             placeholder="Buscar productos por nombre o código..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            className="w-full p-3 pl-10 rounded-lg text-gray-800"
+            className="w-full p-4 pl-11 rounded-lg text-gray-800 text-base"
             disabled={!sucursalIdActiva}
           />
-          <FaSearch className="absolute left-3 top-4 text-gray-400" />
+          <FaSearch className="absolute left-4 top-5 text-gray-400" />
         </div>
       </div>
 
@@ -347,7 +347,7 @@ const MobilePuntoVenta = () => {
           className="bg-white rounded-lg shadow p-4 flex flex-col min-h-0"
           style={{ flexBasis: productSectionBasis }}
         >
-          <h2 className="text-lg font-bold text-gray-800 mb-3">
+          <h2 className="text-xl font-bold text-gray-800 mb-3">
             Productos {loadingProductos ? '(cargando...)' : `(${productos.length})`}
           </h2>
           <div className="flex-1 min-h-0 overflow-y-auto pr-1">
@@ -359,13 +359,13 @@ const MobilePuntoVenta = () => {
                     key={producto.id}
                     type="button"
                     onClick={() => agregarAlCarrito(producto)}
-                    className={`text-left bg-white p-3 rounded-lg shadow border-2 ${
+                    className={`text-left bg-white p-4 rounded-xl shadow border-2 min-h-[120px] ${
                       stock <= 0 ? 'border-red-200 opacity-70' : 'border-gray-200'
                     }`}
                   >
-                    <h3 className="font-semibold text-sm line-clamp-2">{producto.nombre}</h3>
-                    <p className="text-green-600 font-bold text-sm">{formatCurrency(producto.precio_venta || 0)}</p>
-                    <p className={`text-xs ${stock <= 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                    <h3 className="font-bold text-lg leading-tight line-clamp-2">{producto.nombre}</h3>
+                    <p className="text-green-600 font-bold text-xl mt-1">{formatCurrency(producto.precio_venta || 0)}</p>
+                    <p className={`text-base mt-1 ${stock <= 0 ? 'text-red-600' : 'text-gray-500'}`}>
                       Stock: {stock}
                     </p>
                   </button>
@@ -379,19 +379,19 @@ const MobilePuntoVenta = () => {
           className="bg-gray-100 rounded-lg shadow p-4 flex flex-col min-h-0"
           style={{ flexBasis: cartSectionBasis }}
         >
-          <h2 className="text-lg font-bold mb-4">Carrito ({carrito.length})</h2>
+          <h2 className="text-xl font-bold mb-4">Carrito ({carrito.length})</h2>
 
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
             {carrito.map((item) => (
-              <div key={item.id} className="bg-white p-3 rounded-lg mb-2">
+              <div key={item.id} className="bg-white p-3 rounded-xl mb-2">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <h3 className="font-semibold text-sm">{item.nombre}</h3>
-                    <p className="text-green-600 font-bold">{formatCurrency(item.precio)}</p>
+                    <h3 className="font-semibold text-base">{item.nombre}</h3>
+                    <p className="text-green-600 font-bold text-lg">{formatCurrency(item.precio)}</p>
                   </div>
                   <button
                     onClick={() => removerDelCarrito(item.id)}
-                    className="text-red-500 ml-2"
+                    className="text-red-500 ml-2 text-xl p-1"
                     type="button"
                   >
                     <FaTrash />
@@ -401,34 +401,34 @@ const MobilePuntoVenta = () => {
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => actualizarCantidad(item.id, item.cantidad - 1)}
-                      className="bg-gray-200 p-1 rounded"
+                      className="bg-gray-200 px-3 py-2 rounded text-lg"
                       type="button"
                     >
-                      <FaMinus className="text-xs" />
+                      <FaMinus className="text-sm" />
                     </button>
-                    <span className="w-8 text-center">{item.cantidad}</span>
+                    <span className="w-10 text-center text-lg font-semibold">{item.cantidad}</span>
                     <button
                       onClick={() => actualizarCantidad(item.id, item.cantidad + 1)}
-                      className="bg-gray-200 p-1 rounded"
+                      className="bg-gray-200 px-3 py-2 rounded text-lg"
                       type="button"
                     >
-                      <FaPlus className="text-xs" />
+                      <FaPlus className="text-sm" />
                     </button>
                   </div>
-                  <span className="font-bold">{formatCurrency(item.precio * item.cantidad)}</span>
+                  <span className="font-bold text-lg">{formatCurrency(item.precio * item.cantidad)}</span>
                 </div>
               </div>
             ))}
           </div>
 
           <div className="mt-3 space-y-3 shrink-0">
-            <div className="bg-white p-3 rounded-lg space-y-2 relative">
+            <div className="bg-white p-3 rounded-xl space-y-2 relative">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-gray-700">Cliente</label>
+                <label className="text-base font-medium text-gray-700">Cliente</label>
                 <button
                   type="button"
                   onClick={() => seleccionarCliente(null)}
-                  className="text-xs text-blue-600 font-medium"
+                  className="text-sm text-blue-600 font-medium"
                 >
                   Cliente general
                 </button>
@@ -440,25 +440,25 @@ const MobilePuntoVenta = () => {
                 onChange={(e) => setBusquedaCliente(e.target.value)}
                 onFocus={() => setMostrarClientes(true)}
                 onBlur={() => setTimeout(() => setMostrarClientes(false), 150)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-base"
+                className="w-full border border-gray-300 rounded-md px-3 py-3 text-base"
                 placeholder="Buscar cliente por nombre o teléfono"
               />
 
-              <p className="text-xs text-gray-600">
+              <p className="text-sm text-gray-600">
                 Seleccionado: <span className="font-semibold">{getClienteNombreCompleto(clienteSeleccionado)}</span>
               </p>
 
               {mostrarClientes && (loadingClientes || clientesEncontrados.length > 0) && (
-                <div className="border border-gray-200 rounded-md max-h-28 overflow-y-auto bg-white">
+                <div className="border border-gray-200 rounded-md max-h-36 overflow-y-auto bg-white">
                   {loadingClientes ? (
-                    <p className="p-2 text-sm text-gray-500">Buscando clientes...</p>
+                    <p className="p-3 text-sm text-gray-500">Buscando clientes...</p>
                   ) : (
                     clientesEncontrados.map((cliente, index) => (
                       <button
                         key={getClienteId(cliente) || `${cliente.nombre || 'cliente'}-${index}`}
                         type="button"
                         onMouseDown={() => seleccionarCliente(cliente)}
-                        className="w-full text-left p-2 border-b last:border-b-0 text-sm hover:bg-gray-50"
+                        className="w-full text-left p-3 border-b last:border-b-0 text-base hover:bg-gray-50"
                       >
                         {getClienteNombreCompleto(cliente)}
                       </button>
@@ -468,15 +468,15 @@ const MobilePuntoVenta = () => {
               )}
             </div>
 
-            <div className="bg-white p-3 rounded-lg mb-3">
-              <div className="flex justify-between text-lg font-bold">
+            <div className="bg-white p-3 rounded-xl mb-3">
+              <div className="flex justify-between text-2xl font-bold">
                 <span>Total:</span>
                 <span>{formatCurrency(total)}</span>
               </div>
             </div>
 
-            <div className="bg-white p-3 rounded-lg space-y-2">
-              <label className="text-sm font-medium text-gray-700 block">Recibido del cliente</label>
+            <div className="bg-white p-3 rounded-xl space-y-2">
+              <label className="text-base font-medium text-gray-700 block">Recibido del cliente</label>
               <input
                 type="number"
                 inputMode="decimal"
@@ -484,30 +484,30 @@ const MobilePuntoVenta = () => {
                 step="0.01"
                 value={efectivoRecibido}
                 onChange={(e) => setEfectivoRecibido(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-base"
+                className="w-full border border-gray-300 rounded-md px-3 py-3 text-lg"
                 placeholder="0.00"
               />
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setEfectivoRecibido(total.toFixed(2))}
-                  className="px-2 py-2 text-sm rounded bg-gray-100 text-gray-700"
+                  className="px-2 py-3 text-base rounded bg-gray-100 text-gray-700 font-medium"
                 >
                   Exacto
                 </button>
                 <button
                   type="button"
                   onClick={() => setEfectivoRecibido(Math.ceil(total / 100) * 100 + '')}
-                  className="px-2 py-2 text-sm rounded bg-gray-100 text-gray-700"
+                  className="px-2 py-3 text-base rounded bg-gray-100 text-gray-700 font-medium"
                 >
                   Redondear
                 </button>
               </div>
-              <div className="text-sm">
+              <div className="text-base">
                 {pagoCompleto ? (
-                  <p className="text-green-700 font-medium">Cambio: {formatCurrency(cambio)}</p>
+                  <p className="text-green-700 font-bold">Cambio: {formatCurrency(cambio)}</p>
                 ) : (
-                  <p className="text-red-600 font-medium">Falta: {formatCurrency(faltante)}</p>
+                  <p className="text-red-600 font-bold">Falta: {formatCurrency(faltante)}</p>
                 )}
               </div>
             </div>
@@ -515,7 +515,7 @@ const MobilePuntoVenta = () => {
             <button
               onClick={finalizarVenta}
               disabled={carrito.length === 0 || !sucursalIdActiva || procesandoVenta || !pagoCompleto}
-              className="w-full bg-green-500 text-white p-3 rounded-lg font-semibold disabled:bg-gray-300 min-h-[44px]"
+              className="w-full bg-green-500 text-white p-4 rounded-xl text-lg font-bold disabled:bg-gray-300 min-h-[52px]"
               type="button"
             >
               <FaCreditCard className="inline mr-2" />
