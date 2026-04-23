@@ -23,6 +23,28 @@ const SUCURSALES_RESPALDO = [
   }
 ];
 
+const resolveSucursalId = (sucursal = {}) => {
+  const rawId = (
+    sucursal?.id ||
+    sucursal?._id ||
+    sucursal?.sucursal_id ||
+    null
+  );
+
+  return rawId === null || rawId === undefined ? null : String(rawId);
+};
+
+const normalizeSucursal = (sucursal = {}) => {
+  const normalizedId = resolveSucursalId(sucursal);
+  if (!normalizedId) {
+    return sucursal;
+  }
+  return {
+    ...sucursal,
+    id: normalizedId
+  };
+};
+
 /**
  * Servicio para gestión de sucursales con Firebase
  */
@@ -64,6 +86,10 @@ class SucursalesService extends FirebaseService {
     }
   }
 
+  normalizeSucursales(items = []) {
+    return (items || []).map((sucursal) => normalizeSucursal(sucursal));
+  }
+
   /**
    * Obtiene todas las sucursales
    * @returns {Promise<Array>} Lista de sucursales
@@ -76,6 +102,7 @@ class SucursalesService extends FirebaseService {
 
       let sucursalesArray = ensureArrayPayload(response?.data);
       sucursalesArray = this.filterByOrgId(sucursalesArray, orgQuery?.orgId);
+      sucursalesArray = this.normalizeSucursales(sucursalesArray);
 
       if (sucursalesArray.length === 0) {
         console.log('[SUCURSALES SERVICE] No hay sucursales, usando datos de respaldo');
@@ -103,6 +130,7 @@ class SucursalesService extends FirebaseService {
       const response = await this.api.get('/activas', orgQuery);
       let sucursalesArray = ensureArrayPayload(response?.data);
       sucursalesArray = this.filterByOrgId(sucursalesArray, orgQuery?.orgId);
+      sucursalesArray = this.normalizeSucursales(sucursalesArray);
 
       if (sucursalesArray.length === 0) {
         const activas = SUCURSALES_RESPALDO.filter(s => s.activa);
@@ -143,7 +171,7 @@ class SucursalesService extends FirebaseService {
       }
       
       console.log(`✅ Sucursal obtenida:`, sucursalObj);
-      return sucursalObj;
+      return normalizeSucursal(sucursalObj);
       
     } catch (error) {
       console.error(`❌ Error al obtener sucursal ${id}:`, error);
@@ -253,9 +281,10 @@ class SucursalesService extends FirebaseService {
       const response = await this.api.get(`/usuario/${usuarioId}`, orgQuery);
 
       const sucursalesArray = this.filterByOrgId(ensureArrayPayload(response?.data), orgQuery?.orgId);
-      console.log(`[SUCURSALES SERVICE] Sucursales del usuario: ${sucursalesArray.length}`);
+      const sucursalesNormalizadas = this.normalizeSucursales(sucursalesArray);
+      console.log(`[SUCURSALES SERVICE] Sucursales del usuario: ${sucursalesNormalizadas.length}`);
 
-      return sucursalesArray;
+      return sucursalesNormalizadas;
     } catch (error) {
       console.error(`[SUCURSALES SERVICE] Error al obtener sucursales del usuario ${usuarioId}:`, error);
       return [];

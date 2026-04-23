@@ -45,6 +45,11 @@ const Productos = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { sucursalSeleccionada } = useAuth();
+  const sucursalIdSeleccionada =
+    sucursalSeleccionada?.id ||
+    sucursalSeleccionada?._id ||
+    sucursalSeleccionada?.sucursal_id ||
+    null;
   // Estados
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
@@ -148,10 +153,10 @@ const Productos = () => {
   useEffect(() => {
     const cargarPorSucursal = async () => {
       try {
-        if (!sucursalSeleccionada?.id) return;
+        if (!sucursalIdSeleccionada) return;
         setLoading(true);
-        console.log('📍 [PRODUCTOS] Sucursal cambiada, recargando productos con stock por sucursal:', sucursalSeleccionada.id);
-        const lista = await productosService.buscarConStockPorSucursal('', sucursalSeleccionada.id);
+        console.log('📍 [PRODUCTOS] Sucursal cambiada, recargando productos con stock por sucursal:', sucursalIdSeleccionada);
+        const lista = await productosService.buscarConStockPorSucursal('', sucursalIdSeleccionada);
         setProductos(Array.isArray(lista) ? lista : []);
       } catch (e) {
         console.error('❌ [PRODUCTOS] Error cargando productos por sucursal:', e);
@@ -160,7 +165,7 @@ const Productos = () => {
       }
     };
     cargarPorSucursal();
-  }, [sucursalSeleccionada?.id]);
+  }, [sucursalIdSeleccionada]);
 	  
   /**
    * Búsqueda de productos
