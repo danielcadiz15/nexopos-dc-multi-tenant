@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { FaSearch, FaPlus, FaMinus, FaTrash, FaCreditCard, FaStore } from 'react-icons/fa';
 import productosService from '../../services/productos.service';
+import clientesService from '../../services/clientes.service';
 import ventasService from '../../services/ventas.service';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency } from '../../utils/format';
@@ -13,11 +14,32 @@ const getSucursalId = (sucursal) => (
   ''
 );
 
+const getClienteId = (cliente) => (
+  cliente?.id ||
+  cliente?._id ||
+  cliente?.cliente_id ||
+  null
+);
+
+const getClienteNombreCompleto = (cliente) => {
+  const nombre = String(cliente?.nombre || '').trim();
+  const apellido = String(cliente?.apellido || '').trim();
+  const nombreCompleto = `${nombre} ${apellido}`.trim();
+  return nombreCompleto || 'Cliente General';
+};
+
+const CLIENTE_GENERAL = { id: null, nombre: 'Cliente', apellido: 'General' };
+
 const MobilePuntoVenta = () => {
-  const { currentUser, sucursalSeleccionada, sucursalesDisponibles } = useAuth();
+  const { currentUser, sucursalSeleccionada, sucursalesDisponibles, orgId } = useAuth();
   const [productos, setProductos] = useState([]);
   const [carrito, setCarrito] = useState([]);
   const [busqueda, setBusqueda] = useState('');
+  const [busquedaCliente, setBusquedaCliente] = useState('');
+  const [clientesEncontrados, setClientesEncontrados] = useState([]);
+  const [loadingClientes, setLoadingClientes] = useState(false);
+  const [mostrarClientes, setMostrarClientes] = useState(false);
+  const [clienteSeleccionado, setClienteSeleccionado] = useState(CLIENTE_GENERAL);
   const [loadingProductos, setLoadingProductos] = useState(false);
   const [procesandoVenta, setProcesandoVenta] = useState(false);
   const [efectivoRecibido, setEfectivoRecibido] = useState('');
@@ -72,6 +94,41 @@ const MobilePuntoVenta = () => {
     return () => clearTimeout(timer);
   }, [busqueda, sucursalIdActiva, cargarProductos]);
 
+  useEffect(() => {
+    const termino = busquedaCliente.trim();
+    if (termino.length < 2) {
+      setClientesEncontrados([]);
+      setLoadingClientes(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setLoadingClientes(true);
+        const clientes = await clientesService.buscar(termino, null, orgId || null);
+        if (!cancelled) {
+          setClientesEncontrados(Array.isArray(clientes) ? clientes.slice(0, 8) : []);
+          setMostrarClientes(true);
+        }
+      } catch (error) {
+        console.error('❌ [MOBILE PV] Error al buscar clientes:', error);
+        if (!cancelled) {
+          setClientesEncontrados([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingClientes(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [busquedaCliente, orgId]);
+
   const agregarAlCarrito = (producto) => {
     const stockDisponible = parseFloat(producto.stock_actual ?? producto.stock_sucursal ?? 0) || 0;
     if (stockDisponible <= 0) {
@@ -123,6 +180,24 @@ const MobilePuntoVenta = () => {
         return { ...item, cantidad: cantidadFinal };
       })
     );
+  };
+
+  const seleccionarCliente = (cliente) => {
+    const clienteId = getClienteId(cliente);
+    if (!clienteId) {
+      setClienteSeleccionado(CLIENTE_GENERAL);
+      setBusquedaCliente('');
+      setClientesEncontrados([]);
+      setMostrarClientes(false);
+      return;
+    }
+    setClienteSeleccionado({
+      ...cliente,
+      id: clienteId
+    });
+    setBusquedaCliente(getClienteNombreCompleto(cliente));
+    setClientesEncontrados([]);
+    setMostrarClientes(false);
   };
 
   const total = useMemo(
@@ -183,12 +258,17 @@ const MobilePuntoVenta = () => {
       return;
     }
 
+    const clienteId = getClienteId(clienteSeleccionado);
+    const clienteNombre = clienteId
+      ? getClienteNombreCompleto(clienteSeleccionado)
+      : 'Cliente General';
+
     try {
       setProcesandoVenta(true);
       const venta = {
         sucursal_id: sucursalIdActiva,
-        cliente_id: null,
-        cliente_nombre: 'Cliente General',
+        cliente_id: clienteId,
+        cliente_nombre: clienteNombre,
         usuario_id: currentUser?.id || null,
         metodo_pago: 'efectivo',
         subtotal: total,
@@ -220,6 +300,8 @@ const MobilePuntoVenta = () => {
       toast.success(`Venta registrada. Cambio: ${formatCurrency(cambio)}`);
       setCarrito([]);
       setBusqueda('');
+      setBusquedaCliente('');
+      setClienteSeleccionado(CLIENTE_GENERAL);
       setEfectivoRecibido('');
       cargarProductos('');
     } catch (error) {
@@ -340,6 +422,52 @@ const MobilePuntoVenta = () => {
           </div>
 
           <div className="mt-3 space-y-3 shrink-0">
+            <div className="bg-white p-3 rounded-lg space-y-2 relative">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-gray-700">Cliente</label>
+                <button
+                  type="button"
+                  onClick={() => seleccionarCliente(null)}
+                  className="text-xs text-blue-600 font-medium"
+                >
+                  Cliente general
+                </button>
+              </div>
+
+              <input
+                type="text"
+                value={busquedaCliente}
+                onChange={(e) => setBusquedaCliente(e.target.value)}
+                onFocus={() => setMostrarClientes(true)}
+                onBlur={() => setTimeout(() => setMostrarClientes(false), 150)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-base"
+                placeholder="Buscar cliente por nombre o teléfono"
+              />
+
+              <p className="text-xs text-gray-600">
+                Seleccionado: <span className="font-semibold">{getClienteNombreCompleto(clienteSeleccionado)}</span>
+              </p>
+
+              {mostrarClientes && (loadingClientes || clientesEncontrados.length > 0) && (
+                <div className="border border-gray-200 rounded-md max-h-28 overflow-y-auto bg-white">
+                  {loadingClientes ? (
+                    <p className="p-2 text-sm text-gray-500">Buscando clientes...</p>
+                  ) : (
+                    clientesEncontrados.map((cliente, index) => (
+                      <button
+                        key={getClienteId(cliente) || `${cliente.nombre || 'cliente'}-${index}`}
+                        type="button"
+                        onMouseDown={() => seleccionarCliente(cliente)}
+                        className="w-full text-left p-2 border-b last:border-b-0 text-sm hover:bg-gray-50"
+                      >
+                        {getClienteNombreCompleto(cliente)}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="bg-white p-3 rounded-lg mb-3">
               <div className="flex justify-between text-lg font-bold">
                 <span>Total:</span>
