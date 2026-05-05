@@ -1,9 +1,32 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Permitir acceso solo a usuarios autenticados
+
+    /**
+     * Descarga pública solo bajo rutas conocidas (APK para el botón del login).
+     * Subí el archivo como: apk/app-debug.apk (o cualquier nombre bajo apk/)
+     * Evita exponer otros archivos sin autenticación.
+     */
+    match /apk/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    /** Opcional: otra carpeta de artefactos públicos (releases, logos, etc.). */
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    /** Archivo .apk en la raíz del bucket (solo un segmento: nombre-archivo.apk). */
+    match /{fileName} {
+      allow read: if fileName.matches('^[a-zA-Z0-9._-]+\\.apk$');
+      allow write: if request.auth != null;
+    }
+
+    // Todo lo demás: solo usuarios autenticados
     match /{allPaths=**} {
       allow read, write: if request.auth != null;
     }
   }
-} 
+}
