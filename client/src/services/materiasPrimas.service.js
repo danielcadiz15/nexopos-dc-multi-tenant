@@ -178,18 +178,37 @@ class MateriasPrimasService extends FirebaseService {
   }
 
   /**
-   * Ajusta el stock de una materia prima (suma o resta)
+   * Ajusta el stock de una materia prima.
+   * Soporta el flujo actual con objeto ({ stock_actual, ajuste }) y el flujo legacy con ajuste numérico.
    * @param {string} id - ID de la materia prima
-   * @param {number} ajuste - Cantidad a ajustar (positivo suma, negativo resta)
-   * @param {string} motivo - Motivo del ajuste
-   * @returns {Promise<Object>} Resultado del ajuste
+   * @param {Object|number} datos - Datos del ajuste o cantidad relativa
+   * @param {string} motivo - Motivo del ajuste legacy
+   * @returns {Promise<Object>} Materia prima actualizada
    */
-  async ajustarStock(id, ajuste, motivo = '') {
+  async ajustarStock(id, datos, motivo = '') {
     try {
-      const response = await this.post(`/${id}/ajustar-stock`, { 
-        ajuste: parseFloat(ajuste), 
-        motivo 
-      });
+      console.log('🔧 Ajustando stock:', { id, datos });
+
+      if (typeof datos === 'number' || typeof datos === 'string') {
+        const response = await this.post(`/${id}/ajustar-stock`, {
+          ajuste: parseFloat(datos),
+          motivo
+        });
+        return response;
+      }
+
+      const actualizacion = {
+        stock_actual: parseFloat(datos.stock_actual || 0),
+        fechaActualizacion: new Date().toISOString()
+      };
+
+      if (datos.ajuste) {
+        console.log('📝 Registrando ajuste:', datos.ajuste);
+      }
+
+      const response = await this.put(`/${id}`, actualizacion);
+      console.log('✅ Stock actualizado');
+
       return response;
     } catch (error) {
       console.error('Error al ajustar stock:', error);
@@ -211,44 +230,7 @@ class MateriasPrimasService extends FirebaseService {
       throw error;
     }
   }
-   /**
- * Ajustar stock de una materia prima
- * @param {string} id - ID de la materia prima
- * @param {Object} datos - Datos del ajuste
- * @returns {Promise<Object>} Materia prima actualizada
- */
-	/**
- * Ajustar stock de una materia prima
- * @param {string} id - ID de la materia prima
- * @param {Object} datos - Datos del ajuste
- * @returns {Promise<Object>} Materia prima actualizada
- */
-	async ajustarStock(id, datos) {
-	  try {
-		console.log('🔧 Ajustando stock:', { id, datos });
-		
-		// Preparar datos para actualizar
-		const actualizacion = {
-		  stock_actual: datos.stock_actual,
-		  fechaActualizacion: new Date().toISOString()
-		};
-		
-		// Si viene información del ajuste, guardarla en el historial
-		if (datos.ajuste) {
-		  // Aquí podrías guardar el historial en una colección separada si quieres
-		  console.log('📝 Registrando ajuste:', datos.ajuste);
-		}
-		
-		// Actualizar el documento
-		const response = await this.put(`/${id}`, actualizacion);
-		console.log('✅ Stock actualizado');
-		
-		return response;
-	  } catch (error) {
-		console.error('Error al ajustar stock:', error);
-		throw error;
-	  }
-	}
+
   /**
    * Obtiene materias primas por proveedor
    * @param {string} proveedorId - ID del proveedor

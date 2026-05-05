@@ -6,7 +6,8 @@ import {
   createUserWithEmailAndPassword,
   signOut, 
   onAuthStateChanged,
-  getIdToken 
+  getIdToken,
+  sendEmailVerification
 } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
@@ -29,22 +30,26 @@ export function AuthProvider({ children }) {
 
   // NUEVO: Estado para permisos efectivos
   const [permisosEfectivos, setPermisosEfectivos] = useState({});
+  const currentUserSucursalesKey = JSON.stringify(currentUser?.sucursales || []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
           // Obtener custom claims (roles)
-          const tokenResult = await firebaseUser.getIdTokenResult();
+          const tokenResult = await firebaseUser.getIdTokenResult(true);
           const customClaims = tokenResult.claims;
+          let resolvedOrgId = null;
 
           // Establecer orgId inmediatamente desde claims/localStorage (fallback) para evitar redirección temprana
           try {
-            const claimCompanyId = customClaims?.companyId || null;
-            const storedCompanyId = localStorage.getItem('companyId');
-            const initialOrgId = claimCompanyId || storedCompanyId || null;
-            if (initialOrgId) {
-              setOrgId(initialOrgId);
+            const claimCompanyId = customClaims?.companyId || customClaims?.orgId || null;
+            const storedCompanyId = localStorage.getItem('companyId') || localStorage.getItem('orgId');
+            resolvedOrgId = claimCompanyId || storedCompanyId || null;
+            if (resolvedOrgId) {
+              setOrgId(resolvedOrgId);
+              localStorage.setItem('orgId', resolvedOrgId);
+              localStorage.setItem('companyId', resolvedOrgId);
               if (claimCompanyId) localStorage.setItem('companyId', claimCompanyId);
             }
           } catch {}
@@ -55,12 +60,15 @@ export function AuthProvider({ children }) {
             email: firebaseUser.email,
             nombre: customClaims.nombre || firebaseUser.displayName || 'Usuario',
             apellido: customClaims.apellido || '',
-            rol: customClaims.rol || 'Usuario',
-            rolId: customClaims.rolId || '1',
+            rol: customClaims.rol || customClaims.role || 'Usuario',
+            rolId: customClaims.rolId || customClaims.rol_id || customClaims.role || '1',
             permisos: customClaims.permisos || {},
             activo: customClaims.activo !== false,
             customClaims: customClaims,
-            sucursales: customClaims.sucursales || []
+            sucursales: customClaims.sucursales || [],
+            orgId: resolvedOrgId,
+            companyId: resolvedOrgId,
+            emailVerified: firebaseUser.emailVerified
           };
 
           // Suscribirse en tiempo real a usuariosOrg/{uid} para reflejar orgId al instante
@@ -73,49 +81,51 @@ export function AuthProvider({ children }) {
             uoUnsubRef.current = onSnapshot(uoRef, async (snap) => {
               if (snap.exists()) {
                 const data = snap.data();
-                const newOrgId = data.orgId || null;
+                const newOrgId = data.orgId || data.companyId || resolvedOrgId || null;
                 setOrgId(newOrgId);
+                setCurrentUser((prevUser) => {
+                  if (!prevUser) return prevUser;
+
+                  return {
+                    ...prevUser,
+                    orgId: newOrgId,
+                    companyId: newOrgId,
+                    sucursales: Array.isArray(data.sucursales) ? data.sucursales : prevUser.sucursales,
+                    roles: Array.isArray(data.roles) ? data.roles : prevUser.roles
+                  };
+                });
                 // Guardar en localStorage para que los servicios puedan acceder
                 if (newOrgId) {
                   localStorage.setItem('orgId', newOrgId);
+                  localStorage.setItem('companyId', newOrgId);
                 } else {
                   localStorage.removeItem('orgId');
+                  localStorage.removeItem('companyId');
                 }
               } else {
-                // AUTOMÁTICO: Si el usuario no tiene empresa, crear una automáticamente
-                try {
-                  console.log('🏢 [AUTH] Usuario sin empresa, creando automáticamente...');
-                  const { getFunctions, httpsCallable } = await import('firebase/functions');
-                  const functions = getFunctions();
-                  const createTenant = httpsCallable(functions, 'createTenant');
-                  
-                  const result = await createTenant({
-                    nombre: firebaseUser.email.split('@')[1].split('.')[0].toUpperCase()
-                  });
-                  
-                  if (result.data.success) {
-                    console.log('✅ [AUTH] Empresa creada automáticamente en login:', result.data.orgId);
-                    setOrgId(result.data.orgId);
-                    localStorage.setItem('orgId', result.data.orgId);
-                  }
-                } catch (tenantError) {
-                  console.warn('⚠️ [AUTH] No se pudo crear empresa automáticamente en login:', tenantError.message);
+                // Un usuario sin empresa debe elegir "Crear empresa" o ser invitado por un administrador.
+                console.log('🏢 [AUTH] Usuario sin empresa asociada');
+                if (!resolvedOrgId) {
                   setOrgId(null);
                 }
               }
             }, (e) => {
               console.warn('⚠️ [AUTH] Snapshot usuariosOrg error:', e.message);
-              setOrgId(null);
+              if (!resolvedOrgId) {
+                setOrgId(null);
+              }
             });
           } catch (e) {
             console.warn('⚠️ [AUTH] No se pudo suscribir a usuariosOrg:', e.message);
-            setOrgId(null);
+            if (!resolvedOrgId) {
+              setOrgId(null);
+            }
           }
           
           // MEJORADO: Intentar obtener datos mas completos desde Firestore (solo si tenemos orgId)
-          if (orgId) {
+          if (resolvedOrgId) {
             try {
-              const userDoc = await doc(db, 'companies', orgId, 'usuarios', firebaseUser.uid);
+              const userDoc = doc(db, 'companies', resolvedOrgId, 'usuarios', firebaseUser.uid);
               const userSnapshot = await getDoc(userDoc);
               
               if (userSnapshot.exists()) {
@@ -147,14 +157,14 @@ export function AuthProvider({ children }) {
             nombre: userData.nombre,
             rol: userData.rol,
             permisosCount: Object.keys(userData.permisos).length,
-            orgId: orgId
+            orgId: resolvedOrgId
           });
           
           setCurrentUser(userData);
           setIsAuthenticated(true);
           
           // Calcular permisos efectivos
-          await calcularPermisosEfectivos(userData, orgId);
+          await calcularPermisosEfectivos(userData, resolvedOrgId);
           
           // Cargar sucursales disponibles para el usuario
           console.log('🏢 [AUTH] Llamando a cargarSucursalesUsuario...');
@@ -218,7 +228,7 @@ export function AuthProvider({ children }) {
       console.log('[AUTH] orgId cambió, recargando sucursales…', { orgId, userId: currentUser.id });
       cargarSucursalesUsuario(currentUser);
     }
-  }, [orgId, currentUser?.id, isAuthenticated]);
+  }, [orgId, currentUser?.id, currentUser?.rol, currentUser?.rolId, currentUserSucursalesKey, isAuthenticated]);
 
   /**
    * Calcula los permisos efectivos del usuario considerando configuración de módulos
@@ -489,27 +499,36 @@ export function AuthProvider({ children }) {
       const firebaseUser = userCredential.user;
       
       // Obtener token con custom claims
-      const tokenResult = await firebaseUser.getIdTokenResult();
+      const tokenResult = await firebaseUser.getIdTokenResult(true);
       const customClaims = tokenResult.claims;
+      const resolvedOrgId = customClaims.companyId || customClaims.orgId || localStorage.getItem('companyId') || localStorage.getItem('orgId') || null;
+      if (resolvedOrgId) {
+        setOrgId(resolvedOrgId);
+        localStorage.setItem('orgId', resolvedOrgId);
+        localStorage.setItem('companyId', resolvedOrgId);
+      }
       
       const user = {
         id: firebaseUser.uid,
         email: firebaseUser.email,
         nombre: customClaims.nombre || firebaseUser.displayName || 'Usuario',
         apellido: customClaims.apellido || '',
-        rol: customClaims.rol || 'Usuario',
-        rolId: customClaims.rolId || '1',
+        rol: customClaims.rol || customClaims.role || 'Usuario',
+        rolId: customClaims.rolId || customClaims.rol_id || customClaims.role || '1',
         permisos: customClaims.permisos || {},
         activo: customClaims.activo !== false,
         customClaims: customClaims,
-        sucursales: customClaims.sucursales || []
+        sucursales: customClaims.sucursales || [],
+        orgId: resolvedOrgId,
+        companyId: resolvedOrgId,
+        emailVerified: firebaseUser.emailVerified
       };
       
       setCurrentUser(user);
       setIsAuthenticated(true);
       
       // Calcular permisos efectivos
-      await calcularPermisosEfectivos(user, user.customClaims?.orgId);
+      await calcularPermisosEfectivos(user, resolvedOrgId);
       
       // Cargar sucursales despues del login
       await cargarSucursalesUsuario(user);
@@ -548,6 +567,8 @@ export function AuthProvider({ children }) {
       setSucursalesDisponibles([]);
       setPermisosEfectivos({});
       localStorage.removeItem('sucursalSeleccionada');
+      localStorage.removeItem('orgId');
+      localStorage.removeItem('companyId');
       toast.info('Sesion cerrada correctamente');
     } catch (error) {
       console.error('? [AUTH] Error cerrando sesion:', error);
@@ -555,46 +576,66 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const signUp = async (email, password) => {
-    try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-      const firebaseUser = cred.user;
-      
-      // AUTOMÁTICO: Crear empresa automáticamente para el nuevo usuario
-      try {
-        console.log('🏢 [AUTH] Creando empresa automáticamente para nuevo usuario:', email);
-        const { getFunctions, httpsCallable } = await import('firebase/functions');
-        const functions = getFunctions();
-        const createTenant = httpsCallable(functions, 'createTenant');
-        
-        const result = await createTenant({
-          nombre: email.split('@')[1].split('.')[0].toUpperCase() // Usar dominio del email
-        });
-        
-        if (result.data.success) {
-          console.log('✅ [AUTH] Empresa creada automáticamente:', result.data.orgId);
-          // El orgId se establecerá automáticamente cuando se actualicen los custom claims
-        }
-      } catch (tenantError) {
-        console.warn('⚠️ [AUTH] No se pudo crear empresa automáticamente:', tenantError.message);
-        // No fallar el registro si no se puede crear la empresa
-      }
-      
-      setCurrentUser({
-        id: firebaseUser.uid,
-        email: firebaseUser.email,
-        nombre: firebaseUser.displayName || 'Usuario',
-        rol: 'Usuario',
-        rolId: '1',
-        permisos: {},
-        activo: true,
-        sucursales: []
-      });
-      setIsAuthenticated(true);
-      return firebaseUser;
-    } catch (error) {
-      throw error;
+  const signUp = async (email, password, nombreEmpresa = null) => {
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    const firebaseUser = cred.user;
+    await sendEmailVerification(firebaseUser);
+    if (nombreEmpresa && typeof window !== 'undefined') {
+      sessionStorage.setItem('pendingEmpresaNombre', nombreEmpresa.trim());
     }
+    setCurrentUser({
+      id: firebaseUser.uid,
+      email: firebaseUser.email,
+      nombre: firebaseUser.displayName || 'Usuario',
+      rol: 'Usuario',
+      rolId: '1',
+      permisos: {},
+      activo: true,
+      sucursales: [],
+      orgId: null,
+      emailVerified: firebaseUser.emailVerified
+    });
+    setIsAuthenticated(true);
+    toast.info('Te enviamos un correo para verificar tu cuenta. Cuando lo confirmes podés crear la empresa.');
+    return firebaseUser;
+  };
+
+  const completeCompanyAfterVerification = async () => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) {
+      throw new Error('No hay sesión activa');
+    }
+    const tokenResult = await firebaseUser.getIdTokenResult(true);
+    const customClaims = tokenResult.claims;
+    const resolvedOrgId =
+      customClaims.companyId ||
+      customClaims.orgId ||
+      localStorage.getItem('companyId') ||
+      localStorage.getItem('orgId') ||
+      null;
+    if (resolvedOrgId) {
+      setOrgId(resolvedOrgId);
+      localStorage.setItem('orgId', resolvedOrgId);
+      localStorage.setItem('companyId', resolvedOrgId);
+    }
+    const user = {
+      id: firebaseUser.uid,
+      email: firebaseUser.email,
+      nombre: customClaims.nombre || firebaseUser.displayName || 'Usuario',
+      apellido: customClaims.apellido || '',
+      rol: customClaims.rol || customClaims.role || 'Usuario',
+      rolId: customClaims.rolId || customClaims.rol_id || customClaims.role || '1',
+      permisos: customClaims.permisos || {},
+      activo: customClaims.activo !== false,
+      customClaims,
+      sucursales: customClaims.sucursales || [],
+      orgId: resolvedOrgId,
+      companyId: resolvedOrgId,
+      emailVerified: firebaseUser.emailVerified
+    };
+    setCurrentUser(user);
+    await calcularPermisosEfectivos(user, resolvedOrgId);
+    await cargarSucursalesUsuario(user);
   };
 
   // Funcion para obtener token de acceso
@@ -691,6 +732,7 @@ export function AuthProvider({ children }) {
     loading,
     login,
     signUp,
+    completeCompanyAfterVerification,
     logout,
     getAccessToken,
     hasPermission,

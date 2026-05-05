@@ -2,13 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 1% de la altura visible; useViewportHeight.js actualiza en resize / visualViewport */
+:root {
+  --app-vh-unit: 1vh;
+}
+
+html {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
+  height: 100%;
+  overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  max-height: calc(var(--app-vh-unit, 1vh) * 100);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Shell que envuelve Router + pantallas que deben llenar el alto */
+.nexo-viewport-root {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-height: 100dvh;
+  max-height: calc(var(--app-vh-unit, 1vh) * 100);
+  overflow: hidden;
+}
+
+/* Salida única del Router: la pantalla activa llena alto disponible */
+.nexo-route-outlet > * {
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Opcional: zonas scroll internas (no depende del plugin tailwind-scrollbar) */
+.scrollbar-thin {
+  scrollbar-width: thin;
 }
 
 code {

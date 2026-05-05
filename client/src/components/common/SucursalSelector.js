@@ -28,11 +28,18 @@ const SucursalSelector = () => {
       ? window.localStorage?.getItem?.('sucursalSeleccionada')
       : null;
     const firstSucursal = sucursalesDisponibles[0];
+    const storedSucursal = storedId
+      ? sucursalesDisponibles.find((sucursal) => sucursal.id === storedId)
+      : null;
 
-    const shouldSelectFirst = !currentId && !storedId;
+    const shouldSelectStored = !currentId && storedSucursal;
+    const shouldSelectFirst = !currentId && !storedSucursal;
     const selectedNotInList = currentId && !sucursalesDisponibles.some((sucursal) => sucursal.id === currentId);
 
-    if (shouldSelectFirst || selectedNotInList) {
+    if (shouldSelectStored) {
+      console.log('[SUCURSAL SELECTOR] Restaurando sucursal guardada:', storedSucursal);
+      cambiarSucursal(storedSucursal.id);
+    } else if (shouldSelectFirst || selectedNotInList) {
       console.log('[SUCURSAL SELECTOR] Seleccionando sucursal por defecto:', firstSucursal);
       cambiarSucursal(firstSucursal.id);
     }

@@ -235,28 +235,76 @@ async function manejarRutasControlStock(req, res, path) {
 
 const { configurarCORS, manejarPreflight } = require('./utils/cors');
 const { authenticateUser } = require('./utils/auth');
+const {
+  evaluateLicenseState,
+  isFacturacionRequest
+} = require('./licenseHelpers');
 
+const SUPER_ADMIN_EMAIL = 'danielcadiz15@gmail.com';
+
+function isSuperAdminEmail(email) {
+  return (email || '').toLowerCase() === SUPER_ADMIN_EMAIL;
+}
+
+async function loadLicenseDoc(companyId) {
+  let lic = {};
+  try {
+    const snap = await db.collection('companies').doc(companyId).collection('config').doc('license').get();
+    if (snap.exists) lic = snap.data() || {};
+  } catch {}
+  if (!lic || Object.keys(lic).length === 0) {
+    const s2 = await db.collection('licenses').doc(companyId).get();
+    if (s2.exists) lic = s2.data() || {};
+  }
+  return lic;
+}
+
+/**
+ * Licencia: activa / gracia 24h (sin facturación) / bloqueo total.
+ */
 async function checkLicense(req, res) {
   try {
     const companyId = req.companyId || req.user?.companyId || null;
     if (!companyId) return { ok: true };
-    // Leer de companies/config/license y fallback a licenses/{companyId}
-    let lic = {};
-    try {
-      const snap = await db.collection('companies').doc(companyId).collection('config').doc('license').get();
-      if (snap.exists) lic = snap.data() || {};
-    } catch {}
-    if (!lic || Object.keys(lic).length === 0) {
-      const s2 = await db.collection('licenses').doc(companyId).get();
-      if (s2.exists) lic = s2.data() || {};
+    const lic = await loadLicenseDoc(companyId);
+    const path = (req.path || '').replace('/api', '') || '/';
+    const method = req.method || 'GET';
+    const state = evaluateLicenseState(lic);
+    const pagoUrl = lic.pagoBilleteraUrl || lic.pago_billetera_url || null;
+
+    if (state.phase === 'none' || state.phase === 'active') {
+      return { ok: true };
     }
-    if (!lic || Object.keys(lic).length === 0) return { ok: true };
-    if (lic.blocked === true) return { ok: false, reason: lic.reason || 'Licencia bloqueada' };
-    if (lic.paidUntil) {
-      const until = new Date(lic.paidUntil).getTime();
-      if (Number.isFinite(until) && Date.now() > until) return { ok: false, reason: 'Licencia vencida' };
+    if (state.phase === 'blocked') {
+      return {
+        ok: false,
+        reason: lic.reason || 'Licencia bloqueada',
+        code: 'LICENSE_BLOCKED',
+        graceEndsAt: null,
+        pagoBilleteraUrl: pagoUrl
+      };
     }
-    return { ok: true };
+    if (state.phase === 'grace') {
+      if (isFacturacionRequest(method, path)) {
+        return {
+          ok: false,
+          reason:
+            'Licencia vencida: estás en período de gracia (24 h). No podés registrar ventas hasta regularizar el pago.',
+          code: 'LICENSE_GRACE_NO_FACTURACION',
+          graceEndsAt: state.graceEndsAt,
+          pagoBilleteraUrl: pagoUrl
+        };
+      }
+      return { ok: true, grace: true, graceEndsAt: state.graceEndsAt, phase: 'grace' };
+    }
+    return {
+      ok: false,
+      reason:
+        'Licencia vencida: superaste las 24 horas de gracia. Regularizá el pago para seguir usando el sistema.',
+      code: 'LICENSE_EXPIRED',
+      graceEndsAt: state.graceEndsAt,
+      pagoBilleteraUrl: pagoUrl
+    };
   } catch (e) {
     console.warn('Licencia: no se pudo verificar', e.message);
     return { ok: true };
@@ -350,7 +398,15 @@ exports.api = functions.https.onRequest(async (req, res) => {
         path.startsWith('/compras') || path.startsWith('/stock') || path.startsWith('/caja') || path.startsWith('/reportes')) {
       await authenticateUser(req, res, () => {});
       const lic = await checkLicense(req, res);
-      if (!lic.ok) { return res.status(402).json({ success:false, message: lic.reason || 'Licencia inválida' }); }
+      if (!lic.ok) {
+        return res.status(402).json({
+          success: false,
+          message: lic.reason || 'Licencia inválida',
+          code: lic.code || 'LICENSE_INVALID',
+          graceEndsAt: lic.graceEndsAt != null ? new Date(lic.graceEndsAt).toISOString() : null,
+          pagoBilleteraUrl: lic.pagoBilleteraUrl || null
+        });
+      }
     }
     console.log(`🔥 Firebase Function Request: ${req.method} ${path}`);
     
@@ -536,10 +592,12 @@ exports.api = functions.https.onRequest(async (req, res) => {
       // =============== ADMIN CENTRAL (solo usuarios administradores) ===============
       if (!responseEnviada && path.startsWith('/admin')) {
         await authenticateUser(req, res, () => {});
-        const uid = req.user?.uid;
-        const isAdmin = uid ? (await db.collection('adminUsers').doc(uid).get()).exists : false;
-        if (!isAdmin) {
-          return res.status(403).json({ success:false, message: 'Solo administradores' });
+        const email = req.user?.email || null;
+        if (!isSuperAdminEmail(email)) {
+          return res.status(403).json({
+            success: false,
+            message: 'Acceso restringido al panel central de licencias y empresas.'
+          });
         }
 
         // GET /admin/empresas -> lista de companies con licencia y días restantes
@@ -919,7 +977,7 @@ exports.api = functions.https.onRequest(async (req, res) => {
     if (!responseEnviada && !res.headersSent) {
       res.json({
         success: true,
-        message: 'API de LA FABRICA funcionando correctamente',
+        message: 'API de NexoPOS DC funcionando correctamente',
         version: '2.3.0',
         timestamp: new Date().toISOString(),
         path: req.path,

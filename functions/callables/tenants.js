@@ -12,18 +12,15 @@ exports.createTenant = onCall(async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Debe iniciar sesión');
     }
-    // Requerir email verificado para crear empresa
-    if (!request.auth.token?.email_verified) {
-      throw new HttpsError('failed-precondition', 'Debe verificar su email antes de crear una empresa');
-    }
     const uid = request.auth.uid;
     const { nombre, slug } = request.data || {};
     
     // Obtener email del usuario autenticado
     let ownerEmail = null;
+    let authUser;
     try {
-      const user = await admin.auth().getUser(uid);
-      ownerEmail = user.email || null;
+      authUser = await admin.auth().getUser(uid);
+      ownerEmail = authUser.email || null;
     } catch (error) {
       console.error('Error obteniendo email del usuario:', error);
       throw new HttpsError('internal', 'No se pudo obtener el email del usuario');
@@ -31,6 +28,13 @@ exports.createTenant = onCall(async (request) => {
     
     if (!ownerEmail) {
       throw new HttpsError('invalid-argument', 'Email del usuario requerido');
+    }
+
+    if (!authUser.emailVerified) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Tenés que verificar tu correo electrónico antes de crear una empresa. Revisá la bandeja de entrada.'
+      );
     }
     
     // Si no se proporciona nombre, usar el dominio del email
@@ -226,6 +230,9 @@ exports.createTenant = onCall(async (request) => {
 
     return { success: true, orgId: orgRef.id, sucursalId: sucRef.id };
   } catch (error) {
+    if (error instanceof HttpsError) {
+      throw error;
+    }
     console.error('createTenant error:', error);
     throw new HttpsError('internal', error.message || 'Error interno');
   }

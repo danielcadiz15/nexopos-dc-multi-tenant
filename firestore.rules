@@ -3,6 +3,12 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function isSignedIn() { return request.auth != null; }
 
+    /** Acceso global a licencias y módulos (solo este correo). */
+    function isLicenseSuperAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'danielcadiz15@gmail.com';
+    }
+
     // Devuelve true si el usuario pertenece a la organización
     function isMember(orgId) {
       return isSignedIn() &&
@@ -30,6 +36,13 @@ service cloud.firestore {
       allow read: if isMember(orgId);
       allow write: if hasRole(orgId, ['OWNER','MANAGER']);
 
+      match /config/{docId} {
+        allow read: if isMember(orgId);
+        allow write: if (docId == 'license' || docId == 'modules')
+          ? isLicenseSuperAdmin()
+          : hasRole(orgId, ['OWNER','MANAGER']);
+      }
+
       // Productos
       match /productos/{productoId} {
         allow read: if isMember(orgId);
@@ -55,10 +68,10 @@ service cloud.firestore {
         allow create, update, delete: if hasRole(orgId, ['OWNER','MANAGER']);
       }
 
-      // Configuración, roles, sucursales
+      // Configuración, roles, sucursales (excepto /config ya definido arriba)
       match /{collection}/{doc} {
         allow read: if isMember(orgId);
-        allow write: if hasRole(orgId, ['OWNER','MANAGER']);
+        allow write: if hasRole(orgId, ['OWNER','MANAGER']) && collection != 'config';
       }
     }
 
@@ -66,20 +79,22 @@ service cloud.firestore {
     match /companies/{orgId} {
       // Lectura general de datos de la empresa por miembros
       allow read: if isMember(orgId);
-      // Escritura limitada a roles de gestión
+      // Escritura del documento raíz empresa
       allow write: if hasRole(orgId, ['OWNER','MANAGER']);
 
-      // Subcolección config (incluye modules y license)
+      // Subcolección config (empresa, modules, license)
       match /config/{docId} {
         allow read: if isMember(orgId);
-        allow write: if hasRole(orgId, ['OWNER','MANAGER']);
+        allow write: if (docId == 'license' || docId == 'modules')
+          ? isLicenseSuperAdmin()
+          : hasRole(orgId, ['OWNER','MANAGER']);
       }
     }
 
     // Documento de licencia centralizado
     match /licenses/{orgId} {
       allow read: if isMember(orgId);
-      allow write: if hasRole(orgId, ['OWNER','MANAGER']);
+      allow write: if isLicenseSuperAdmin();
     }
 
     // Denegar todo lo no especificado

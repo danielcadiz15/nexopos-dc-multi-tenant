@@ -82,7 +82,10 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
 
   // Escuchar eventos de licencia bloqueada desde ApiService
   useEffect(() => {
-    const onBlocked = (e) => setBlockedMsg(e?.detail || 'Licencia inválida');
+    const onBlocked = (e) => {
+      const d = e?.detail;
+      setBlockedMsg(typeof d === 'string' ? d : (d?.message || 'Licencia inválida'));
+    };
     const onOk = () => setBlockedMsg(null);
     window.addEventListener('license:blocked', onBlocked);
     window.addEventListener('license:ok', onOk);

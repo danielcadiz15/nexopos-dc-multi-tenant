@@ -16,6 +16,7 @@ import { useAuth } from '../../contexts/AuthContext';
 // Componentes
 import Sidebar from './Sidebar';
 import Header from './Header';
+import LicenseBanner from './LicenseBanner';
 import Footer from './Footer';
 import MobileNavigation from './MobileNavigation';
 
@@ -68,7 +69,7 @@ const Layout = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-100 relative">
+    <div className="flex h-full min-h-0 max-h-full w-full flex-shrink-0 bg-gray-100 relative">
       {/* Overlay para móvil cuando sidebar está abierta */}
       {isMobile && sidebarOpen && (
         <div 
@@ -107,6 +108,7 @@ const Layout = () => {
           isMobile={isMobile}
           sidebarOpen={sidebarOpen}
         />
+        <LicenseBanner />
         
         {/* Contenido de la página */}
         <main className={`

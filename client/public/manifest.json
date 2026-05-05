@@ -1,6 +1,6 @@
 {
   "short_name": "NexoPOS DC",
-  "name": "NexoPOS DC",
+  "name": "NexoPOS DC Caja",
   "icons": [
     {
       "src": "logo-nexopos-dc.png",
@@ -18,10 +18,10 @@
       "sizes": "512x512"
     }
   ],
-  "start_url": ".",
+  "start_url": "/cajero",
   "display": "standalone",
-  "theme_color": "#4F46E5",
-  "background_color": "#ffffff",
+  "theme_color": "#1D4ED8",
+  "background_color": "#F8FAFC",
   "orientation": "portrait-primary",
   "scope": "/",
   "lang": "es"

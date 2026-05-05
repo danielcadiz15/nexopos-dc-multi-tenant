@@ -10,76 +10,96 @@ import {
   FaClipboardList,
   FaTruck
 } from 'react-icons/fa';
+import { useAuth } from '../../contexts/AuthContext';
 
 const MobileDashboard = () => {
+  const { currentUser } = useAuth();
+  const esAdmin = ['admin', 'administrador', 'gerente'].includes(
+    String(currentUser?.rol || currentUser?.role || '').toLowerCase()
+  ) || currentUser?.isAdmin === true;
+
   const dashboardItems = [
     {
       title: 'Punto de Venta',
       icon: FaShoppingCart,
       path: '/ventas',
       color: 'bg-blue-500',
-      description: 'Realizar ventas'
+      description: 'Realizar ventas',
+      adminOnly: false
     },
     {
       title: 'Clientes',
       icon: FaUsers,
       path: '/clientes',
       color: 'bg-green-500',
-      description: 'Gestionar clientes'
+      description: 'Gestionar clientes',
+      adminOnly: true
     },
     {
       title: 'Productos',
       icon: FaBoxes,
       path: '/productos',
       color: 'bg-purple-500',
-      description: 'Gestionar inventario'
+      description: 'Gestionar inventario',
+      adminOnly: true
     },
     {
       title: 'Reportes',
       icon: FaChartBar,
       path: '/reportes',
       color: 'bg-orange-500',
-      description: 'Ver estadísticas'
+      description: 'Ver estadísticas',
+      adminOnly: true
     },
     {
       title: 'Compras',
       icon: FaTruck,
       path: '/compras',
       color: 'bg-red-500',
-      description: 'Gestionar compras'
+      description: 'Gestionar compras',
+      adminOnly: true
     },
     {
       title: 'Stock',
       icon: FaClipboardList,
       path: '/stock',
       color: 'bg-indigo-500',
-      description: 'Control de stock'
+      description: 'Control de stock',
+      adminOnly: true
     },
     {
       title: 'Caja',
       icon: FaMoneyBillWave,
       path: '/caja',
       color: 'bg-yellow-500',
-      description: 'Control de caja'
+      description: 'Control de caja',
+      adminOnly: true
     },
     {
       title: 'Configuración',
       icon: FaCog,
       path: '/configuracion',
       color: 'bg-gray-500',
-      description: 'Ajustes del sistema'
+      description: 'Ajustes del sistema',
+      adminOnly: true
     }
   ];
+
+  const itemsVisibles = dashboardItems.filter((item) => esAdmin || !item.adminOnly);
 
   return (
     <div className="space-y-4">
       <div className="text-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Sistema de Gestión</h1>
-        <p className="text-gray-600 mt-2">Bienvenido al panel de control</p>
+        <h1 className="text-2xl font-bold text-gray-800">
+          {esAdmin ? 'Sistema de Gestión' : 'Mostrador'}
+        </h1>
+        <p className="text-gray-600 mt-2">
+          {esAdmin ? 'Bienvenido al panel de control' : 'Acceso rápido al punto de venta'}
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        {dashboardItems.map((item, index) => {
+        {itemsVisibles.map((item, index) => {
           const Icon = item.icon;
           
           return (

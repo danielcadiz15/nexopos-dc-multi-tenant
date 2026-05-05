@@ -1,30 +1,30 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.condinea.sistema',
-  appName: 'Sistema de Gestión',
+  appId: 'com.condinea.app',
+  appName: 'NexoPOS DC Caja',
   webDir: 'build',
   bundledWebRuntime: false,
   server: {
-    url: 'http://localhost:3000',
-    cleartext: true
+    url: 'https://nexopos-dc.web.app/cajero',
+    cleartext: false
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 3000,
-      backgroundColor: '#ffffff',
+      launchShowDuration: 1200,
+      backgroundColor: '#1d4ed8',
       androidSplashResourceName: 'splash',
       androidScaleType: 'CENTER_CROP',
-      showSpinner: true,
+      showSpinner: false,
       androidSpinnerStyle: 'large',
       iosSpinnerStyle: 'small',
-      spinnerColor: '#999999',
+      spinnerColor: '#ffffff',
       splashFullScreen: true,
       splashImmersive: true
     },
     StatusBar: {
-      style: 'dark',
-      backgroundColor: '#ffffff'
+      style: 'light',
+      backgroundColor: '#1d4ed8'
     }
   }
 };

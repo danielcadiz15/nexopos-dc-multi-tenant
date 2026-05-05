@@ -1,6 +1,22 @@
 // src/services/api.service.js - REEMPLAZAR COMPLETO
 import { auth } from '../firebase/config';
 
+function emitLicense402(body) {
+  const msg = body?.message || 'Licencia inválida';
+  const detail =
+    body && typeof body === 'object'
+      ? {
+          message: msg,
+          code: body.code,
+          graceEndsAt: body.graceEndsAt,
+          pagoBilleteraUrl: body.pagoBilleteraUrl
+        }
+      : { message: msg };
+  try {
+    window.dispatchEvent(new CustomEvent('license:blocked', { detail }));
+  } catch {}
+}
+
 class ApiService {
   constructor(basePath = '') {
     // Forzar el uso del proyecto correcto en minúsculas
@@ -65,7 +81,7 @@ class ApiService {
     const response = await fetch(this.buildUrl(endpoint, params), { method: 'GET', headers });
     const data = await response.json().catch(() => ({}));
     if (response.status === 402) {
-      try { window.dispatchEvent(new CustomEvent('license:blocked', { detail: data?.message || 'Licencia inválida' })); } catch {}
+      emitLicense402(data);
     } else {
       try { window.dispatchEvent(new CustomEvent('license:ok')); } catch {}
     }
@@ -81,7 +97,7 @@ class ApiService {
     });
     const responseData = await response.json().catch(() => ({}));
     if (response.status === 402) {
-      try { window.dispatchEvent(new CustomEvent('license:blocked', { detail: responseData?.message || 'Licencia inválida' })); } catch {}
+      emitLicense402(responseData);
     } else {
       try { window.dispatchEvent(new CustomEvent('license:ok')); } catch {}
     }
@@ -97,7 +113,7 @@ class ApiService {
     });
     const responseData = await response.json().catch(() => ({}));
     if (response.status === 402) {
-      try { window.dispatchEvent(new CustomEvent('license:blocked', { detail: responseData?.message || 'Licencia inválida' })); } catch {}
+      emitLicense402(responseData);
     } else {
       try { window.dispatchEvent(new CustomEvent('license:ok')); } catch {}
     }
@@ -113,7 +129,7 @@ class ApiService {
     });
     const responseData = await response.json().catch(() => ({}));
     if (response.status === 402) {
-      try { window.dispatchEvent(new CustomEvent('license:blocked', { detail: responseData?.message || 'Licencia inválida' })); } catch {}
+      emitLicense402(responseData);
     } else {
       try { window.dispatchEvent(new CustomEvent('license:ok')); } catch {}
     }

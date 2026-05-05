@@ -320,6 +320,10 @@ const Stock = () => {
   /**
    * Navega a la página de transferencia entre sucursales
    */
+  const irAInicializarStock = () => {
+    navigate('/stock/inicializar');
+  };
+
   const irATransferencias = () => {
     navigate('/stock/transferencias');
   };
@@ -540,6 +544,13 @@ const Stock = () => {
               icon={<FaExclamationTriangle />}
             >
               {stockBajoFiltro ? "Ver todos" : "Stock bajo"}
+            </Button>
+            <Button
+              color="primary"
+              onClick={irAInicializarStock}
+              icon={<FaBoxOpen />}
+            >
+              Inicializar Stock
             </Button>
             <Button color="primary" onClick={onImprimirClick} className="mb-4">
               Imprimir listado

@@ -308,8 +308,19 @@ class ConfiguracionService extends FirebaseService {
       serie_actual: data.facturacion?.serie_actual || data.serie_actual || 'A',
       formato_predeterminado: data.facturacion?.formato_predeterminado || data.formato_predeterminado || 'termico',
       mostrar_logo: data.facturacion?.mostrar_logo !== undefined ? data.facturacion.mostrar_logo : data.mostrar_logo !== undefined ? data.mostrar_logo : true,
+      imprimir_ticket_automaticamente: data.facturacion?.imprimir_ticket_automaticamente !== undefined
+        ? data.facturacion.imprimir_ticket_automaticamente
+        : data.imprimir_ticket_automaticamente === true,
       tamano_logo: data.facturacion?.tamano_logo || data.tamano_logo || 'mediano',
-      posicion_logo: data.facturacion?.posicion_logo || data.posicion_logo || 'centro'
+      posicion_logo: data.facturacion?.posicion_logo || data.posicion_logo || 'centro',
+      caja_modulos: {
+        clientes: data.caja_modulos?.clientes !== false,
+        alerta_deudas: data.caja_modulos?.alerta_deudas !== false,
+        pago_deudas: data.caja_modulos?.pago_deudas !== false,
+        ver_comprobante_deuda: data.caja_modulos?.ver_comprobante_deuda !== false
+      },
+      /** URL pública (HTTPS) del APK de la app de caja para descarga desde login */
+      caja_apk_url: typeof data.caja_apk_url === 'string' ? data.caja_apk_url.trim() : ''
     };
   }
 
@@ -355,9 +366,17 @@ class ConfiguracionService extends FirebaseService {
         serie_actual: config.serie_actual,
         formato_predeterminado: config.formato_predeterminado,
         mostrar_logo: config.mostrar_logo,
+        imprimir_ticket_automaticamente: config.imprimir_ticket_automaticamente === true,
         tamano_logo: config.tamano_logo,
         posicion_logo: config.posicion_logo
       },
+      caja_modulos: {
+        clientes: config.caja_modulos?.clientes !== false,
+        alerta_deudas: config.caja_modulos?.alerta_deudas !== false,
+        pago_deudas: config.caja_modulos?.pago_deudas !== false,
+        ver_comprobante_deuda: config.caja_modulos?.ver_comprobante_deuda !== false
+      },
+      caja_apk_url: typeof config.caja_apk_url === 'string' ? config.caja_apk_url.trim() : '',
       
       // Metadatos
       fecha_actualizacion: new Date().toISOString(),
@@ -396,8 +415,16 @@ class ConfiguracionService extends FirebaseService {
       serie_actual: 'A',
       formato_predeterminado: 'termico',
       mostrar_logo: true,
+      imprimir_ticket_automaticamente: false,
       tamano_logo: 'mediano',
-      posicion_logo: 'centro'
+      posicion_logo: 'centro',
+      caja_modulos: {
+        clientes: true,
+        alerta_deudas: true,
+        pago_deudas: true,
+        ver_comprobante_deuda: true
+      },
+      caja_apk_url: ''
     };
   }
 }

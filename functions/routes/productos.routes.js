@@ -2,6 +2,49 @@
 const admin = require('firebase-admin');
 const db = admin.firestore();
 
+async function obtenerProductosEmpresa(companyId) {
+  const productosPorId = new Map();
+
+  if (companyId) {
+    const tenantSnapshot = await db.collection('companies').doc(companyId).collection('productos').get();
+    tenantSnapshot.forEach(doc => {
+      productosPorId.set(doc.id, { id: doc.id, ...doc.data(), orgId: companyId });
+    });
+  }
+
+  let globalQuery = db.collection('productos');
+  if (companyId) {
+    globalQuery = globalQuery.where('orgId', '==', companyId);
+  }
+
+  const globalSnapshot = await globalQuery.get();
+  globalSnapshot.forEach(doc => {
+    if (!productosPorId.has(doc.id)) {
+      productosPorId.set(doc.id, { id: doc.id, ...doc.data() });
+    }
+  });
+
+  return Array.from(productosPorId.values());
+}
+
+async function obtenerProductoEmpresa(companyId, productId) {
+  if (companyId) {
+    const tenantDoc = await db.collection('companies').doc(companyId).collection('productos').doc(productId).get();
+    if (tenantDoc.exists) {
+      return tenantDoc;
+    }
+  }
+
+  const globalDoc = await db.collection('productos').doc(productId).get();
+  if (!globalDoc.exists) return globalDoc;
+
+  const data = globalDoc.data();
+  if (companyId && data.orgId && data.orgId !== companyId) return null;
+  if (companyId && data.companyId && data.companyId !== companyId) return null;
+
+  return globalDoc;
+}
+
 /**
  * Función auxiliar para validar un producto
  */
@@ -42,7 +85,7 @@ function validarProducto(producto, validarPrecios = true) {
 // Función para manejar todas las rutas de productos
 const productosRoutes = async (req, res, path) => {
   try {
-    const companyId = req.companyId || req.user?.companyId || null;
+    const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
     if (path === '/productos' && req.method === 'GET') {
       let query = db.collection('productos');
       
@@ -222,18 +265,16 @@ const productosRoutes = async (req, res, path) => {
       try {
         console.log(`🔍 [PRODUCTOS] Buscando productos con stock en sucursal ${sucursalId}, término: "${termino}"`);
         
-        // Obtener productos filtrados por companyId
-        let query = db.collection('productos');
+        // Obtener productos filtrados por companyId, contemplando colección global y tenant.
         if (companyId) {
-          query = query.where('orgId', '==', companyId);
           console.log(`🔍 [MULTI-TENANT] Filtrando productos por companyId: ${companyId}`);
         }
-        const productosSnapshot = await query.get();
+        const productosEmpresa = await obtenerProductosEmpresa(companyId);
         const productos = [];
         
         // Para cada producto, obtener su stock en la sucursal específica
-        for (const doc of productosSnapshot.docs) {
-          const productoData = doc.data();
+        for (const productoBase of productosEmpresa) {
+          const productoData = productoBase;
           
           // Filtrar por término si existe
           if (termino && termino.length >= 2) {
@@ -254,7 +295,7 @@ const productosRoutes = async (req, res, path) => {
           const stockQuery = await (companyId
             ? db.collection('companies').doc(companyId).collection('stock_sucursal')
             : db.collection('stock_sucursal'))
-            .where('producto_id', '==', doc.id)
+            .where('producto_id', '==', productoBase.id)
             .where('sucursal_id', '==', sucursalId)
             .limit(1)
             .get();
@@ -271,7 +312,7 @@ const productosRoutes = async (req, res, path) => {
           // Solo incluir productos activos
           if (productoData.activo !== false) {
             productos.push({
-              id: doc.id,
+              id: productoBase.id,
               ...productoData,
               precio_venta: parseFloat(productoData.precio_venta || 0),
               precio_costo: parseFloat(productoData.precio_costo || 0),
@@ -339,14 +380,18 @@ const productosRoutes = async (req, res, path) => {
       try {
         console.log(`🔍 [PRODUCTOS] Buscando producto código "${codigo}" en sucursal ${sucursalId}`);
         
-        // Buscar producto por código
-        let refCode = db.collection('productos')
-          .where('codigo', '==', codigo)
-          .where('activo', '==', true);
-        if (companyId) refCode = refCode.where('orgId', '==', companyId);
-        const productosSnapshot = await refCode.limit(1).get();
+        // Buscar producto por código en colección global y tenant.
+        const productosEmpresa = await obtenerProductosEmpresa(companyId);
+        const codigoNormalizado = String(codigo || '').trim();
+        const productoBase = productosEmpresa.find((producto) => (
+          producto.activo !== false &&
+          (
+            String(producto.codigo || '') === codigoNormalizado ||
+            String(producto.codigo_barras || '') === codigoNormalizado
+          )
+        ));
         
-        if (productosSnapshot.empty) {
+        if (!productoBase) {
           res.status(404).json({
             success: false,
             message: `Producto con código ${codigo} no encontrado`
@@ -354,14 +399,13 @@ const productosRoutes = async (req, res, path) => {
           return true;
         }
         
-        const productoDoc = productosSnapshot.docs[0];
-        const productoData = productoDoc.data();
+        const productoData = productoBase;
         
         // Obtener stock en sucursal específica (multi-tenant)
         const stockQuery = await (companyId
           ? db.collection('companies').doc(companyId).collection('stock_sucursal')
           : db.collection('stock_sucursal'))
-          .where('producto_id', '==', productoDoc.id)
+          .where('producto_id', '==', productoBase.id)
           .where('sucursal_id', '==', sucursalId)
           .limit(1)
           .get();
@@ -376,7 +420,7 @@ const productosRoutes = async (req, res, path) => {
         }
         
         const producto = {
-          id: productoDoc.id,
+          id: productoBase.id,
           ...productoData,
           precio_venta: parseFloat(productoData.precio_venta || 0),
           precio_costo: parseFloat(productoData.precio_costo || 0),
@@ -500,9 +544,9 @@ const productosRoutes = async (req, res, path) => {
         return false;
       }
       
-      const productDoc = await db.collection('productos').doc(productId).get();
+      const productDoc = await obtenerProductoEmpresa(companyId, productId);
       
-      if (!productDoc.exists) {
+      if (!productDoc?.exists) {
         res.status(404).json({
           success: false,
           message: 'Producto no encontrado'

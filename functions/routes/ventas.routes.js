@@ -813,7 +813,8 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		// VALIDACIÓN 4: Verificar stock disponible (OPTIMIZADA)
 		console.log('🔍 Verificando stock disponible en sucursal...');
 		
-        // Verificar que todos los productos existan y crear stock_sucursal si no existe
+        // Verificar que todos los productos tengan stock asignado en la sucursal.
+        // El stock general del producto no habilita venta hasta que una compra/transferencia lo asigne.
 		for (let i = 0; i < detalles.length; i++) {
 		  const detalle = detalles[i];
 		  console.log(`\n📦 [${i}] Verificando producto:`, {
@@ -831,42 +832,21 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 			.get();
 		  
 		  if (stockQuery.empty) {
-			console.log(`⚠️ No existe stock_sucursal para producto ${detalle.producto_id}`);
-			
-            // Verificar que el producto existe (tenant primero, luego global con orgId)
-            let productoDoc = await db.collection('companies').doc(companyId).collection('productos').doc(detalle.producto_id).get();
-            if (!productoDoc.exists) {
-              const globalProd = await db.collection('productos').doc(detalle.producto_id).get();
-              if (globalProd.exists && (!globalProd.get('orgId') || globalProd.get('orgId') === companyId)) {
-                productoDoc = globalProd;
-              }
-            }
-			
-			if (!productoDoc.exists) {
-			  console.error(`❌ Producto ${detalle.producto_id} NO EXISTE`);
-			  res.status(400).json({
-				success: false,
-				message: `Producto ${detalle.producto_info?.nombre || 'desconocido'} no encontrado en la base de datos`
-			  });
-			  return;
-			}
-			
-			const productoData = productoDoc.data();
-			console.log(`✅ Producto encontrado: ${productoData.nombre}, creando stock_sucursal...`);
-			
-            // Crear registro de stock_sucursal en el tenant
-			const stockInicial = parseInt(productoData.stock_actual || 0);
-			const stockId = `${detalle.producto_id}_${venta.sucursal_id}`;
-			
-            await db.collection('companies').doc(companyId).collection('stock_sucursal').doc(stockId).set({
-			  producto_id: detalle.producto_id,
-			  sucursal_id: venta.sucursal_id,
-			  cantidad: stockInicial,
-			  stock_minimo: parseInt(productoData.stock_minimo || 5),
-			  ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp()
+			return res.status(400).json({
+			  success: false,
+			  message: `El producto ${detalle.producto_info?.nombre || detalle.producto_id} no tiene stock asignado a esta sucursal. Primero recibí una compra o transferí stock.`
 			});
-			
-			console.log(`✅ Stock_sucursal creado con cantidad: ${stockInicial}`);
+		  }
+
+		  const stockData = stockQuery.docs[0].data();
+		  const stockActual = parseFloat(stockData.cantidad || 0);
+		  const cantidadVenta = parseFloat(detalle.cantidadParaStock || detalle.cantidad || 0);
+
+		  if (stockActual < cantidadVenta) {
+			return res.status(400).json({
+			  success: false,
+			  message: `Stock insuficiente para ${detalle.producto_info?.nombre || detalle.producto_id}. Disponible: ${stockActual}, solicitado: ${cantidadVenta}`
+			});
 		  }
 		}
 		
@@ -956,13 +936,19 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 			  .limit(1)
 			  .get();
 			
-			if (!stockQuery.empty) {
-			  const stockDoc = stockQuery.docs[0];
-			  const stockData = stockDoc.data();
-			  			const stockActual = parseInt(stockData.cantidad || 0);
+			if (stockQuery.empty) {
+			  throw new Error(`Stock no encontrado para ${detalle.producto_info?.nombre || detalle.producto_id} en la sucursal`);
+			}
+
+			const stockDoc = stockQuery.docs[0];
+			const stockData = stockDoc.data();
+			const stockActual = parseFloat(stockData.cantidad || 0);
 			// Usar cantidadParaStock si está disponible (para promociones con unidades gratis)
-			const cantidadVenta = parseInt(detalle.cantidadParaStock || detalle.cantidad);
-			const nuevoStock = Math.max(0, stockActual - cantidadVenta);
+			const cantidadVenta = parseFloat(detalle.cantidadParaStock || detalle.cantidad || 0);
+			if (stockActual < cantidadVenta) {
+			  throw new Error(`Stock insuficiente para ${detalle.producto_info?.nombre || detalle.producto_id}`);
+			}
+			const nuevoStock = stockActual - cantidadVenta;
 			  
 			  console.log(`  📦 ${detalle.producto_info?.nombre || detalle.producto_id}: ${stockActual} - ${cantidadVenta} = ${nuevoStock}`);
 			  
@@ -987,7 +973,6 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 				fecha: admin.firestore.FieldValue.serverTimestamp(),
 				usuario_id: venta.usuario_id || 'sistema'
 			  });
-			}
 		  }
 		  
 		  return ventaRef.id;

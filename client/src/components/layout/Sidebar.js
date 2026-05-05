@@ -18,6 +18,7 @@ import {
   FaBuilding, FaTimes
 } from 'react-icons/fa';
 import NexoPOSLogo from '../common/NexoPOSLogo';
+import { isSuperAdminEmail } from '../../config/superAdmin';
 
 const Sidebar = ({ isOpen, toggleSidebar }) => {
   const location = useLocation();
@@ -204,7 +205,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     return true; // por defecto habilitado si no hay config
   };
 
-  const superAdmin = (currentUser?.email || '').toLowerCase() === 'danielcadiz15@gmail.com';
+  const superAdmin = isSuperAdminEmail(currentUser?.email);
 
   const filteredMenuItems = menuItems
     .map(item => {
@@ -244,8 +245,6 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       if (item.submenu) return item.submenu && item.submenu.length > 0;
       return hasPermission(item.permission, 'ver');
     });
-
-  const isAdminEmail = (currentUser?.email || '').toLowerCase() === 'danielcadiz15@gmail.com';
 
   const isActive = (path) => location.pathname === path;
   const isParentActive = (submenu) => submenu?.some(item => location.pathname === item.path);

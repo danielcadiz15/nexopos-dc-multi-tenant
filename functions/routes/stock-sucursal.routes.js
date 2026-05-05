@@ -2,6 +2,36 @@
 const admin = require('firebase-admin');
 const db = admin.firestore();
 
+const obtenerProductoDoc = async (companyId, productoId) => {
+  if (!productoId) return null;
+
+  const tenantDoc = await db.collection('companies').doc(companyId).collection('productos').doc(productoId).get();
+  if (tenantDoc.exists) return tenantDoc;
+
+  const globalDoc = await db.collection('productos').doc(productoId).get();
+  if (!globalDoc.exists) return globalDoc;
+
+  const globalData = globalDoc.data();
+  if (globalData.orgId && globalData.orgId !== companyId) return null;
+
+  return globalDoc;
+};
+
+const obtenerSucursalDoc = async (companyId, sucursalId) => {
+  if (!sucursalId) return null;
+
+  const tenantDoc = await db.collection('companies').doc(companyId).collection('sucursales').doc(sucursalId).get();
+  if (tenantDoc.exists) return tenantDoc;
+
+  const globalDoc = await db.collection('sucursales').doc(sucursalId).get();
+  if (!globalDoc.exists) return globalDoc;
+
+  const globalData = globalDoc.data();
+  if (globalData.orgId && globalData.orgId !== companyId) return null;
+
+  return globalDoc;
+};
+
 // Función para manejar todas las rutas de stock por sucursal
 const stockSucursalRoutes = async (req, res, path) => {
   try {
@@ -25,13 +55,10 @@ const stockSucursalRoutes = async (req, res, path) => {
         // Obtener información de productos en paralelo
         const productosPromises = stockSnapshot.docs.map(async (doc) => {
           const stockData = doc.data();
-          const productoDoc = await db.collection('productos').doc(stockData.producto_id).get();
+          const productoDoc = await obtenerProductoDoc(companyId, stockData.producto_id);
           
-          if (productoDoc.exists) {
+          if (productoDoc?.exists) {
             const productoData = productoDoc.data();
-            if (productoData.orgId && productoData.orgId !== companyId) {
-              return null;
-            }
             return {
               id: doc.id,
               ...stockData,
@@ -79,8 +106,8 @@ const stockSucursalRoutes = async (req, res, path) => {
         if (!companyId) {
           return res.status(400).json({ success:false, message:'CompanyId requerido' });
         }
-      const productoDoc = await db.collection('productos').doc(productoId).get();
-        if (!productoDoc.exists) {
+      const productoDoc = await obtenerProductoDoc(companyId, productoId);
+        if (!productoDoc?.exists) {
           res.status(404).json({
             success: false,
             message: 'Producto no encontrado'
@@ -88,9 +115,6 @@ const stockSucursalRoutes = async (req, res, path) => {
           return true;
         }
       const productoData0 = productoDoc.data();
-      if (productoData0.orgId && productoData0.orgId !== companyId) {
-        return res.status(404).json({ success:false, message:'Producto no encontrado' });
-      }
         
         // Obtener stock del producto en todas las sucursales
       const stockSnapshot = await db.collection('companies').doc(companyId).collection('stock_sucursal')
@@ -102,9 +126,9 @@ const stockSucursalRoutes = async (req, res, path) => {
         // Obtener información de sucursales
         for (const doc of stockSnapshot.docs) {
           const stockData = doc.data();
-          const sucursalDoc = await db.collection('sucursales').doc(stockData.sucursal_id).get();
+          const sucursalDoc = await obtenerSucursalDoc(companyId, stockData.sucursal_id);
           
-          if (sucursalDoc.exists) {
+          if (sucursalDoc?.exists) {
             const sucursalData = sucursalDoc.data();
             stock.push({
               id: doc.id,
@@ -195,8 +219,8 @@ const stockSucursalRoutes = async (req, res, path) => {
 			.get();
 
 		  if (stockQuery.empty) {
-			const productoDoc = await db.collection('productos').doc(producto.producto_id).get();
-			const nombreProducto = productoDoc.exists ? productoDoc.data().nombre : 'Producto';
+			const productoDoc = await obtenerProductoDoc(companyId, producto.producto_id);
+			const nombreProducto = productoDoc?.exists ? productoDoc.data().nombre : 'Producto';
 			
 			return res.status(400).json({
 			  success: false,
@@ -206,8 +230,8 @@ const stockSucursalRoutes = async (req, res, path) => {
 
 		  const stockData = stockQuery.docs[0].data();
 		  if (stockData.cantidad < producto.cantidad) {
-			const productoDoc = await db.collection('productos').doc(producto.producto_id).get();
-			const nombreProducto = productoDoc.exists ? productoDoc.data().nombre : 'Producto';
+			const productoDoc = await obtenerProductoDoc(companyId, producto.producto_id);
+			const nombreProducto = productoDoc?.exists ? productoDoc.data().nombre : 'Producto';
 			
 			return res.status(400).json({
 			  success: false,
@@ -220,8 +244,8 @@ const stockSucursalRoutes = async (req, res, path) => {
 		const productosEnriquecidos = await Promise.all(
 		  productos.map(async (item) => {
 			try {
-			  const productoDoc = await db.collection('productos').doc(item.producto_id).get();
-			  if (productoDoc.exists) {
+			  const productoDoc = await obtenerProductoDoc(companyId, item.producto_id);
+			  if (productoDoc?.exists) {
 				const productoData = productoDoc.data();
 				return {
 				  producto_id: item.producto_id,
@@ -295,8 +319,13 @@ const stockSucursalRoutes = async (req, res, path) => {
       const sucursalId = path.split('/sucursal/')[1].split('/stock-bajo')[0];
       
       try {
+        const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido (orgId)' });
+        }
+
         // Obtener stock bajo (donde cantidad <= stock_minimo)
-        const stockSnapshot = await db.collection('stock_sucursal')
+        const stockSnapshot = await db.collection('companies').doc(companyId).collection('stock_sucursal')
           .where('sucursal_id', '==', sucursalId)
           .get();
         
@@ -307,9 +336,9 @@ const stockSucursalRoutes = async (req, res, path) => {
           
           // Verificar si el stock está bajo
           if (stockData.cantidad <= stockData.stock_minimo) {
-            const productoDoc = await db.collection('productos').doc(stockData.producto_id).get();
+            const productoDoc = await obtenerProductoDoc(companyId, stockData.producto_id);
             
-            if (productoDoc.exists) {
+            if (productoDoc?.exists) {
               const productoData = productoDoc.data();
               stockBajo.push({
                 id: doc.id,
@@ -352,8 +381,13 @@ const stockSucursalRoutes = async (req, res, path) => {
       const { cantidad, stock_minimo } = req.body;
       
       try {
+        const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido (orgId)' });
+        }
+
         // Buscar el registro de stock existente
-        const stockQuery = await db.collection('stock_sucursal')
+        const stockQuery = await db.collection('companies').doc(companyId).collection('stock_sucursal')
           .where('sucursal_id', '==', sucursalId)
           .where('producto_id', '==', productoId)
           .limit(1)
@@ -369,7 +403,7 @@ const stockSucursalRoutes = async (req, res, path) => {
             ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp()
           };
           
-          const docRef = await db.collection('stock_sucursal').add(nuevoStock);
+          const docRef = await db.collection('companies').doc(companyId).collection('stock_sucursal').add(nuevoStock);
           
           res.json({
             success: true,
@@ -507,6 +541,11 @@ const stockSucursalRoutes = async (req, res, path) => {
       const { sucursal_id, productos } = req.body;
       
       try {
+        const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido (orgId)' });
+        }
+
         if (!sucursal_id || !Array.isArray(productos)) {
           res.status(400).json({
             success: false,
@@ -522,7 +561,7 @@ const stockSucursalRoutes = async (req, res, path) => {
           if (!producto.producto_id) continue;
           
           // Verificar si ya existe
-          const stockExistente = await db.collection('stock_sucursal')
+          const stockExistente = await db.collection('companies').doc(companyId).collection('stock_sucursal')
             .where('sucursal_id', '==', sucursal_id)
             .where('producto_id', '==', producto.producto_id)
             .limit(1)
@@ -537,7 +576,7 @@ const stockSucursalRoutes = async (req, res, path) => {
               ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp()
             };
             
-            const docRef = db.collection('stock_sucursal').doc();
+            const docRef = db.collection('companies').doc(companyId).collection('stock_sucursal').doc();
             batch.set(docRef, nuevoStock);
             registrosCreados.push({
               id: docRef.id,
@@ -674,7 +713,12 @@ const stockSucursalRoutes = async (req, res, path) => {
       const { fecha_inicio, fecha_fin, tipo } = req.query;
       
       try {
-        let query = db.collection('movimientos_stock')
+        const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido (orgId)' });
+        }
+
+        let query = db.collection('companies').doc(companyId).collection('movimientos_stock')
           .where('sucursal_id', '==', sucursalId);
         
         if (tipo) {
@@ -690,9 +734,9 @@ const stockSucursalRoutes = async (req, res, path) => {
         // Enriquecer con información de productos
         for (const doc of movimientosSnapshot.docs) {
           const movimiento = doc.data();
-          const productoDoc = await db.collection('productos').doc(movimiento.producto_id).get();
+          const productoDoc = await obtenerProductoDoc(companyId, movimiento.producto_id);
           
-          if (productoDoc.exists) {
+          if (productoDoc?.exists) {
             movimientos.push({
               id: doc.id,
               ...movimiento,
@@ -726,9 +770,14 @@ const stockSucursalRoutes = async (req, res, path) => {
     else if (path.match(/^\/stock-sucursal\/producto\/[^\/]+\/movimientos$/) && req.method === 'GET') {
       const productoId = path.split('/producto/')[1].split('/movimientos')[0];
       try {
+        const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido (orgId)' });
+        }
+
         // Verificar que el producto existe
-        const productoDoc = await db.collection('productos').doc(productoId).get();
-        if (!productoDoc.exists) {
+        const productoDoc = await obtenerProductoDoc(companyId, productoId);
+        if (!productoDoc?.exists) {
           res.status(404).json({
             success: false,
             message: 'Producto no encontrado'
@@ -737,7 +786,7 @@ const stockSucursalRoutes = async (req, res, path) => {
         }
         const producto = productoDoc.data();
         // Obtener movimientos de stock de ese producto en todas las sucursales
-        const movimientosSnapshot = await db.collection('movimientos_stock')
+        const movimientosSnapshot = await db.collection('companies').doc(companyId).collection('movimientos_stock')
           .where('producto_id', '==', productoId)
           .orderBy('fecha', 'desc')
           .limit(200)

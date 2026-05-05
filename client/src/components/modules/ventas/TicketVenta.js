@@ -22,8 +22,8 @@ const TicketVenta = ({ venta, onClose }) => {
   
   // Estado para configuración de empresa
   const [empresaConfig, setEmpresaConfig] = useState({
-    razon_social: 'LA FABRICA',
-    nombre_fantasia: 'LA FABRICA',
+    razon_social: 'NexoPOS DC',
+    nombre_fantasia: 'NexoPOS DC',
     slogan: '',
     cuit: '20-12345678-9',
     direccion_calle: '123 Calle Principal',

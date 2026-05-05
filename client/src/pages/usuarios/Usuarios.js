@@ -29,9 +29,9 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 
 // Iconos
 import { 
-  FaUsers, FaUserPlus, FaSearch, FaEdit, 
+  FaUsers, FaUserPlus, FaEdit, 
   FaToggleOn, FaToggleOff, FaKey, FaShieldAlt,
-  FaUserTie, FaCalendarAlt, FaClock
+  FaUserTie, FaClock
 } from 'react-icons/fa';
 
 /**
@@ -195,9 +195,11 @@ const Usuarios = () => {
       // Si es string, mapear a nombre legible
       const rolesMap = {
         'admin': 'Administrador',
+        'cajero': 'Cajero',
         'empleado': 'Empleado', 
         'gerente': 'Gerente',
         'Administrador': 'Administrador',
+        'Cajero': 'Cajero',
         'Empleado': 'Empleado',
         'Gerente': 'Gerente'
       };

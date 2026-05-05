@@ -7,10 +7,11 @@ import { useNavigate } from 'react-router-dom';
 import configuracionService from '../../services/configuracion.service';
 import { createTenant, joinTenant, setActiveTenant } from '../../services/firebase.service';
 import { useAuth } from '../../contexts/AuthContext';
+import { isSuperAdminEmail } from '../../config/superAdmin';
 
 // Firebase
 import { db, auth } from '../../firebase/config';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, reload, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 // Componentes
@@ -120,7 +121,7 @@ const ConfiguracionEmpresa = () => {
   // =================== LICENCIA ===================
   const [showLic, setShowLic] = useState(false);
   const [savingLic, setSavingLic] = useState(false);
-  const [lic, setLic] = useState({ paidUntil: '', blocked: false, reason: '', plan: 'basic' });
+  const [lic, setLic] = useState({ paidUntil: '', blocked: false, reason: '', plan: 'basic', pagoBilleteraUrl: '' });
   const [licDaysLeft, setLicDaysLeft] = useState(null);
 
   const cargarLicencia = useCallback(async ()=>{
@@ -135,7 +136,7 @@ const ConfiguracionEmpresa = () => {
         const s2 = await getDoc(ref2);
         if(s2.exists()) data = s2.data();
       }
-      const merged = { paidUntil: '', blocked: false, reason: '', plan: 'basic', ...(data||{}) };
+      const merged = { paidUntil: '', blocked: false, reason: '', plan: 'basic', pagoBilleteraUrl: '', ...(data||{}) };
       setLic(merged);
       // calcular días restantes
       if (merged.paidUntil) {
@@ -181,9 +182,17 @@ const ConfiguracionEmpresa = () => {
     numeracion_inicial: 1,
     serie_actual: 'A',
     formato_predeterminado: 'termico',
+    imprimir_ticket_automaticamente: false,
     mostrar_logo: true,
     tamaño_logo: 'mediano',
-    posicion_logo: 'centro'
+    posicion_logo: 'centro',
+    caja_modulos: {
+      clientes: true,
+      alerta_deudas: true,
+      pago_deudas: true,
+      ver_comprobante_deuda: true
+    },
+    caja_apk_url: ''
   });
 
   const [logoFile, setLogoFile] = useState(null);
@@ -215,11 +224,12 @@ const ConfiguracionEmpresa = () => {
       if (regPass !== regPass2) { toast.error('Las contraseñas no coinciden'); return; }
       setCreandoCuentaEmpresa(true);
       // 1) Crear usuario
-      await createUserWithEmailAndPassword(auth, regEmail.trim(), regPass);
-      // 2) Crear empresa como OWNER (reutiliza flujo existente)
-      setEmpresaNombre(regEmpresa.trim());
-      setEmpresaSlug(regEmpresa.trim().toLowerCase().replace(/\s+/g,'-'));
-      await handleCrearEmpresa();
+      const cred = await createUserWithEmailAndPassword(auth, regEmail.trim(), regPass);
+      await sendEmailVerification(cred.user);
+      const empresaTrim = regEmpresa.trim();
+      sessionStorage.setItem('pendingEmpresaNombre', empresaTrim);
+      toast.info('Te enviamos un correo para verificar tu cuenta. Luego podés crear la empresa desde la pantalla de verificación.');
+      navigate('/verificar-email', { replace: true, state: { empresaNombre: empresaTrim } });
     } catch (err) {
       console.error('Error en registro+creación:', err);
       toast.error(err.message || 'No se pudo crear la cuenta/empresa');
@@ -242,6 +252,15 @@ const ConfiguracionEmpresa = () => {
     e?.preventDefault?.();
     if (!empresaNombre.trim()) { toast.error('Nombre de empresa requerido'); return; }
     try {
+      const u = auth.currentUser;
+      if (u) {
+        await reload(u);
+      }
+      if (!auth.currentUser?.emailVerified) {
+        toast.error('Tenés que verificar tu correo antes de crear la empresa. Revisá el mail o entrá desde “Ya verifiqué” en verificación.');
+        navigate('/verificar-email', { replace: false, state: { empresaNombre: empresaNombre.trim() } });
+        return;
+      }
       setCreandoOrg(true);
       const res = await createTenant(empresaNombre.trim(), empresaSlug.trim() || null);
       await setActiveTenant(res.orgId);
@@ -277,6 +296,16 @@ const ConfiguracionEmpresa = () => {
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+  };
+
+  const handleCajaModuloChange = (name, checked) => {
+    setFormData(prev => ({
+      ...prev,
+      caja_modulos: {
+        ...(prev.caja_modulos || {}),
+        [name]: checked
+      }
+    }));
   };
 
   const handleLogoChange = (e) => {
@@ -373,7 +402,7 @@ const ConfiguracionEmpresa = () => {
           Configuración Empresarial
         </h1>
         <div className="flex gap-2">
-          { (currentUser?.email||'').toLowerCase() === 'danielcadiz15@gmail.com' && (
+          { isSuperAdminEmail(currentUser?.email) && (
             <>
               <Button color="secondary" onClick={()=>{ cargarLicencia(); setShowLic(true); }}>Licencia</Button>
               <Button color="primary" icon={<FaCogs/>} onClick={()=>{ cargarModulos(); setShowModulos(true); }}>Gestionar Módulos</Button>
@@ -822,10 +851,83 @@ const ConfiguracionEmpresa = () => {
               <option value="a4">A4</option>
             </select>
           </div>
+
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <label className="flex items-start gap-3 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                name="imprimir_ticket_automaticamente"
+                checked={formData.imprimir_ticket_automaticamente}
+                onChange={handleInputChange}
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span>
+                Imprimir automáticamente al cerrar venta
+                <span className="mt-1 block text-xs font-normal text-gray-500">
+                  Si está desactivado, el cajero verá una pregunta antes de imprimir.
+                </span>
+              </span>
+            </label>
+          </div>
         </div>
       </Card>
 
-      {/* Card de Módulos del Sistema */}
+      {/* Configuración de Caja */}
+      <Card>
+        <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+          <FaCog className="mr-2 text-indigo-600" />
+          App de Caja
+        </h3>
+        <p className="mb-4 text-sm text-gray-600">
+          Definí qué funciones adicionales aparecen en el mostrador. Si todo queda activo, la caja muestra cliente,
+          aviso de deudas y acciones para comprobantes pendientes.
+        </p>
+        <div className="mb-6 rounded-lg border border-indigo-100 bg-indigo-50/50 p-4">
+          <label htmlFor="caja_apk_url" className="block text-sm font-medium text-gray-800">
+            Enlace de descarga del APK (Android)
+          </label>
+          <p className="mt-1 mb-2 text-xs text-gray-600">
+            Subí el archivo <code className="rounded bg-white px-1">app-release.apk</code> a Firebase Storage, Drive con enlace
+            directo, tu servidor u otro hosting HTTPS y pegá aquí la URL. Esa dirección se usará en la pantalla de inicio de sesión
+            para que los cajeros instalen la app. Si dejás el campo vacío, podés usar la variable de entorno{' '}
+            <code className="rounded bg-white px-1">REACT_APP_CAJA_APK_URL</code> al compilar el panel web.
+          </p>
+          <input
+            id="caja_apk_url"
+            name="caja_apk_url"
+            type="url"
+            autoComplete="off"
+            placeholder="https://…"
+            value={formData.caja_apk_url || ''}
+            onChange={handleInputChange}
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+          />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            ['clientes', 'Seleccionar cliente', 'Permite cambiar Consumidor final por un cliente registrado.'],
+            ['alerta_deudas', 'Avisar deuda del cliente', 'Muestra un aviso discreto y una ventana con comprobantes pendientes.'],
+            ['pago_deudas', 'Pagar deuda desde caja', 'Permite registrar pagos sobre comprobantes adeudados.'],
+            ['ver_comprobante_deuda', 'Ver comprobante adeudado', 'Permite consultar el detalle básico antes de continuar.']
+          ].map(([key, label, description]) => (
+            <label key={key} className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+              <input
+                type="checkbox"
+                checked={formData.caja_modulos?.[key] !== false}
+                onChange={(event) => handleCajaModuloChange(key, event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span>
+                <span className="font-semibold text-gray-800">{label}</span>
+                <span className="mt-1 block text-xs text-gray-500">{description}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </Card>
+
+      {/* Card de Módulos del Sistema (solo super admin) */}
+      {isSuperAdminEmail(currentUser?.email) && (
       <Card>
         <div className="flex justify-between items-center">
           <div>
@@ -839,13 +941,14 @@ const ConfiguracionEmpresa = () => {
           </div>
           <Button
             color="primary"
-            //onClick={() => setShowModulosModal(true)}
+            onClick={()=>{ cargarModulos(); setShowModulos(true); }}
             icon={<FaCogs />}
           >
             Gestionar Módulos
           </Button>
         </div>
       </Card>
+      )}
 
       {/* Botones de acción */}
       <div className="flex justify-end space-x-3">
@@ -876,11 +979,6 @@ const ConfiguracionEmpresa = () => {
           )}
         </button>
       </div>
-
-      
-          // Aquí podrías recargar la configuración si es necesario
-        }}
-      />
 
       {/* Modal Gestión de Módulos */}
       <Modal open={showModulos} title="Gestionar Módulos" onClose={()=> setShowModulos(false)}>
@@ -920,6 +1018,19 @@ const ConfiguracionEmpresa = () => {
           <div className="col-span-2">
             <label className="block text-sm text-gray-700 mb-1">Motivo</label>
             <input className="input" placeholder="Motivo del bloqueo o nota" value={lic.reason||''} onChange={e=> setLic(prev=> ({ ...prev, reason: e.target.value }))} />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-sm text-gray-700 mb-1">Enlace de pago (billetera / Mercado Pago)</label>
+            <input
+              className="input"
+              type="url"
+              placeholder="https://..."
+              value={lic.pagoBilleteraUrl || ''}
+              onChange={(e) => setLic((prev) => ({ ...prev, pagoBilleteraUrl: e.target.value }))}
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Lo verán los usuarios cuando la licencia esté vencida o en período de gracia (24 h).
+            </p>
           </div>
         </div>
         <div className="mt-4 flex justify-end gap-3">

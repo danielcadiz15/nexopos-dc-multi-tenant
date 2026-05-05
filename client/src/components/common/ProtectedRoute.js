@@ -9,12 +9,13 @@ const ProtectedRoute = ({ children }) => {
   const location = useLocation();
 
   if (loading) return null;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />;
   // Permitir acceso total al admin aunque no tenga orgId
   const isAdminEmail = (currentUser?.email || '').toLowerCase() === 'danielcadiz15@gmail.com';
   if (isAdminEmail) return children;
   // Para el resto, exigir orgId (salvo en la ruta de configuración)
-  if (!orgId && location.pathname !== '/configuracion/empresa') {
+  const rutasSinOrg = ['/configuracion/empresa', '/verificar-email'];
+  if (!orgId && !rutasSinOrg.includes(location.pathname)) {
     return <Navigate to="/configuracion/empresa" replace />;
   }
 

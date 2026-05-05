@@ -19,6 +19,23 @@ const ROLES_SISTEMA = [
     }
   },
   {
+    id: 'cajero',
+    nombre: 'Cajero',
+    descripcion: 'Acceso al punto de venta y caja básica',
+    permisos: {
+      productos: { ver: true, crear: false, editar: false, eliminar: false },
+      compras: { ver: false, crear: false, editar: false, eliminar: false },
+      ventas: { ver: true, crear: true, editar: false, eliminar: false },
+      stock: { ver: true, crear: false, editar: false, eliminar: false },
+      reportes: { ver: false, crear: false, editar: false, eliminar: false },
+      promociones: { ver: false, crear: false, editar: false, eliminar: false },
+      usuarios: { ver: false, crear: false, editar: false, eliminar: false },
+      sucursales: { ver: false, crear: false, editar: false, eliminar: false },
+      clientes: { ver: true, crear: true, editar: false, eliminar: false },
+      caja: { ver: true, crear: true, editar: false, eliminar: false }
+    }
+  },
+  {
     id: 'empleado',
     nombre: 'Empleado',
     descripcion: 'Acceso a ventas y productos',

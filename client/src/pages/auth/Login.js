@@ -11,14 +11,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { FaLock, FaUser, FaSignInAlt } from 'react-icons/fa';
+import { FaAndroid, FaBuilding, FaLock, FaShoppingCart, FaSignInAlt, FaUser } from 'react-icons/fa';
 
 // Hooks
 import { useAuth } from '../../contexts/AuthContext';
+import configuracionService from '../../services/configuracion.service';
 
 // Componentes
 import Button from '../../components/common/Button';
-import Spinner from '../../components/common/Spinner';
 
 /**
  * Componente de página de inicio de sesión
@@ -27,7 +27,10 @@ import Spinner from '../../components/common/Spinner';
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, currentUser } = useAuth();
+  const initialAccessMode = location.state?.accessMode ||
+    (location.state?.from?.pathname === '/cajero' ? 'cajero' : 'admin');
+  const [accessMode, setAccessMode] = useState(initialAccessMode);
   
   // Estado del formulario
   const [formData, setFormData] = useState({
@@ -36,14 +39,45 @@ const Login = () => {
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [cajaApkUrlServidor, setCajaApkUrlServidor] = useState('');
+
+  const envCajaApkUrl = (process.env.REACT_APP_CAJA_APK_URL || '').trim();
+  const urlDescargaApk = (cajaApkUrlServidor || envCajaApkUrl).trim();
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const raw = await configuracionService.obtenerConfiguracionEmpresa();
+        const u = typeof raw?.caja_apk_url === 'string' ? raw.caja_apk_url.trim() : '';
+        if (!cancelado && u) setCajaApkUrlServidor(u);
+      } catch {
+        /* sin URL desde API */
+      }
+    })();
+    return () => { cancelado = true; };
+  }, []);
   
   // Redireccionar si ya está autenticado
   useEffect(() => {
     if (isAuthenticated) {
-      const from = location.state?.from?.pathname || '/';
-      navigate(from, { replace: true });
+      const rol = String(currentUser?.rol || currentUser?.role || '').toLowerCase();
+      const esCajero = ['cajero', 'empleado', 'vendedor', 'viewer'].includes(rol);
+      const quiereMostrador = accessMode === 'cajero';
+      if (esCajero || quiereMostrador) {
+        navigate('/cajero', { replace: true });
+        return;
+      }
+
+      const from = location.state?.from?.pathname;
+      if (from && from !== '/login') {
+        navigate(from, { replace: true });
+        return;
+      }
+
+      navigate('/', { replace: true });
     }
-  }, [isAuthenticated, navigate, location]);
+  }, [accessMode, currentUser, isAuthenticated, navigate, location]);
   
   /**
    * Actualiza el estado del formulario
@@ -124,17 +158,69 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-lg overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto overflow-x-hidden bg-gray-100 px-4 py-6">
+      <div className="max-w-md w-full bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="py-10 px-8">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-extrabold text-gray-900">
-              Bienvenido
+              Ingresar a NexoPOS
             </h1>
             <p className="mt-2 text-sm text-gray-600">
-              Inicia sesión para continuar
+              Elegí cómo querés entrar. Los permisos reales dependen de tu empresa y rol.
             </p>
           </div>
+
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            <button
+              type="button"
+              onClick={() => setAccessMode('admin')}
+              className={`rounded-xl border-2 p-4 text-left transition ${
+                accessMode === 'admin'
+                  ? 'border-indigo-600 bg-indigo-50 text-indigo-800'
+                  : 'border-gray-200 bg-white text-gray-700'
+              }`}
+            >
+              <FaBuilding className="text-2xl mb-2" />
+              <div className="font-bold">Administrador</div>
+              <div className="text-xs mt-1">Panel completo</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAccessMode('cajero')}
+              className={`rounded-xl border-2 p-4 text-left transition ${
+                accessMode === 'cajero'
+                  ? 'border-green-600 bg-green-50 text-green-800'
+                  : 'border-gray-200 bg-white text-gray-700'
+              }`}
+            >
+              <FaShoppingCart className="text-2xl mb-2" />
+              <div className="font-bold">Cajero</div>
+              <div className="text-xs mt-1">Mostrador/POS</div>
+            </button>
+          </div>
+
+          {urlDescargaApk && (
+            <div
+              className={`mb-6 rounded-xl border p-4 text-center ${
+                accessMode === 'cajero'
+                  ? 'border-green-300 bg-green-50'
+                  : 'border-gray-200 bg-gray-50'
+              }`}
+            >
+              <a
+                href={urlDescargaApk}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-green-700"
+              >
+                <FaAndroid className="text-xl" />
+                Descargar app Caja (APK)
+              </a>
+              <p className="mt-2 text-xs text-gray-600">
+                Para usar el mostrador en el celular. Si ya tenés la app, actualizá cuando publiques una nueva versión.
+              </p>
+            </div>
+          )}
           
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Correo electrónico */}
@@ -197,7 +283,6 @@ const Login = () => {
               )}
             </div>
             
-            {/* Botón de inicio de sesión */}
             <div>
               <Button
                 type="submit"
@@ -206,7 +291,7 @@ const Login = () => {
                 loading={loading}
                 icon={<FaSignInAlt />}
               >
-                Iniciar Sesión
+                {accessMode === 'cajero' ? 'Ingresar al mostrador' : 'Ingresar al panel'}
               </Button>
             </div>
           </form>
@@ -216,14 +301,17 @@ const Login = () => {
               ¿Olvidaste tu contraseña? Contacta al administrador
             </p>
             <p className="text-sm text-gray-600 mt-2">
-              ¿No tienes cuenta? <Link to="/signup" className="text-indigo-600">Crear cuenta</Link>
+              ¿Querés abrir una nueva empresa? <Link to="/signup" className="text-indigo-600 font-semibold">Crear empresa</Link>
+            </p>
+            <p className="text-xs text-gray-500 mt-3">
+              Si sos cajero, tu administrador debe crearte o invitarte dentro de su empresa.
             </p>
           </div>
         </div>
         
         <div className="bg-gray-50 py-4 px-8 border-t border-gray-200 text-center">
           <p className="text-xs text-gray-600">
-            © 2025 Sistema de Gestión para Despensa. Todos los derechos reservados.
+            © 2026 Sistema de Gestión para Despensa. Todos los derechos reservados.
           </p>
         </div>
       </div>

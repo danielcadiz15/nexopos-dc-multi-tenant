@@ -20,7 +20,7 @@ import Spinner from '../../components/common/Spinner';
 // Iconos
 import { 
   FaUser, FaArrowLeft, FaSave, FaTimes, FaKey, FaUserTag,
-  FaShieldAlt, FaCheck, FaStore, FaToggleOn, FaToggleOff
+  FaShieldAlt, FaStore, FaToggleOn, FaToggleOff
 } from 'react-icons/fa';
 
 /**
@@ -68,6 +68,14 @@ const UsuarioForm = () => {
     ventas: {
       nombre: 'Ventas',
       acciones: { ver: 'Ver', crear: 'Crear', editar: 'Editar', eliminar: 'Eliminar' }
+    },
+    clientes: {
+      nombre: 'Clientes',
+      acciones: { ver: 'Ver', crear: 'Crear', editar: 'Editar', eliminar: 'Eliminar' }
+    },
+    caja: {
+      nombre: 'Caja',
+      acciones: { ver: 'Ver', crear: 'Abrir/Cobrar', editar: 'Modificar', eliminar: 'Eliminar' }
     },
     stock: {
       nombre: 'Stock',
@@ -121,11 +129,13 @@ const UsuarioForm = () => {
             permisos_personalizados: usuario.permisos || {}
           });
         } else {
-          // Si es nuevo usuario, seleccionar primer rol por defecto
-          if (rolesData.length > 0) {
+          // Para mostrador, el alta más común es cajero con la primera sucursal disponible.
+          const rolCajero = rolesData.find((rol) => rol.id === 'cajero');
+          if (rolCajero || rolesData.length > 0) {
             setFormData(prev => ({
               ...prev,
-              rol_id: rolesData[0].id
+              rol_id: rolCajero?.id || rolesData[0].id,
+              sucursales: sucursalesData?.[0]?.id ? [sucursalesData[0].id] : []
             }));
           }
         }
@@ -422,6 +432,11 @@ const UsuarioForm = () => {
               </div>
               {errores.rol_id && (
                 <p className="mt-1 text-sm text-red-600">{errores.rol_id}</p>
+              )}
+              {formData.rol_id === 'cajero' && (
+                <p className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md p-2">
+                  El cajero ingresará directo al mostrador/POS y solo tendrá permisos operativos.
+                </p>
               )}
             </div>
             

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   FaHome, 
@@ -8,58 +8,65 @@ import {
   FaChartBar,
   FaCog
 } from 'react-icons/fa';
+import { useAuth } from '../../contexts/AuthContext';
 
 const MobileNavigation = () => {
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const { currentUser } = useAuth();
+  const esAdmin = ['admin', 'administrador', 'gerente'].includes(
+    String(currentUser?.rol || currentUser?.role || '').toLowerCase()
+  ) || currentUser?.isAdmin === true;
 
   const navigationItems = [
     {
       id: 'dashboard',
       label: 'Inicio',
       icon: FaHome,
-      path: '/'
+      path: '/',
+      adminOnly: false
     },
     {
       id: 'ventas',
       label: 'Ventas',
       icon: FaShoppingCart,
-      path: '/ventas'
+      path: '/ventas',
+      adminOnly: false
     },
     {
       id: 'clientes',
       label: 'Clientes',
       icon: FaUsers,
-      path: '/clientes'
+      path: '/clientes',
+      adminOnly: true
     },
     {
       id: 'productos',
       label: 'Productos',
       icon: FaBoxes,
-      path: '/productos'
+      path: '/productos',
+      adminOnly: true
     },
     {
       id: 'reportes',
       label: 'Reportes',
       icon: FaChartBar,
-      path: '/reportes'
+      path: '/reportes',
+      adminOnly: true
     },
     {
       id: 'configuracion',
       label: 'Config',
       icon: FaCog,
-      path: '/configuracion'
+      path: '/configuracion',
+      adminOnly: true
     }
   ];
-
-  const handleTabClick = (tabId) => {
-    setActiveTab(tabId);
-  };
+  const visibleItems = navigationItems.filter((item) => esAdmin || !item.adminOnly);
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
       <div className="flex justify-around items-center h-16">
-        {navigationItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
           
@@ -67,7 +74,6 @@ const MobileNavigation = () => {
             <Link
               key={item.id}
               to={item.path}
-              onClick={() => handleTabClick(item.id)}
               className={`flex flex-col items-center justify-center flex-1 h-full transition-colors duration-200 ${
                 isActive 
                   ? 'text-blue-600 bg-blue-50' 

@@ -347,59 +347,6 @@ class VentasServiceOptimizado extends FirebaseService {
   // ==================== MÉTODOS EXISTENTES (actualizados para sucursales) ====================
 
   /**
-   * Obtiene estadísticas de ventas del día (con filtro de sucursal opcional)
-   * @param {string} sucursalId - ID de la sucursal (opcional)
-   * @returns {Promise<Object>} Estadísticas de ventas
-   */
-  async obtenerEstadisticasDia(sucursalId = null) {
-    try {
-      console.log('📊 Obteniendo estadísticas del día...');
-      
-      const endpoint = sucursalId ? `/estadisticas/dia?sucursal_id=${sucursalId}` : '/estadisticas/dia';
-      const estadisticas = await this.get(endpoint);
-      const statsObj = this.ensureObject(estadisticas);
-      
-      if (!statsObj || Object.keys(statsObj).length === 0) {
-        const estadisticasRespaldo = {
-          ventasHoy: 0,
-          totalVentasHoy: 0,
-          gananciasHoy: 0,
-          promedioVenta: 0,
-          productosVendidos: 0,
-          clientesAtendidos: 0,
-          ventasPorHora: Array(24).fill(0),
-          metodoPagoMasUsado: 'efectivo',
-          totalPagadoHoy: 0,
-          saldoPendienteTotal: 0,
-          ventasConSaldoPendiente: 0
-        };
-        
-        console.log('⚠️ Usando estadísticas de respaldo');
-        return estadisticasRespaldo;
-      }
-      
-      console.log('✅ Estadísticas del día obtenidas:', statsObj);
-      return statsObj;
-      
-    } catch (error) {
-      console.error('❌ Error al obtener estadísticas del día:', error);
-      return {
-        ventasHoy: 0,
-        totalVentasHoy: 0,
-        gananciasHoy: 0,
-        promedioVenta: 0,
-        productosVendidos: 0,
-        clientesAtendidos: 0,
-        ventasPorHora: Array(24).fill(0),
-        metodoPagoMasUsado: 'efectivo',
-        totalPagadoHoy: 0,
-        saldoPendienteTotal: 0,
-        ventasConSaldoPendiente: 0
-      };
-    }
-  }
-
-  /**
    * Busca ventas por término
    * @param {string} termino - Término de búsqueda
    * @param {string} sucursalId - ID de la sucursal (opcional)
@@ -738,8 +685,6 @@ async buscarPorNumero(numeroVenta) {
       
       // Si todas fallan, devolver el resultado del primer intento
       console.warn('⚠️ Ningún método funcionó');
-      return resultado;
-      
       return resultado;
       
     } catch (error) {
@@ -1283,4 +1228,6 @@ async buscarPorNumero(numeroVenta) {
   }
 }
 
-export default new VentasServiceOptimizado();
+const ventasService = new VentasServiceOptimizado();
+
+export default ventasService;

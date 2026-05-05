@@ -54,7 +54,7 @@ async function crearSucursalPrincipal(companyId) {
 const sucursalesRoutes = async (req, res, path) => {
   try {
     // Obtener companyId para filtrado multi-tenant
-    const companyId = req.companyId || req.user?.companyId || null;
+    const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
     
     // SUCURSALES - GET todas
     if (path === '/sucursales' && req.method === 'GET') {
@@ -163,45 +163,62 @@ const sucursalesRoutes = async (req, res, path) => {
     // SUCURSALES - GET por usuario
     else if (path.match(/^\/sucursales\/usuario\/[^\/]+$/) && req.method === 'GET') {
       const usuarioId = path.split('/usuario/')[1];
-      
-      // Primero obtener el usuario
-      const usuarioDoc = await db.collection('usuarios').doc(usuarioId).get();
-      
-      if (!usuarioDoc.exists) {
+
+      if (!companyId) {
+        return res.status(400).json({ success: false, message: 'CompanyId requerido (orgId)' });
+      }
+
+      const [companyUserDoc, usuarioOrgDoc, legacyUserDoc] = await Promise.all([
+        db.collection('companies').doc(companyId).collection('usuarios').doc(usuarioId).get(),
+        db.collection('usuariosOrg').doc(usuarioId).get(),
+        db.collection('usuarios').doc(usuarioId).get()
+      ]);
+
+      const usuario = companyUserDoc.exists
+        ? companyUserDoc.data()
+        : usuarioOrgDoc.exists
+          ? usuarioOrgDoc.data()
+          : legacyUserDoc.exists
+            ? legacyUserDoc.data()
+            : null;
+
+      if (!usuario) {
         res.status(404).json({
           success: false,
-          message: 'Usuario no encontrado'
+          message: 'Usuario no encontrado en la empresa'
         });
         return true;
       }
-      
-      const usuario = usuarioDoc.data();
-      
-      // Si es administrador, devolver todas las sucursales
-      if (usuario.rol === 'Administrador') {
-        const sucursalesSnapshot = await db.collection('sucursales')
-          .where('activa', '==', true)
-          .get();
-        
-        const sucursales = [];
-        sucursalesSnapshot.forEach(doc => {
-          sucursales.push({
-            id: doc.id,
-            ...doc.data()
-          });
-        });
-        
+
+      const roles = Array.isArray(usuario.roles) ? usuario.roles : [];
+      const rolNormalizado = String(usuario.rol || usuario.role || usuario.rolId || roles[0] || '').toLowerCase();
+      const esAdmin = ['administrador', 'admin', 'owner'].includes(rolNormalizado);
+
+      if (esAdmin) {
+        let query = db.collection('sucursales')
+          .where('orgId', '==', companyId)
+          .where('activa', '==', true);
+
+        let sucursalesSnapshot = await query.get();
+        let sucursales = sucursalesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        if (sucursales.length === 0) {
+          const tenantSnapshot = await db.collection('companies').doc(companyId).collection('sucursales').get();
+          sucursales = tenantSnapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data(), orgId: companyId }))
+            .filter(sucursal => sucursal.activa !== false);
+        }
+
         res.json({
           success: true,
           data: sucursales,
-          message: 'Todas las sucursales (usuario administrador)'
+          message: 'Todas las sucursales de la empresa'
         });
         return true;
       }
-      
-      // Si no es admin, devolver solo sus sucursales asignadas
-      const sucursalIds = usuario.sucursales || [];
-      
+
+      const sucursalIds = Array.isArray(usuario.sucursales) ? usuario.sucursales : [];
+
       if (sucursalIds.length === 0) {
         res.json({
           success: true,
@@ -210,19 +227,27 @@ const sucursalesRoutes = async (req, res, path) => {
         });
         return true;
       }
-      
-      // Obtener las sucursales asignadas
+
       const sucursales = [];
       for (const sucursalId of sucursalIds) {
-        const sucursalDoc = await db.collection('sucursales').doc(sucursalId).get();
-        if (sucursalDoc.exists && sucursalDoc.data().activa) {
+        let sucursalDoc = await db.collection('companies').doc(companyId).collection('sucursales').doc(sucursalId).get();
+        if (!sucursalDoc.exists) {
+          sucursalDoc = await db.collection('sucursales').doc(sucursalId).get();
+        }
+
+        if (!sucursalDoc.exists) continue;
+
+        const sucursalData = sucursalDoc.data();
+        const perteneceAEmpresa = !sucursalData.orgId || sucursalData.orgId === companyId;
+        if (perteneceAEmpresa && sucursalData.activa !== false) {
           sucursales.push({
             id: sucursalDoc.id,
-            ...sucursalDoc.data()
+            ...sucursalData,
+            orgId: sucursalData.orgId || companyId
           });
         }
       }
-      
+
       res.json({
         success: true,
         data: sucursales,
@@ -234,9 +259,17 @@ const sucursalesRoutes = async (req, res, path) => {
     // SUCURSALES - GET stock de una sucursal
     else if (path.match(/^\/sucursales\/[^\/]+\/stock$/) && req.method === 'GET') {
       const sucursalId = path.split('/')[2];
+      const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+
+      if (!companyId) {
+        return res.status(400).json({ success:false, message:'CompanyId requerido (orgId)' });
+      }
       
       // Verificar que la sucursal existe
-      const sucursalDoc = await db.collection('sucursales').doc(sucursalId).get();
+      let sucursalDoc = await db.collection('companies').doc(companyId).collection('sucursales').doc(sucursalId).get();
+      if (!sucursalDoc.exists) {
+        sucursalDoc = await db.collection('sucursales').doc(sucursalId).get();
+      }
       
       if (!sucursalDoc.exists) {
         res.status(404).json({
@@ -247,7 +280,7 @@ const sucursalesRoutes = async (req, res, path) => {
       }
       
       // Obtener stock de la sucursal
-      const stockSnapshot = await db.collection('stock_sucursal')
+      const stockSnapshot = await db.collection('companies').doc(companyId).collection('stock_sucursal')
         .where('sucursal_id', '==', sucursalId)
         .get();
       

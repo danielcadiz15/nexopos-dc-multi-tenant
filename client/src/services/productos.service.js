@@ -37,17 +37,17 @@ class ProductosService extends FirebaseService {
     const storage = hasWindow ? window.localStorage : null;
     const authContext = hasWindow ? window.authContext : null;
 
-    const storedOrgId =
-      storage?.getItem?.('orgId') ||
-      storage?.getItem?.('companyId') ||
-      null;
-
     const contextOrgId =
       authContext?.orgId ||
       authContext?.currentUser?.orgId ||
       null;
 
-    const orgId = storedOrgId || contextOrgId || null;
+    const storedOrgId =
+      storage?.getItem?.('orgId') ||
+      storage?.getItem?.('companyId') ||
+      null;
+
+    const orgId = contextOrgId || storedOrgId || null;
     return orgId ? { ...params, orgId } : params;
   }
 
@@ -111,14 +111,16 @@ class ProductosService extends FirebaseService {
       );
       const response = await this.api.get(`/buscar-con-stock/${sucursalId}`, queryParams);
       const productosArray = ensureArrayPayload(response?.data);
-      if (productosArray.length === 0 && termino) return await this.buscarConStockFallback(termino, sucursalId);
-      return productosArray.map(p => ({
+      const productosNormalizados = productosArray.map(p => ({
         ...p,
         stock_sucursal: parseFloat(p?.stock_sucursal ?? p?.cantidad ?? p?.stock ?? p?.stock_actual ?? 0) || 0,
         stock_actual: parseFloat(p?.stock_sucursal ?? p?.cantidad ?? p?.stock ?? p?.stock_actual ?? 0) || 0,
         stock_minimo: parseFloat(p?.stock_minimo ?? 5) || 5,
         sucursal_id: p?.sucursal_id ?? sucursalId
       }));
+      const conStock = productosNormalizados.filter(p => (parseFloat(p.stock_sucursal ?? p.stock_actual ?? 0) || 0) > 0);
+      if (conStock.length === 0 && termino) return await this.buscarConStockFallback(termino, sucursalId);
+      return productosNormalizados;
     } catch (error) {
       console.error('[PRODUCTOS SERVICE] Error al buscar productos con stock por sucursal:', error);
       return await this.buscarConStockFallback(termino, sucursalId);
@@ -127,25 +129,43 @@ class ProductosService extends FirebaseService {
 
   async buscarConStockFallback(termino, sucursalId) {
     try {
-      const productos = await this.buscar(termino);
+      const productos = await this.buscar(termino, sucursalId);
       if (productos.length === 0) return [];
       const productosConStock = await Promise.all(
         productos.map(async (producto) => {
           try {
             const stockSucursal = await this.consultarStockEnSucursal(producto.id, sucursalId);
+            const stockResuelto = parseFloat(
+              stockSucursal.cantidad ??
+              stockSucursal.stock ??
+              producto.stock_sucursal ??
+              producto.stock_actual ??
+              producto.stock?.cantidad ??
+              0
+            ) || 0;
             return {
               ...producto,
-              stock_actual: stockSucursal.cantidad || 0,
-              stock_sucursal: stockSucursal.cantidad || 0,
+              stock_actual: stockResuelto,
+              stock_sucursal: stockResuelto,
               stock_minimo: stockSucursal.stock_minimo || producto.stock_minimo || 5,
               sucursal_id: sucursalId
             };
           } catch (error) {
-            return { ...producto, stock_actual: parseInt(producto.stock_actual || 0), stock_sucursal: parseInt(producto.stock_actual || 0), sucursal_id: sucursalId };
+            const stockFallback = parseFloat(producto.stock_sucursal ?? producto.stock_actual ?? producto.stock?.cantidad ?? 0) || 0;
+            return { ...producto, stock_actual: stockFallback, stock_sucursal: stockFallback, sucursal_id: sucursalId };
           }
         })
       );
-      return productosConStock;
+      const terminoLower = String(termino || '').trim().toLowerCase();
+      return productosConStock
+        .filter((producto) => {
+          if (!terminoLower) return true;
+          const nombre = String(producto.nombre || '').toLowerCase();
+          const codigo = String(producto.codigo || '').toLowerCase();
+          const codigoBarras = String(producto.codigo_barras || '').toLowerCase();
+          return nombre.includes(terminoLower) || codigo.includes(terminoLower) || codigoBarras.includes(terminoLower);
+        })
+        .sort((a, b) => (parseFloat(b.stock_sucursal || 0) || 0) - (parseFloat(a.stock_sucursal || 0) || 0));
     } catch (error) {
       console.error('❌ [PRODUCTOS SERVICE] Error en fallback:', error);
       return [];
@@ -176,7 +196,15 @@ class ProductosService extends FirebaseService {
         const producto = await this.obtenerPorCodigo(codigo);
         if (!producto) return null;
         const stockSucursal = await this.consultarStockEnSucursal(producto.id, sucursalId);
-        return { ...producto, stock_actual: stockSucursal.cantidad || 0, stock_sucursal: stockSucursal.cantidad || 0, stock_minimo: stockSucursal.stock_minimo || producto.stock_minimo || 5, sucursal_id: sucursalId };
+        const stockResuelto = parseFloat(
+          stockSucursal.cantidad ??
+          stockSucursal.stock ??
+          producto.stock_sucursal ??
+          producto.stock_actual ??
+          producto.stock?.cantidad ??
+          0
+        ) || 0;
+        return { ...producto, stock_actual: stockResuelto, stock_sucursal: stockResuelto, stock_minimo: stockSucursal.stock_minimo || producto.stock_minimo || 5, sucursal_id: sucursalId };
       }
     } catch (error) {
       console.error('[PRODUCTOS SERVICE] Error al buscar producto por código con stock:', error);

@@ -36,18 +36,18 @@ class SucursalesService extends FirebaseService {
     const storage = hasWindow ? window.localStorage : null;
     const authContext = hasWindow ? window.authContext : null;
 
+    const contextOrgId =
+      authContext?.orgId ||
+      authContext?.currentUser?.orgId ||
+      null;
+
     const storedOrgId =
       params?.orgId ||
       storage?.getItem?.('orgId') ||
       storage?.getItem?.('companyId') ||
       null;
 
-    const contextOrgId =
-      authContext?.orgId ||
-      authContext?.currentUser?.orgId ||
-      null;
-
-    const orgId = storedOrgId || contextOrgId || null;
+    const orgId = contextOrgId || storedOrgId || null;
     return orgId ? { ...params, orgId } : params;
   }
 
@@ -105,6 +105,13 @@ class SucursalesService extends FirebaseService {
       sucursalesArray = this.filterByOrgId(sucursalesArray, orgQuery?.orgId);
 
       if (sucursalesArray.length === 0) {
+        const todas = await this.obtenerTodas();
+        const activasDesdeTodas = this.filterByOrgId(todas, orgQuery?.orgId).filter(s => s.activa !== false);
+        if (activasDesdeTodas.length > 0) {
+          console.log('[SUCURSALES SERVICE] Usando sucursales activas desde listado general');
+          return activasDesdeTodas;
+        }
+
         const activas = SUCURSALES_RESPALDO.filter(s => s.activa);
         console.log('[SUCURSALES SERVICE] Usando sucursales activas de respaldo');
         return activas;

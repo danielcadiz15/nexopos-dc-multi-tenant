@@ -35,7 +35,7 @@ async function authenticateUser(req, res, next) {
       console.log('✅ [AUTH] Token verificado para usuario:', decodedToken.email);
       
       // companyId desde custom claims (flujo multi-tenant)
-      const companyId = decodedToken.companyId || null;
+      let companyId = decodedToken.companyId || decodedToken.orgId || null;
       req.companyId = companyId;
       
       // Obtener información adicional del usuario desde Firestore (multi-tenant)
@@ -63,6 +63,70 @@ async function authenticateUser(req, res, next) {
         if (userOrg.orgId) {
           req.companyId = userOrg.orgId;
           userData.companyId = userOrg.orgId;
+        }
+      }
+
+      // Fallback para cajeros/empleados antiguos: detectar empresa por uid/email
+      // dentro de companies/{companyId}/usuarios cuando todavía no tienen claims.
+      if (!req.companyId && decodedToken.email) {
+        try {
+          const byUid = await admin.firestore()
+            .collectionGroup('usuarios')
+            .where('uid', '==', decodedToken.uid)
+            .limit(1)
+            .get();
+
+          let companyUserSnap = byUid.empty ? null : byUid.docs[0];
+
+          if (!companyUserSnap) {
+            const byEmail = await admin.firestore()
+              .collectionGroup('usuarios')
+              .where('email', '==', decodedToken.email)
+              .limit(1)
+              .get();
+            companyUserSnap = byEmail.empty ? null : byEmail.docs[0];
+          }
+
+          if (companyUserSnap) {
+            const detectedCompanyId = companyUserSnap.ref.parent.parent?.id || null;
+            const companyUser = companyUserSnap.data();
+            if (detectedCompanyId) {
+              req.companyId = detectedCompanyId;
+              companyId = detectedCompanyId;
+              userData = {
+                ...userData,
+                ...companyUser,
+                uid: decodedToken.uid,
+                email: decodedToken.email,
+                companyId: detectedCompanyId,
+                orgId: detectedCompanyId
+              };
+
+              await admin.firestore().collection('usuariosOrg').doc(decodedToken.uid).set({
+                uid: decodedToken.uid,
+                orgId: detectedCompanyId,
+                roles: [companyUser.rol_id || companyUser.role || companyUser.rol || 'empleado'],
+                sucursales: Array.isArray(companyUser.sucursales) ? companyUser.sucursales : [],
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+              }, { merge: true });
+
+              await admin.auth().setCustomUserClaims(decodedToken.uid, {
+                companyId: detectedCompanyId,
+                orgId: detectedCompanyId,
+                rol: companyUser.rol || decodedToken.rol || 'Empleado',
+                role: companyUser.rol_id || decodedToken.role || 'empleado',
+                rolId: companyUser.rol_id || decodedToken.rolId || 'empleado',
+                activo: companyUser.activo !== false
+              });
+
+              console.log('✅ [AUTH] Empresa detectada por usuario/email:', {
+                email: decodedToken.email,
+                companyId: detectedCompanyId
+              });
+            }
+          }
+        } catch (lookupError) {
+          console.warn('⚠️ [AUTH] No se pudo detectar empresa por email:', lookupError.message);
         }
       }
 

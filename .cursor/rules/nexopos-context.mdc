@@ -1,0 +1,11 @@
+---
+description: Contexto permanente de relacion entre NexoPOS DC y caja/cajero
+alwaysApply: true
+---
+
+# Contexto NexoPOS
+
+- `nexopos-dc` corresponde al proyecto local `nexopos-dc-multi-tenant`.
+- Este sistema va de la mano con el sistema de caja/cajero (`nexopos-cajero` o la carpeta local equivalente, actualmente `nexopos-dc-caja-android`).
+- Al cambiar flujos de autenticacion, tenants, sucursales, ventas, caja, stock o APIs compartidas, considerar el impacto en ambos sistemas.
+- Mantener especial cuidado con contratos de datos compartidos en Firebase/Firestore, endpoints de Functions y nombres de campos usados por caja/cajero.
