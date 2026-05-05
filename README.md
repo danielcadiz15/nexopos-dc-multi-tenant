@@ -58,6 +58,10 @@ NexoPOS DC es un sistema de punto de venta multi-tenant desarrollado con React y
    - ✅ Confirmado que Firebase tiene todos los datos correctos
    - ✅ Todas las sucursales y productos tienen `orgId` correcto
 
+## 📱 App Android (Caja) — un solo lugar
+
+Todo el código y el proyecto Android Capacitor están en **`client/`** (`client/android`, `client/capacitor.config.ts`). No se usa un repo paralelo de “solo Android”; ver **`client/README-CAJA-ANDROID.md`**.
+
 ## 🔧 Estructura del Proyecto
 
 ```

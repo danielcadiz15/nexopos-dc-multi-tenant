@@ -110,7 +110,7 @@ const MobilePuntoVenta = () => {
   const [pagandoDeuda, setPagandoDeuda] = useState(false);
   const [actualizandoApp, setActualizandoApp] = useState(false);
   const viewport = useViewport();
-  const compact = viewport.height < 700;
+  const compact = viewport.height < 760 || viewport.width < 390;
 
   const cajaModulos = configTicket?.caja_modulos || {};
   const cajaClientesHabilitado = cajaModulos.clientes !== false;
