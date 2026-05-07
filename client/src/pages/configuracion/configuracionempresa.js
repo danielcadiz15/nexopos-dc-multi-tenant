@@ -208,7 +208,7 @@ const ConfiguracionEmpresa = () => {
   const [creandoOrg, setCreandoOrg] = useState(false);
   const [uniendoOrg, setUniendoOrg] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
-  const [wizardMode, setWizardMode] = useState(true);
+  const [wizardMode, setWizardMode] = useState(false);
 
   // ========= REGISTRO + CREACIÓN UNIFICADO =========
   const [regEmail, setRegEmail] = useState('');
@@ -365,7 +365,7 @@ const ConfiguracionEmpresa = () => {
     !formData.direccion_calle?.trim() &&
     !formData.telefono_principal?.trim() &&
     !formData.email?.trim();
-  const showWizard = !!orgId && isFirstSetup && wizardMode;
+  const showWizard = !!orgId && wizardMode;
   const wizardSteps = [
     { title: 'Identidad de la empresa', hint: 'Cómo se va a ver tu negocio en comprobantes.' },
     { title: 'Datos fiscales', hint: 'Datos legales/fiscales para facturación.' },
@@ -401,6 +401,13 @@ const ConfiguracionEmpresa = () => {
   };
 
   const wizardProgress = Math.round(((wizardStep + 1) / wizardSteps.length) * 100);
+
+  useEffect(() => {
+    if (!loading && orgId && isFirstSetup) {
+      setWizardMode(true);
+      setWizardStep(0);
+    }
+  }, [loading, orgId, isFirstSetup]);
 
   if (loading) {
     return (<div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>);
@@ -507,6 +514,14 @@ const ConfiguracionEmpresa = () => {
           Configuración Empresarial
         </h1>
         <div className="flex gap-2">
+          {!!orgId && !showWizard && (
+            <Button
+              color="secondary"
+              onClick={() => { setWizardStep(0); setWizardMode(true); }}
+            >
+              Abrir asistente
+            </Button>
+          )}
           { isSuperAdminEmail(currentUser?.email) && (
             <>
               <Button color="secondary" onClick={()=>{ cargarLicencia(); setShowLic(true); }}>Licencia</Button>
@@ -785,7 +800,7 @@ const ConfiguracionEmpresa = () => {
       )}
 
       {!showWizard && (
-      <>
+      <div className="max-h-[78vh] overflow-y-auto pr-2">
       <div className="bg-blue-50 border-l-4 border-blue-400 p-4">
         <div className="flex">
           <div className="ml-3 space-y-1">
@@ -1371,7 +1386,7 @@ const ConfiguracionEmpresa = () => {
           )}
         </button>
       </div>
-      </>
+      </div>
       )}
 
       {/* Modal Gestión de Módulos */}
