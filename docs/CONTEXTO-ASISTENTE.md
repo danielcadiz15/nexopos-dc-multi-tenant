@@ -49,6 +49,11 @@ Para **demo completa offline** (`npm run emulators` con Auth+Firestore+Functions
 
 Se verificó `npm run emulators:functions-only` — emulador Functions en **5001**, UI **4000**. El intento **`npm run emulators`** falló hasta instalar Java (`java -version` en PATH).
 
+### Último deploy y git (operación humana / asistente)
+
+- **Hosting**: `firebase deploy --only hosting,functions` — bundle actual con `refreshAuthSession`, emuladores docs, fix build `configuracionempresa.js` (cadena con comillas tipográficas que disparaba `no-undef` falso en CRA).
+- **Git**: `main` → `origin/main` commit `c09f94b`.
+
 ### Terminal 1 — emuladores (Auth + Firestore + Functions)
 
 Desde **raíz del repo** `nexopos-dc-multi-tenant`:
