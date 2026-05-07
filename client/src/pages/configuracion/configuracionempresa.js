@@ -207,6 +207,8 @@ const ConfiguracionEmpresa = () => {
   const [joinCode, setJoinCode] = useState('');
   const [creandoOrg, setCreandoOrg] = useState(false);
   const [uniendoOrg, setUniendoOrg] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
+  const [wizardMode, setWizardMode] = useState(true);
 
   // ========= REGISTRO + CREACIÓN UNIFICADO =========
   const [regEmail, setRegEmail] = useState('');
@@ -351,11 +353,54 @@ const ConfiguracionEmpresa = () => {
       try { const configExistente = await configuracionService.obtener(); if (configExistente && configExistente.razon_social) { await configuracionService.actualizar(datosCompletos); } else { await configuracionService.guardar(datosCompletos); } }
       catch { await configuracionService.guardar(datosCompletos); }
       toast.success('Configuración guardada correctamente'); setLogoUrl(logoUrlFinal); setLogoFile(null); setLogoPreview(null);
+      setWizardMode(false);
     } catch (error) { console.error('Error al guardar configuración:', error); toast.error('Error al guardar la configuración'); }
     finally { setGuardando(false); }
   };
 
   const warnBanner = licDaysLeft !== null && licDaysLeft <= 7 && licDaysLeft >= 0;
+  const isFirstSetup =
+    !formData.razon_social?.trim() &&
+    !formData.cuit?.trim() &&
+    !formData.direccion_calle?.trim() &&
+    !formData.telefono_principal?.trim() &&
+    !formData.email?.trim();
+  const showWizard = !!orgId && isFirstSetup && wizardMode;
+  const wizardSteps = [
+    { title: 'Identidad de la empresa', hint: 'Cómo se va a ver tu negocio en comprobantes.' },
+    { title: 'Datos fiscales', hint: 'Datos legales/fiscales para facturación.' },
+    { title: 'Dirección y contacto', hint: 'Datos obligatorios para completar la configuración.' },
+    { title: 'Facturación y logo', hint: 'Ajustes finales antes de guardar.' }
+  ];
+
+  const validateWizardStep = () => {
+    if (wizardStep === 0) {
+      if (!formData.razon_social?.trim()) { toast.error('Completá la razón social para continuar'); return false; }
+      if (!formData.nombre_fantasia?.trim()) { toast.error('Completá el nombre de fantasía para continuar'); return false; }
+      return true;
+    }
+    if (wizardStep === 1) {
+      if (!formData.cuit?.trim()) { toast.error('Completá el CUIT/CUIL para continuar'); return false; }
+      return true;
+    }
+    if (wizardStep === 2) {
+      if (!formData.direccion_calle?.trim()) { toast.error('Completá la dirección para continuar'); return false; }
+      if (!formData.direccion_localidad?.trim()) { toast.error('Completá la localidad para continuar'); return false; }
+      if (!formData.telefono_principal?.trim()) { toast.error('Completá el teléfono principal para continuar'); return false; }
+      if (!formData.email?.trim()) { toast.error('Completá el email para continuar'); return false; }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email)) { toast.error('El formato del email no es válido'); return false; }
+      return true;
+    }
+    return true;
+  };
+
+  const nextWizardStep = () => {
+    if (!validateWizardStep()) return;
+    setWizardStep(prev => Math.min(prev + 1, wizardSteps.length - 1));
+  };
+
+  const wizardProgress = Math.round(((wizardStep + 1) / wizardSteps.length) * 100);
 
   if (loading) {
     return (<div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>);
@@ -471,6 +516,276 @@ const ConfiguracionEmpresa = () => {
         </div>
       </div>
 
+      {showWizard && (
+        <Card>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold tracking-wide text-indigo-600 uppercase">Asistente interactivo</p>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Paso {wizardStep + 1} de {wizardSteps.length}: {wizardSteps[wizardStep].title}
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">{wizardSteps[wizardStep].hint}</p>
+              </div>
+              <button
+                type="button"
+                className="text-xs text-indigo-600 hover:text-indigo-800"
+                onClick={() => setWizardMode(false)}
+              >
+                Prefiero formulario completo
+              </button>
+            </div>
+            <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
+              <div className="h-2 bg-indigo-600 transition-all duration-300" style={{ width: `${wizardProgress}%` }} />
+            </div>
+
+            {wizardStep === 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Razón social *</label>
+                  <input
+                    type="text"
+                    name="razon_social"
+                    value={formData.razon_social}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="Nombre legal registrado ante AFIP"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de fantasía *</label>
+                  <input
+                    type="text"
+                    name="nombre_fantasia"
+                    value={formData.nombre_fantasia}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="Ej: Almacén del Centro"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Slogan (opcional)</label>
+                  <textarea
+                    name="slogan"
+                    value={formData.slogan}
+                    onChange={handleInputChange}
+                    rows={2}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="Ej: Calidad y precio desde 1998"
+                  />
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 1 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">CUIT/CUIL *</label>
+                  <input
+                    type="text"
+                    name="cuit"
+                    value={formData.cuit}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="20-12345678-9"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Condición IVA</label>
+                  <select
+                    name="condicion_iva"
+                    value={formData.condicion_iva}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  >
+                    <option value="Responsable Inscripto">Responsable Inscripto</option>
+                    <option value="Monotributo">Monotributo</option>
+                    <option value="Exento">Exento</option>
+                    <option value="Consumidor Final">Consumidor Final</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ingresos Brutos</label>
+                  <input
+                    type="text"
+                    name="ingresos_brutos"
+                    value={formData.ingresos_brutos}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="Número o exención provincial (si aplica)"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Punto de venta</label>
+                  <input
+                    type="text"
+                    name="punto_venta"
+                    value={formData.punto_venta}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="0001"
+                  />
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 2 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Calle y número *</label>
+                  <input
+                    type="text"
+                    name="direccion_calle"
+                    value={formData.direccion_calle}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="Av. Principal 123"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Localidad *</label>
+                  <input
+                    type="text"
+                    name="direccion_localidad"
+                    value={formData.direccion_localidad}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="Ej: Rosario"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Provincia/Estado</label>
+                  <input
+                    type="text"
+                    name="direccion_provincia"
+                    value={formData.direccion_provincia}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="Ej: Santa Fe"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono principal *</label>
+                  <input
+                    type="tel"
+                    name="telefono_principal"
+                    value={formData.telefono_principal}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="+54 376 123-4567"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="contacto@empresa.com"
+                  />
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 3 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Formato predeterminado</label>
+                  <select
+                    name="formato_predeterminado"
+                    value={formData.formato_predeterminado}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  >
+                    <option value="termico">Térmico (80mm)</option>
+                    <option value="a4">A4</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Serie</label>
+                  <select
+                    name="serie_actual"
+                    value={formData.serie_actual}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  >
+                    <option value="A">A</option>
+                    <option value="B">B</option>
+                    <option value="C">C</option>
+                    <option value="X">X</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Numeración inicial</label>
+                  <input
+                    type="number"
+                    min="1"
+                    name="numeracion_inicial"
+                    value={formData.numeracion_inicial}
+                    onChange={handleInputChange}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
+                <div className="flex items-center rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 mt-6">
+                  <input
+                    type="checkbox"
+                    name="imprimir_ticket_automaticamente"
+                    checked={formData.imprimir_ticket_automaticamente}
+                    onChange={handleInputChange}
+                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <label className="ml-2 text-sm text-gray-800">Imprimir automáticamente al cerrar venta</label>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Logo (opcional)</label>
+                  <input
+                    id="logo-upload"
+                    type="file"
+                    accept="image/jpeg,image/png,image/svg+xml"
+                    onChange={handleLogoChange}
+                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">PNG, JPG o SVG de hasta 2MB.</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 disabled:opacity-50"
+                onClick={() => setWizardStep(prev => Math.max(prev - 1, 0))}
+                disabled={wizardStep === 0}
+              >
+                Anterior
+              </button>
+              {wizardStep < wizardSteps.length - 1 ? (
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-md bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
+                  onClick={nextWizardStep}
+                >
+                  Siguiente
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-md bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+                  onClick={handleGuardar}
+                  disabled={guardando || subiendoLogo}
+                >
+                  {guardando || subiendoLogo ? 'Guardando...' : 'Finalizar y guardar'}
+                </button>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {!showWizard && (
+      <>
       <div className="bg-blue-50 border-l-4 border-blue-400 p-4">
         <div className="flex">
           <div className="ml-3 space-y-1">
@@ -1056,6 +1371,8 @@ const ConfiguracionEmpresa = () => {
           )}
         </button>
       </div>
+      </>
+      )}
 
       {/* Modal Gestión de Módulos */}
       <Modal open={showModulos} title="Gestionar Módulos" onClose={()=> setShowModulos(false)}>
