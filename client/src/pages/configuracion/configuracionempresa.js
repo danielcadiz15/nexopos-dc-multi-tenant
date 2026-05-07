@@ -165,17 +165,17 @@ const ConfiguracionEmpresa = () => {
   // =================== FORM EMPRESA ===================
   const [formData, setFormData] = useState({
     razon_social: '',
-    nombre_fantasia: 'NexoPOS DC',
-    slogan: 'Especialistas en especias, condimentos e insumos para carnicerias e industria alimentaria',
+    nombre_fantasia: '',
+    slogan: '',
     cuit: '',
     condicion_iva: 'Responsable Inscripto',
     ingresos_brutos: '',
-    punto_venta: '0001',
+    punto_venta: '',
     direccion_calle: '',
-    direccion_localidad: 'Posadas',
-    direccion_provincia: 'Misiones',
+    direccion_localidad: '',
+    direccion_provincia: '',
     direccion_codigo_postal: '',
-    direccion_pais: 'Argentina',
+    direccion_pais: '',
     telefono_principal: '',
     telefono_secundario: '',
     email: '',
@@ -367,8 +367,8 @@ const ConfiguracionEmpresa = () => {
         <Card>
           <h3 className="text-lg font-medium text-gray-900 mb-4">Crear cuenta y empresa (Demo 7 días)</h3>
           <form onSubmit={handleRegistroYCreacion} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input className="input" type="email" placeholder="Email" value={regEmail} onChange={e=>setRegEmail(e.target.value)} />
-            <input className="input" type="text" placeholder="Nombre de empresa" value={regEmpresa} onChange={e=>setRegEmpresa(e.target.value)} />
+            <input className="input" type="email" placeholder="tu@correo.com" value={regEmail} onChange={e=>setRegEmail(e.target.value)} />
+            <input className="input" type="text" placeholder="Nombre de empresa (Ej: Mi kiosco SRL)" value={regEmpresa} onChange={e=>setRegEmpresa(e.target.value)} />
             <input className="input" type="password" placeholder="Contraseña" value={regPass} onChange={e=>setRegPass(e.target.value)} />
             <input className="input" type="password" placeholder="Confirmar contraseña" value={regPass2} onChange={e=>setRegPass2(e.target.value)} />
             <div className="md:col-span-2">
@@ -380,17 +380,70 @@ const ConfiguracionEmpresa = () => {
 
       {!orgId && auth.currentUser && (
         <Card>
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Configurar Empresa</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Configurar empresa</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Acá vas a crear el espacio de trabajo (<strong>organización</strong>) y, más abajo, los datos que salen en facturas y comprobantes.
+            Los cuadros de texto vacíos muestran <strong>ejemplos en gris</strong>: escribí tus datos reales encima de esa referencia.
+          </p>
+          <div className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50/90 p-4">
+            <h4 className="text-sm font-semibold text-indigo-900 mb-3">Guía rápida (paso a paso)</h4>
+            <ol className="list-decimal list-inside space-y-2 text-sm text-gray-800">
+              <li>
+                <span className="font-medium text-gray-900">Creá tu organización</span>{' '}
+                o unite con un código si tu administrador ya te lo pasó. El nombre suele coincidir con la razón social o el nombre comercial del negocio.
+              </li>
+              <li>
+                <span className="font-medium text-gray-900">Completá la sección Información básica</span>{' '}
+                más abajo: razón social (legal), nombre de fantasía y, si querés, un slogan opcional para tickets y documentos.
+              </li>
+              <li>
+                <span className="font-medium text-gray-900">Datos fiscales</span>: CUIT/CUIL tal como figurará en AFIP; condición IVA; punto de venta habitual (muchas PYME empiezan en 0001); ingresos brutos provincial si corresponde.
+              </li>
+              <li>
+                <span className="font-medium text-gray-900">Dirección y contacto</span>: igual que aparece en comprobantes. Email y teléfono también son obligatorios para guardar.
+              </li>
+              <li>
+                <span className="font-medium text-gray-900">Logo</span>{' '}
+                (opcional): subí después una imagen clara para que imprima bien en térmico o A4.
+              </li>
+              <li>
+                <span className="font-medium text-gray-900">Facturas</span>{' '}
+                podés revisar número inicial de comprobantes, formato de impresión (térmico o A4) y si querés disparar impresión al cerrar la venta.
+              </li>
+              <li>
+                Al terminar tocá{' '}
+                <span className="font-semibold text-indigo-800">Guardar configuración</span>{' '}
+                al pie de la página. Si algo falta o el formato del correo es inválido, el sistema te avisará.
+              </li>
+            </ol>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-gray-200 pt-6">
             <form onSubmit={handleCrearEmpresa} className="space-y-3">
-              <h4 className="font-semibold">Crear nueva empresa</h4>
-              <input className="input" placeholder="Nombre" value={empresaNombre} onChange={e=>setEmpresaNombre(e.target.value)} />
-              <input className="input" placeholder="Slug (opcional)" value={empresaSlug} onChange={e=>setEmpresaSlug(e.target.value)} />
+              <h4 className="font-semibold text-gray-900">Crear nueva empresa</h4>
+              <p className="text-xs text-gray-500">Ej.: el nombre público del comercio; podés igualarlo a la razón social del bloque siguiente.</p>
+              <input
+                className="input"
+                placeholder="Ej: Distribuidora Los Alamos SA"
+                value={empresaNombre}
+                onChange={e=>setEmpresaNombre(e.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="Slug corto opcional para URL personalizada"
+                value={empresaSlug}
+                onChange={e=>setEmpresaSlug(e.target.value)}
+              />
               <Button type="submit" disabled={creandoOrg}>{creandoOrg ? 'Creando...' : 'Crear'}</Button>
             </form>
             <form onSubmit={handleUnirme} className="space-y-3">
-              <h4 className="font-semibold">Unirme con código (orgId)</h4>
-              <input className="input" placeholder="Código" value={joinCode} onChange={e=>setJoinCode(e.target.value)} />
+              <h4 className="font-semibold text-gray-900">Unirme con código (orgId)</h4>
+              <p className="text-xs text-gray-500">Si ya existe una empresa, pegá aquí el identificador o código que te compartieron.</p>
+              <input
+                className="input"
+                placeholder="Ej: abc123XYZ (orgId)"
+                value={joinCode}
+                onChange={e=>setJoinCode(e.target.value)}
+              />
               <Button type="submit" disabled={uniendoOrg}>{uniendoOrg ? 'Uniéndose...' : 'Unirme'}</Button>
             </form>
           </div>
@@ -420,11 +473,15 @@ const ConfiguracionEmpresa = () => {
 
       <div className="bg-blue-50 border-l-4 border-blue-400 p-4">
         <div className="flex">
-          <div className="ml-3">
+          <div className="ml-3 space-y-1">
             <p className="text-sm text-blue-700">
-              <strong>Configuración única:</strong> Estos datos aparecerán en todas las facturas y comprobantes. 
-              Puedes modificarlos en cualquier momento.
+              <strong>Configuración única:</strong> estos datos aparecerán en todas las facturas y comprobantes y podés cambiarlos cuando quieras.
             </p>
+            {!orgId && auth.currentUser && (
+              <p className="text-xs text-blue-800/90">
+                Si todavía no tenés empresa en el sistema, primero usá la tarjeta de arriba; después completá cada bloque y guardá una sola vez o por partes antes de usar el punto de venta.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -450,20 +507,22 @@ const ConfiguracionEmpresa = () => {
                   value={formData.razon_social}
                   onChange={handleInputChange}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  placeholder="Ej: NexoPOS DC S.A."
+                  placeholder="Nombre legal registrado ante AFIP"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nombre de Fantasía *
+                  Nombre de fantasía *
                 </label>
+                <p className="text-xs text-gray-500 mb-1">Cómo se ve el negocio al público en tickets y documentos (puede diferir de la razón legal).</p>
                 <input
                   type="text"
                   name="nombre_fantasia"
                   value={formData.nombre_fantasia}
                   onChange={handleInputChange}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  placeholder="Ej: Almacén del Centro"
                 />
               </div>
 
@@ -471,12 +530,14 @@ const ConfiguracionEmpresa = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Slogan
                 </label>
+                <p className="text-xs text-gray-500 mb-1">Frase opcional debajo del nombre en comprobantes (podés dejarlo vacío).</p>
                 <textarea
                   name="slogan"
                   value={formData.slogan}
                   onChange={handleInputChange}
                   rows={2}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  placeholder="Ej: Calidad y precio desde 1998"
                 />
               </div>
             </div>
@@ -531,12 +592,13 @@ const ConfiguracionEmpresa = () => {
                   value={formData.ingresos_brutos}
                   onChange={handleInputChange}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  placeholder="Número o exención provincial (si aplica)"
                 />
               </div>
 
               <div>
-                <label className="block text sm font-medium text-gray-700 mb-1">
-                  Punto de Venta
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Punto de venta
                 </label>
                 <input
                   type="text"
@@ -689,6 +751,7 @@ const ConfiguracionEmpresa = () => {
                     value={formData.direccion_localidad}
                     onChange={handleInputChange}
                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="Ej: Rosario"
                   />
                 </div>
 
@@ -702,6 +765,7 @@ const ConfiguracionEmpresa = () => {
                     value={formData.direccion_provincia}
                     onChange={handleInputChange}
                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="Ej: Santa Fe"
                   />
                 </div>
               </div>
@@ -717,6 +781,7 @@ const ConfiguracionEmpresa = () => {
                     value={formData.direccion_codigo_postal}
                     onChange={handleInputChange}
                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="Ej: S2000"
                   />
                 </div>
 
@@ -730,6 +795,7 @@ const ConfiguracionEmpresa = () => {
                     value={formData.direccion_pais}
                     onChange={handleInputChange}
                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="Ej: Argentina"
                   />
                 </div>
               </div>
@@ -769,6 +835,7 @@ const ConfiguracionEmpresa = () => {
                     value={formData.telefono_secundario}
                     onChange={handleInputChange}
                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="WhatsApp u otro teléfono (opcional)"
                   />
                 </div>
               </div>
@@ -812,6 +879,9 @@ const ConfiguracionEmpresa = () => {
           Configuración de Facturas
         </h3>
         
+        <p className="mb-4 text-xs text-gray-600">
+          Valores de referencia típicos: primer comprobante en <strong>1</strong>, punto de venta fiscal <strong>0001</strong> (completarlo arriba en Datos fiscales) y formato <strong>térmico</strong> si usás rollo de 80&nbsp;mm.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

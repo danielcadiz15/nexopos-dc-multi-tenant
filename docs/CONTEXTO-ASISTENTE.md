@@ -9,18 +9,23 @@ Este archivo es **puente entre sesiones** (vos, otro desarrollador o el asistent
 
 | Tema | Qué se hizo |
 |------|----------------|
-| Verificación correo tras “Ya verifiqué” | `refreshAuthSession` en `AuthContext`: `reload` + `getIdToken(true)` + actualizar `currentUser`; usado en `VerificarEmailEmpresa` y `configuracionempresa` antes de `createTenant` para que el JWT traiga `email_verified`. |
-| Emuladores Firebase para probar antes de deploy | `firebase.json` → bloque `emulators`. Scripts: **`npm run emulators`** (stack completa, requiere **Java**) · **`npm run emulators:functions-only`** sin Java · **`npm run dev:functions-emu`** = functions emulator + cliente con `start:emu:functions`. Dos env en cliente: `client/.env.emulator` (**full**) y `client/.env.emulator.functions-only` (**api-only**). `firebase/config.js` respeta **`REACT_APP_EMULATORS_MODE`**. |
-| Regla Cursor | `.cursor/rules/nexopos-context.mdc`: pedido explícito de **actualizar este archivo** al cerrar trabajo sustantivo. |
+| **Onboarding / crear empresa (UI + datos)** | Sin `orgId`: guía paso a paso en la misma tarjeta (“Configurar empresa”), placeholders y textos cortos por campo para indicar qué va en cada lugar; valores iniciales del formulario ya no traen NexoPOS / Posadas / slogan de ejemplo — quedan vacíos y la referencia es el `placeholder`. Banner azul contextual si aún no hay empresa. Bloque ayuda en “Configuración de facturas” (numeración, PV 0001, térmico). Registro inicial: placeholders en email/nombre empresa. |
+| **`configuracion.service.js`** | `obtenerConfiguracionPorDefecto` y `formatearConfiguracion`: sin texto de marca ni localidad provincial por defecto. Al **guardar**, `punto_venta` vacío → se envía `0001` para no romper backend. Logo: salida API unificada a `tamaño_logo` en el objeto que consume el cliente; al guardar se toma `config.tamaño_logo` o `config.tamano_logo`. Fallback `obtenerConfiguracionEmpresa` ya no usa nombre/dirección de demo. |
 
 ### Archivos tocados en lo anterior (lista útil para diff)
 
-- `client/src/contexts/AuthContext.js` — función `refreshAuthSession`
-- `client/src/pages/auth/VerificarEmailEmpresa.js`
-- `client/src/pages/configuracion/configuracionempresa.js`
-- `docs/cambios-pos-verificacion-admin-2026.md` — sección §8 sobre JWT
-- `firebase.json`, `package.json` (raíz), `client/package.json`, `client/.env.emulator`, `client/.env.emulator.functions-only`, `client/src/firebase/config.js`, `client/.env.example`
-- `.cursor/rules/nexopos-context.mdc`, `docs/CONTEXTO-ASISTENTE.md` (este archivo)
+- `client/src/pages/configuracion/configuracionempresa.js` — onboarding, placeholders, guía, textos ayuda y banner
+- `client/src/services/configuracion.service.js` — defaults vacíos, `punto_venta` en guardado, `tamaño_logo`, errores nombre/dirección vacíos en fallback antiguo
+
+### Historial cercano en este repo (contexto anterior)
+
+| Tema | Qué se hizo |
+|------|----------------|
+| Verificación correo tras “Ya verifiqué” | `refreshAuthSession` en `AuthContext`: `reload` + `getIdToken(true)` + actualizar `currentUser`; usado en `VerificarEmailEmpresa` y `configuracionempresa` antes de `createTenant` para que el JWT traiga `email_verified`. |
+| Emuladores Firebase para probar antes de deploy | `firebase.json` → bloque `emulators`. Scripts: **`npm run emulators`** (stack completa, requiere **Java**) · **`npm run emulators:functions-only`** sin Java · **`npm run dev:functions-emu`**. Dos env en cliente: `client/.env.emulator` (**full**) y `client/.env.emulator.functions-only` (**api-only**). `firebase/config.js` respeta **`REACT_APP_EMULATORS_MODE`**. |
+| Regla Cursor | `.cursor/rules/nexopos-context.mdc`: pedido explícito de **actualizar este archivo** al cerrar trabajo sustantivo. |
+
+- `client/src/contexts/AuthContext.js`, `VerificarEmailEmpresa.js`, `docs/cambios-pos-verificacion-admin-2026.md`, emuladores y reglas Cursor (ver commits previos).
 
 ---
 
@@ -51,8 +56,8 @@ Se verificó `npm run emulators:functions-only` — emulador Functions en **5001
 
 ### Último deploy y git (operación humana / asistente)
 
-- **Hosting**: `firebase deploy --only hosting,functions` — bundle actual con `refreshAuthSession`, emuladores docs, fix build `configuracionempresa.js` (cadena con comillas tipográficas que disparaba `no-undef` falso en CRA).
-- **Git**: `main` → `origin/main` commit `c09f94b`.
+- **Hosting**: `firebase deploy --only hosting,functions` después de **`npm run build`** (cliente + functions). Sesión siguiente a esta entrada: incluye onboarding empresa (guía + defaults vacíos + service).
+- **Git**: cambios pusheados a `origin/main`; **hash exacto**: `git log -1 --oneline` en `nexopos-dc-multi-tenant`.
 
 ### Terminal 1 — emuladores (Auth + Firestore + Functions)
 

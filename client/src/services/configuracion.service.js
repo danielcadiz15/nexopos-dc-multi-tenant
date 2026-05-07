@@ -26,8 +26,8 @@ class ConfiguracionService extends FirebaseService {
       console.error('❌ Error al obtener configuración de empresa:', error);
       // Retornar configuración por defecto
       return {
-        nombre: 'NexoPOS DC',
-        direccion: 'Corrientes, Argentina',
+        nombre: '',
+        direccion: '',
         telefono: '',
         email: '',
         cuit: '',
@@ -280,22 +280,22 @@ class ConfiguracionService extends FirebaseService {
     return {
       // Informaci��n b��sica
       razon_social: data.razon_social || '',
-      nombre_fantasia: data.nombre_fantasia || 'NexoPOS DC',
-      slogan: data.slogan || 'Especialistas en especias, condimentos e insumos para carnicerias e industria alimentaria',
+      nombre_fantasia: data.nombre_fantasia || '',
+      slogan: data.slogan || '',
       logo_url: data.logo_url || '',
       
       // Datos fiscales
       cuit: data.cuit || '',
       condicion_iva: data.condicion_iva || 'Responsable Inscripto',
       ingresos_brutos: data.ingresos_brutos || '',
-      punto_venta: data.punto_venta || '0001',
+      punto_venta: data.punto_venta || '',
       
       // Direcci��n (formatear desde objeto o campos individuales)
       direccion_calle: data.direccion?.calle || data.direccion_calle || '',
-      direccion_localidad: data.direccion?.localidad || data.direccion_localidad || 'Posadas',
-      direccion_provincia: data.direccion?.provincia || data.direccion_provincia || 'Misiones',
+      direccion_localidad: data.direccion?.localidad || data.direccion_localidad || '',
+      direccion_provincia: data.direccion?.provincia || data.direccion_provincia || '',
       direccion_codigo_postal: data.direccion?.codigo_postal || data.direccion_codigo_postal || '',
-      direccion_pais: data.direccion?.pais || data.direccion_pais || 'Argentina',
+      direccion_pais: data.direccion?.pais || data.direccion_pais || '',
       
       // Contacto (formatear desde objeto o campos individuales)
       telefono_principal: data.contacto?.telefono_principal || data.telefono_principal || '',
@@ -311,7 +311,7 @@ class ConfiguracionService extends FirebaseService {
       imprimir_ticket_automaticamente: data.facturacion?.imprimir_ticket_automaticamente !== undefined
         ? data.facturacion.imprimir_ticket_automaticamente
         : data.imprimir_ticket_automaticamente === true,
-      tamano_logo: data.facturacion?.tamano_logo || data.tamano_logo || 'mediano',
+      tamaño_logo: data.facturacion?.tamano_logo || data.tamano_logo || data['tamaño_logo'] || 'mediano',
       posicion_logo: data.facturacion?.posicion_logo || data.posicion_logo || 'centro',
       caja_modulos: {
         clientes: data.caja_modulos?.clientes !== false,
@@ -341,7 +341,7 @@ class ConfiguracionService extends FirebaseService {
       cuit: config.cuit,
       condicion_iva: config.condicion_iva,
       ingresos_brutos: config.ingresos_brutos,
-      punto_venta: config.punto_venta,
+      punto_venta: String(config.punto_venta || '').trim() || '0001',
       
       // Direcci��n como objeto
       direccion: {
@@ -367,7 +367,7 @@ class ConfiguracionService extends FirebaseService {
         formato_predeterminado: config.formato_predeterminado,
         mostrar_logo: config.mostrar_logo,
         imprimir_ticket_automaticamente: config.imprimir_ticket_automaticamente === true,
-        tamano_logo: config.tamano_logo,
+        tamano_logo: config.tamaño_logo || config.tamano_logo,
         posicion_logo: config.posicion_logo
       },
       caja_modulos: {
@@ -391,20 +391,20 @@ class ConfiguracionService extends FirebaseService {
   obtenerConfiguracionPorDefecto() {
     return {
       razon_social: '',
-      nombre_fantasia: 'NexoPOS DC',
-      slogan: 'Especialistas en especias, condimentos e insumos para carnicerias e industria alimentaria',
+      nombre_fantasia: '',
+      slogan: '',
       logo_url: '',
       
       cuit: '',
       condicion_iva: 'Responsable Inscripto',
       ingresos_brutos: '',
-      punto_venta: '0001',
+      punto_venta: '',
       
       direccion_calle: '',
-      direccion_localidad: 'Posadas',
-      direccion_provincia: 'Misiones',
+      direccion_localidad: '',
+      direccion_provincia: '',
       direccion_codigo_postal: '',
-      direccion_pais: 'Argentina',
+      direccion_pais: '',
       
       telefono_principal: '',
       telefono_secundario: '',
@@ -416,7 +416,7 @@ class ConfiguracionService extends FirebaseService {
       formato_predeterminado: 'termico',
       mostrar_logo: true,
       imprimir_ticket_automaticamente: false,
-      tamano_logo: 'mediano',
+      tamaño_logo: 'mediano',
       posicion_logo: 'centro',
       caja_modulos: {
         clientes: true,
