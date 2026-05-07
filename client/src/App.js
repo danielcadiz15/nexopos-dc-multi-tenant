@@ -116,6 +116,22 @@ import SuperAdminRoute from './components/common/SuperAdminRoute';
 import LicenseBanner from './components/layout/LicenseBanner';
 import { useViewportHeight } from './hooks/useViewportHeight';
 
+/**
+ * Cajeros/empleados: en pantalla chica usa MobileApp (POV reducido).
+ * Administradores/gerentes: siempre rutas Layout con todos los módulos (nexopos web completo).
+ */
+const usuarioDebeVerSistemaWebCompleto = (u) => {
+  if (!u) return false;
+  const rol = String(u.rol || u.role || '').toLowerCase().trim();
+  const rolIdNorm = String(u.rolId ?? '').toLowerCase();
+  return (
+    u.isAdmin === true ||
+    rolIdNorm === 'admin' ||
+    rolIdNorm === 'gerente' ||
+    ['administrador', 'admin', 'gerente'].includes(rol)
+  );
+};
+
 const CajeroApp = () => (
   <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-gray-50 px-2 pt-1 pb-1 sm:px-3">
     <div className="shrink-0">
@@ -132,6 +148,7 @@ const AppContent = () => {
   const auth = useAuth() || {};
   const { currentUser: user, loading } = auth;
   const isMobile = useIsMobile();
+  const vistaMovilReducida = isMobile && user && !usuarioDebeVerSistemaWebCompleto(user);
 
   if (loading) {
     return (
@@ -158,8 +175,8 @@ const AppContent = () => {
         <Route path="/configuracion/empresa" element={<ProtectedRoute><ConfiguracionEmpresa /></ProtectedRoute>} />
         <Route path="/cajero" element={<ProtectedRoute><CajeroApp /></ProtectedRoute>} />
         
-        {/* Vista móvil */}
-        {isMobile && user ? (
+        {/* Vista móvil (solo cuenta operativa; administración va al Layout completo) */}
+        {vistaMovilReducida ? (
           <Route path="/*" element={<MobileApp />} />
         ) : (
           /* Rutas protegidas para desktop */

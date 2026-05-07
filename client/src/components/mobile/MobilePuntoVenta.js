@@ -110,7 +110,40 @@ const MobilePuntoVenta = () => {
   const [pagandoDeuda, setPagandoDeuda] = useState(false);
   const [actualizandoApp, setActualizandoApp] = useState(false);
   const viewport = useViewport();
-  const compact = viewport.height < 760 || viewport.width < 390;
+  /**
+   * Pico de altura interior: al abrir el teclado `innerHeight` baja y si usamos eso para el layout,
+   * se desmonta el árbol (p. ej. landscape → portrait) y el input pierde foco / el teclado se cierra.
+   */
+  const peakInnerHeightRef = useRef(
+    typeof window !== 'undefined' ? window.innerHeight : 700
+  );
+  peakInnerHeightRef.current = Math.max(peakInnerHeightRef.current, viewport.height);
+
+  const [, setLayoutEpoch] = useState(0);
+  useEffect(() => {
+    const onOrientationChange = () => {
+      peakInnerHeightRef.current = window.innerHeight;
+      setLayoutEpoch((n) => n + 1);
+      window.setTimeout(() => {
+        peakInnerHeightRef.current = Math.max(
+          peakInnerHeightRef.current,
+          window.innerHeight
+        );
+        setLayoutEpoch((n) => n + 1);
+      }, 320);
+    };
+    window.addEventListener('orientationchange', onOrientationChange);
+    return () => window.removeEventListener('orientationchange', onOrientationChange);
+  }, []);
+
+  /** Tablet apaisada: más ancho que alto, pantalla suficientemente grande (evita móvil en landscape). */
+  const landscapeTablet =
+    viewport.width > viewport.height &&
+    viewport.width >= 900 &&
+    peakInnerHeightRef.current >= 520;
+
+  const compact =
+    viewport.width < 390 || (!landscapeTablet && viewport.height < 760);
 
   const cajaModulos = configTicket?.caja_modulos || {};
   const cajaClientesHabilitado = cajaModulos.clientes !== false;
@@ -624,6 +657,316 @@ const MobilePuntoVenta = () => {
   }, [total]);
 
   const busquedaLista = busqueda.trim().length >= 3;
+  const mostrarResultados =
+    loadingBusqueda || resultados.length > 0 || (busquedaLista && sucursalVenta);
+
+  const gridResultadosClass = landscapeTablet
+    ? 'grid grid-cols-2 gap-2 sm:gap-3'
+    : 'grid grid-cols-1 gap-2 sm:gap-3';
+
+  const resultadosSolo = (
+    <>
+      {mostrarResultados && (
+        <div className={gridResultadosClass}>
+          {loadingBusqueda && (
+            <div className="rounded-xl bg-white p-4 text-center font-semibold text-gray-500 shadow">
+              Buscando productos...
+            </div>
+          )}
+
+          {!loadingBusqueda && resultados.length === 0 && busquedaLista && (
+            <div className="rounded-xl bg-white p-4 text-center font-semibold text-gray-500 shadow">
+              No se encontraron productos con stock para "{busqueda.trim()}".
+            </div>
+          )}
+
+          {resultados.map((producto) => (
+            <button
+              key={producto.id}
+              type="button"
+              onClick={() => agregarProducto(producto)}
+              className={`rounded-2xl bg-white text-left shadow active:scale-[0.99] ${landscapeTablet ? 'p-3' : 'p-4'}`}
+            >
+              <div className="flex items-start justify-between gap-2 sm:gap-3">
+                <div className="min-w-0">
+                  <div className={`font-black text-gray-900 ${landscapeTablet ? 'text-base leading-snug' : 'text-lg'}`}>{producto.nombre}</div>
+                  <div className="text-sm text-gray-500">Código: {producto.codigo || 'Sin código'}</div>
+                  <div className="mt-1 text-sm font-semibold text-green-700">
+                    Stock: {obtenerStockSucursal(producto)}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className={`font-black text-blue-700 ${landscapeTablet ? 'text-lg' : 'text-xl'}`}>
+                    {formatMoneda(obtenerPrecioVenta(producto))}
+                  </div>
+                  <div className="mt-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-bold text-blue-700">
+                    Agregar
+                  </div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  const carritoMaxClass = landscapeTablet
+    ? ''
+    : `sm:max-h-[min(260px,40vh)] ${compact ? 'max-h-[30vh]' : 'max-h-[260px]'}`;
+
+  const lineasCarrito = carrito.map((item) => (
+    <div key={item.id} className="grid grid-cols-[1fr_auto] gap-2 bg-white px-3 py-2">
+      <button
+        type="button"
+        onClick={() => setMostrarCarritoCompleto(true)}
+        className="min-w-0 text-left"
+      >
+        <div className="truncate text-sm font-black leading-tight text-gray-900">
+          {item.nombre}
+        </div>
+        <div className="text-xs font-semibold text-gray-500">
+          {item.cantidad} x {formatMoneda(item.precio)}
+        </div>
+      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => actualizarCantidad(item.id, item.cantidad - 1)}
+          className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-700"
+          aria-label={`Restar ${item.nombre}`}
+        >
+          <FaMinus />
+        </button>
+        <div className="min-w-[28px] text-center text-base font-black text-gray-900">
+          {item.cantidad}
+        </div>
+        <button
+          type="button"
+          onClick={() => actualizarCantidad(item.id, item.cantidad + 1)}
+          disabled={item.cantidad >= item.stock_disponible}
+          className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-700 disabled:opacity-40"
+          aria-label={`Sumar ${item.nombre}`}
+        >
+          <FaPlus />
+        </button>
+        <div className="min-w-[74px] text-right text-sm font-black text-gray-900">
+          {formatMoneda(item.precio * item.cantidad)}
+        </div>
+      </div>
+    </div>
+  ));
+
+  const pieTotalCarrito =
+    carrito.length > 0 ? (
+      <div className="flex justify-between rounded-b-xl bg-gray-900 px-3 py-2 text-white">
+        <span className="text-sm font-black">Total carrito</span>
+        <span className="text-lg font-black">{formatMoneda(total)}</span>
+      </div>
+    ) : null;
+
+  /** Tablet apaisada: solo líneas con scroll; el pie va fuera del scroll */
+  const tarjetaCarritoLandscape = (
+    <div className="flex min-h-0 flex-1 flex-col rounded-2xl bg-white p-2 shadow sm:p-3">
+      <div className="mb-2 flex shrink-0 items-center justify-between">
+        <div>
+          <h2 className={`font-black text-gray-900 ${compact ? 'text-base' : 'text-lg'}`}>Carrito</h2>
+          <p className="text-xs font-semibold text-gray-500">
+            {carrito.reduce((sum, item) => sum + item.cantidad, 0)} unidades · {carrito.length} productos
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setMostrarCarritoCompleto(true)}
+          disabled={carrito.length === 0}
+          className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-black text-blue-700 disabled:opacity-40"
+        >
+          Ver carrito
+        </button>
+      </div>
+
+      {carrito.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center rounded-xl bg-gray-50 p-4 text-center text-sm font-semibold text-gray-500">
+          Escaneá o buscá un producto para comenzar.
+        </div>
+      ) : (
+        <>
+          <div className="scrollbar-thin divide-y divide-gray-100 min-h-0 flex-1 overflow-y-auto overscroll-y-contain rounded-xl border border-gray-100">
+            {lineasCarrito}
+          </div>
+          <div className="mt-2 shrink-0">{pieTotalCarrito}</div>
+        </>
+      )}
+    </div>
+  );
+
+  const panelCobroResumen = (
+    <>
+      <div className={`rounded-2xl bg-white shadow ${compact ? 'p-2' : landscapeTablet ? 'p-3' : 'p-4'}`}>
+        <div className={`grid grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
+          <button
+            type="button"
+            onClick={() => setMetodoPago('efectivo')}
+            className={`rounded-2xl font-black ${compact ? 'min-h-12 py-2 text-xs' : landscapeTablet ? 'min-h-12 py-2 text-sm' : 'min-h-[64px] text-lg'} ${
+              metodoPago === 'efectivo'
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            <FaMoneyBillWave className="mx-auto mb-1" />
+            Efectivo
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMetodoPago('tarjeta');
+              setMontoRecibido(total ? String(total) : '');
+            }}
+            className={`rounded-2xl font-black ${compact ? 'min-h-12 py-2 text-xs' : landscapeTablet ? 'min-h-12 py-2 text-sm' : 'min-h-[64px] text-lg'} ${
+              metodoPago === 'tarjeta'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            <FaCreditCard className="mx-auto mb-1" />
+            Tarjeta
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMetodoPago('MercadoPago');
+              setMontoRecibido(total ? String(total) : '');
+            }}
+            className={`rounded-2xl font-black ${compact ? 'min-h-12 py-2 text-[10px]' : landscapeTablet ? 'min-h-12 py-2 text-xs' : 'min-h-[64px] text-base'} ${
+              metodoPago === 'MercadoPago'
+                ? 'bg-purple-600 text-white'
+                : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            <FaMobileAlt className="mx-auto mb-1" />
+            Billetera
+          </button>
+        </div>
+
+        {metodoPago === 'efectivo' && (
+          <div className={landscapeTablet ? 'mt-3' : 'mt-4'}>
+            <label className="mb-2 block text-sm font-bold text-gray-700">
+              Dinero recibido
+            </label>
+            <input
+              type="number"
+              value={montoRecibido}
+              onChange={(event) => setMontoRecibido(event.target.value)}
+              placeholder="0.00"
+              className={`w-full rounded-2xl border-2 border-gray-200 px-4 font-black focus:border-green-500 focus:outline-none ${landscapeTablet ? 'py-3 text-xl' : 'py-4 text-3xl'}`}
+              inputMode="decimal"
+              disabled={carrito.length === 0 || procesandoVenta}
+            />
+
+            <div className={`grid grid-cols-2 gap-2 ${landscapeTablet ? 'mt-2' : 'mt-3'}`}>
+              {botonesMontoRapido.map((valor) => (
+                <button
+                  key={valor}
+                  type="button"
+                  onClick={() => setMontoRecibido(String(valor))}
+                  className={`rounded-xl bg-gray-100 px-3 font-black text-gray-800 ${landscapeTablet ? 'py-2 text-base' : 'py-3 text-lg'}`}
+                >
+                  {formatMoneda(valor)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className={`rounded-2xl bg-gray-900 text-white ${landscapeTablet ? 'mt-3 p-3' : 'mt-4 p-4'}`}>
+          <div className={`flex justify-between ${landscapeTablet ? 'text-base' : 'text-lg'}`}>
+            <span>Total</span>
+            <span className="font-black">{formatMoneda(total)}</span>
+          </div>
+          <div className={`flex justify-between ${landscapeTablet ? 'mt-1.5 text-base' : 'mt-2 text-lg'}`}>
+            <span>Recibido</span>
+            <span className="font-black">
+              {formatMoneda(metodoPago === 'efectivo' ? montoRecibidoNum : total)}
+            </span>
+          </div>
+          <div className={`flex justify-between border-t border-gray-700 ${landscapeTablet ? 'mt-2 pt-2 text-xl' : 'mt-3 pt-3 text-2xl'}`}>
+            <span>Vuelto</span>
+            <span className="font-black text-green-300">{formatMoneda(vuelto)}</span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={finalizarVenta}
+          disabled={carrito.length === 0 || procesandoVenta || !sucursalVenta}
+          className={`flex w-full items-center justify-center rounded-2xl bg-green-600 font-black text-white shadow-lg disabled:bg-gray-300 ${landscapeTablet ? 'mt-3 min-h-[56px] text-lg' : 'mt-4 min-h-[72px] text-2xl'}`}
+        >
+          <FaCheck className="mr-3" />
+          {procesandoVenta ? 'Cobrando...' : 'Cobrar'}
+        </button>
+
+        <button
+          type="button"
+          onClick={limpiarVenta}
+          disabled={carrito.length === 0 || procesandoVenta}
+          className={`w-full rounded-2xl bg-gray-100 font-black text-gray-700 disabled:opacity-40 ${landscapeTablet ? 'mt-2 min-h-[44px] text-sm' : 'mt-3 min-h-[52px] text-base'}`}
+        >
+          Limpiar venta
+        </button>
+      </div>
+
+      {ultimaVenta && (
+        <div className={`rounded-2xl border border-green-200 bg-green-50 text-green-900 ${landscapeTablet ? 'p-3' : 'p-4'}`}>
+          <div className="text-lg font-black">Venta registrada</div>
+          <div className="text-sm">
+            ID: {ultimaVenta.id || 'sin ID'} · Total {formatMoneda(ultimaVenta.total)} · Vuelto {formatMoneda(ultimaVenta.vuelto)}
+          </div>
+        </div>
+      )}
+    </>
+  );
+
+  const tarjetaCarritoPortrait = (
+    <div className="rounded-2xl bg-white p-2 shadow sm:p-3">
+      <div className="mb-2 flex items-center justify-between sm:mb-3">
+        <div>
+          <h2 className={`font-black text-gray-900 ${compact ? 'text-base' : 'text-lg'}`}>Carrito</h2>
+          <p className="text-xs font-semibold text-gray-500">
+            {carrito.reduce((sum, item) => sum + item.cantidad, 0)} unidades · {carrito.length} productos
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setMostrarCarritoCompleto(true)}
+          disabled={carrito.length === 0}
+          className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-black text-blue-700 disabled:opacity-40"
+        >
+          Ver carrito
+        </button>
+      </div>
+
+      {carrito.length === 0 ? (
+        <div className="rounded-xl bg-gray-50 p-5 text-center text-sm font-semibold text-gray-500">
+          Escaneá o buscá un producto para comenzar.
+        </div>
+      ) : (
+        <div className={`divide-y divide-gray-100 rounded-xl border border-gray-100 ${carritoMaxClass} overflow-y-auto`}>
+          {lineasCarrito}
+          <div className="sticky bottom-0 flex justify-between bg-gray-900 px-3 py-2 text-white">
+            <span className="text-sm font-black">Total carrito</span>
+            <span className="text-lg font-black">{formatMoneda(total)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const carritoCobroUltima = (
+    <>
+      {tarjetaCarritoPortrait}
+      {panelCobroResumen}
+    </>
+  );
 
   return (
     <>
@@ -758,247 +1101,37 @@ const MobilePuntoVenta = () => {
         </button>
       </div>
 
-      <div className="scrollbar-thin flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-y-contain pr-0.5">
+      {landscapeTablet ? (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden">
+          <section
+            aria-label="Resultados de búsqueda"
+            className={`scrollbar-thin min-h-0 overflow-y-auto overscroll-y-contain pr-0.5 ${mostrarResultados ? 'flex-1' : 'hidden'}`}
+          >
+            {resultadosSolo}
+          </section>
 
-      {(loadingBusqueda || resultados.length > 0 || (busquedaLista && sucursalVenta)) && (
-        <div className="grid grid-cols-1 gap-2 sm:gap-3">
-          {loadingBusqueda && (
-            <div className="rounded-xl bg-white p-4 text-center font-semibold text-gray-500 shadow">
-              Buscando productos...
-            </div>
-          )}
-
-          {!loadingBusqueda && resultados.length === 0 && busquedaLista && (
-            <div className="rounded-xl bg-white p-4 text-center font-semibold text-gray-500 shadow">
-              No se encontraron productos con stock para "{busqueda.trim()}".
-            </div>
-          )}
-
-          {resultados.map((producto) => (
-            <button
-              key={producto.id}
-              type="button"
-              onClick={() => agregarProducto(producto)}
-              className="rounded-2xl bg-white p-4 text-left shadow active:scale-[0.99]"
+          <div className={`flex min-h-0 flex-1 flex-row items-stretch gap-2 overflow-hidden ${mostrarResultados ? 'border-t border-gray-200 pt-2' : ''} sm:gap-3`}>
+            <section
+              aria-label="Productos del carrito"
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pr-2"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-lg font-black text-gray-900">{producto.nombre}</div>
-                  <div className="text-sm text-gray-500">Código: {producto.codigo || 'Sin código'}</div>
-                  <div className="mt-1 text-sm font-semibold text-green-700">
-                    Stock: {obtenerStockSucursal(producto)}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xl font-black text-blue-700">
-                    {formatMoneda(obtenerPrecioVenta(producto))}
-                  </div>
-                  <div className="mt-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-bold text-blue-700">
-                    Agregar
-                  </div>
-                </div>
-              </div>
-            </button>
-          ))}
+              {tarjetaCarritoLandscape}
+            </section>
+            <section
+              aria-label="Medios de pago y cobro"
+              className="flex min-h-0 w-[clamp(17rem,min(360px,35vw),24rem)] min-w-[15rem] max-w-[40vw] shrink-0 flex-col overflow-hidden border-l border-gray-200 pl-3"
+            >
+              {panelCobroResumen}
+            </section>
+          </div>
+        </div>
+      ) : (
+        <div className="scrollbar-thin flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-y-contain pr-0.5">
+          {resultadosSolo}
+          {carritoCobroUltima}
         </div>
       )}
 
-      <div className="rounded-2xl bg-white p-2 shadow sm:p-3">
-        <div className="mb-2 flex items-center justify-between sm:mb-3">
-          <div>
-            <h2 className={`font-black text-gray-900 ${compact ? 'text-base' : 'text-lg'}`}>Carrito</h2>
-            <p className="text-xs font-semibold text-gray-500">
-              {carrito.reduce((sum, item) => sum + item.cantidad, 0)} unidades · {carrito.length} productos
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setMostrarCarritoCompleto(true)}
-            disabled={carrito.length === 0}
-            className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-black text-blue-700 disabled:opacity-40"
-          >
-            Ver carrito
-          </button>
-        </div>
-
-        {carrito.length === 0 ? (
-          <div className="rounded-xl bg-gray-50 p-5 text-center text-sm font-semibold text-gray-500">
-            Escaneá o buscá un producto para comenzar.
-          </div>
-        ) : (
-          <div className={`divide-y divide-gray-100 rounded-xl border border-gray-100 sm:max-h-[min(260px,40vh)] ${compact ? 'max-h-[30vh]' : 'max-h-[260px]'} overflow-y-auto`}>
-            {carrito.map((item) => (
-              <div key={item.id} className="grid grid-cols-[1fr_auto] gap-2 bg-white px-3 py-2">
-                <button
-                  type="button"
-                  onClick={() => setMostrarCarritoCompleto(true)}
-                  className="min-w-0 text-left"
-                >
-                  <div className="truncate text-sm font-black leading-tight text-gray-900">
-                    {item.nombre}
-                  </div>
-                  <div className="text-xs font-semibold text-gray-500">
-                    {item.cantidad} x {formatMoneda(item.precio)}
-                  </div>
-                </button>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => actualizarCantidad(item.id, item.cantidad - 1)}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-700"
-                    aria-label={`Restar ${item.nombre}`}
-                  >
-                    <FaMinus />
-                  </button>
-                  <div className="min-w-[28px] text-center text-base font-black text-gray-900">
-                    {item.cantidad}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => actualizarCantidad(item.id, item.cantidad + 1)}
-                    disabled={item.cantidad >= item.stock_disponible}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-700 disabled:opacity-40"
-                    aria-label={`Sumar ${item.nombre}`}
-                  >
-                    <FaPlus />
-                  </button>
-                  <div className="min-w-[74px] text-right text-sm font-black text-gray-900">
-                    {formatMoneda(item.precio * item.cantidad)}
-                  </div>
-                </div>
-              </div>
-            ))}
-            <div className="sticky bottom-0 flex justify-between bg-gray-900 px-3 py-2 text-white">
-              <span className="text-sm font-black">Total carrito</span>
-              <span className="text-lg font-black">{formatMoneda(total)}</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className={`rounded-2xl bg-white shadow ${compact ? 'p-2' : 'p-4'}`}>
-        <div className={`grid grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
-          <button
-            type="button"
-            onClick={() => setMetodoPago('efectivo')}
-            className={`rounded-2xl font-black ${compact ? 'min-h-12 py-2 text-xs' : 'min-h-[64px] text-lg'} ${
-              metodoPago === 'efectivo'
-                ? 'bg-green-600 text-white'
-                : 'bg-gray-100 text-gray-700'
-            }`}
-          >
-            <FaMoneyBillWave className="mx-auto mb-1" />
-            Efectivo
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMetodoPago('tarjeta');
-              setMontoRecibido(total ? String(total) : '');
-            }}
-            className={`rounded-2xl font-black ${compact ? 'min-h-12 py-2 text-xs' : 'min-h-[64px] text-lg'} ${
-              metodoPago === 'tarjeta'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700'
-            }`}
-          >
-            <FaCreditCard className="mx-auto mb-1" />
-            Tarjeta
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMetodoPago('MercadoPago');
-              setMontoRecibido(total ? String(total) : '');
-            }}
-            className={`rounded-2xl font-black ${compact ? 'min-h-12 py-2 text-[10px]' : 'min-h-[64px] text-base'} ${
-              metodoPago === 'MercadoPago'
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-100 text-gray-700'
-            }`}
-          >
-            <FaMobileAlt className="mx-auto mb-1" />
-            Billetera
-          </button>
-        </div>
-
-        {metodoPago === 'efectivo' && (
-          <div className="mt-4">
-            <label className="mb-2 block text-sm font-bold text-gray-700">
-              Dinero recibido
-            </label>
-            <input
-              type="number"
-              value={montoRecibido}
-              onChange={(event) => setMontoRecibido(event.target.value)}
-              placeholder="0.00"
-              className="w-full rounded-2xl border-2 border-gray-200 px-4 py-4 text-3xl font-black focus:border-green-500 focus:outline-none"
-              inputMode="decimal"
-              disabled={carrito.length === 0 || procesandoVenta}
-            />
-
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {botonesMontoRapido.map((valor) => (
-                <button
-                  key={valor}
-                  type="button"
-                  onClick={() => setMontoRecibido(String(valor))}
-                  className="rounded-xl bg-gray-100 px-3 py-3 text-lg font-black text-gray-800"
-                >
-                  {formatMoneda(valor)}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="mt-4 rounded-2xl bg-gray-900 p-4 text-white">
-          <div className="flex justify-between text-lg">
-            <span>Total</span>
-            <span className="font-black">{formatMoneda(total)}</span>
-          </div>
-          <div className="mt-2 flex justify-between text-lg">
-            <span>Recibido</span>
-            <span className="font-black">
-              {formatMoneda(metodoPago === 'efectivo' ? montoRecibidoNum : total)}
-            </span>
-          </div>
-          <div className="mt-3 flex justify-between border-t border-gray-700 pt-3 text-2xl">
-            <span>Vuelto</span>
-            <span className="font-black text-green-300">{formatMoneda(vuelto)}</span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={finalizarVenta}
-          disabled={carrito.length === 0 || procesandoVenta || !sucursalVenta}
-          className="mt-4 flex min-h-[72px] w-full items-center justify-center rounded-2xl bg-green-600 text-2xl font-black text-white shadow-lg disabled:bg-gray-300"
-        >
-          <FaCheck className="mr-3" />
-          {procesandoVenta ? 'Cobrando...' : 'Cobrar'}
-        </button>
-
-        <button
-          type="button"
-          onClick={limpiarVenta}
-          disabled={carrito.length === 0 || procesandoVenta}
-          className="mt-3 min-h-[52px] w-full rounded-2xl bg-gray-100 text-base font-black text-gray-700 disabled:opacity-40"
-        >
-          Limpiar venta
-        </button>
-      </div>
-
-      {ultimaVenta && (
-        <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-green-900">
-          <div className="text-lg font-black">Venta registrada</div>
-          <div className="text-sm">
-            ID: {ultimaVenta.id || 'sin ID'} · Total {formatMoneda(ultimaVenta.total)} · Vuelto {formatMoneda(ultimaVenta.vuelto)}
-          </div>
-        </div>
-      )}
-
-      </div>
       </div>
 
       {mostrarClientes && (

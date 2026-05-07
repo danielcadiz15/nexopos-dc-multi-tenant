@@ -531,7 +531,8 @@ const usuariosRoutes = async (req, res, path) => {
         const userRecord = await admin.auth().createUser({
           email: nuevoUsuario.email,
           password: nuevoUsuario.password || 'Temp123!',
-          displayName: `${nuevoUsuario.nombre} ${nuevoUsuario.apellido || ''}`.trim()
+          displayName: `${nuevoUsuario.nombre} ${nuevoUsuario.apellido || ''}`.trim(),
+          emailVerified: false
         });
         
         // Guardar en Firestore
@@ -578,7 +579,8 @@ const usuariosRoutes = async (req, res, path) => {
             id: userRecord.uid,
             ...usuarioFirestore
           },
-          message: 'Usuario creado correctamente'
+          message:
+            'Usuario creado. Debe iniciar sesión y verificar su correo electrónico (bandeja o spam): desde la app usará «Reenviar correo» hasta completar la verificación.'
         });
         return true;
         

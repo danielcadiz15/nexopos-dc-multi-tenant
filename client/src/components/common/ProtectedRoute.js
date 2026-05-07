@@ -3,6 +3,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { isSuperAdminEmail } from '../../config/superAdmin';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading, orgId, currentUser } = useAuth();
@@ -10,10 +11,15 @@ const ProtectedRoute = ({ children }) => {
 
   if (loading) return null;
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />;
-  // Permitir acceso total al admin aunque no tenga orgId
-  const isAdminEmail = (currentUser?.email || '').toLowerCase() === 'danielcadiz15@gmail.com';
-  if (isAdminEmail) return children;
-  // Para el resto, exigir orgId (salvo en la ruta de configuración)
+  if (isSuperAdminEmail(currentUser?.email)) return children;
+
+  if (currentUser && !currentUser.emailVerified) {
+    if (location.pathname !== '/verificar-email') {
+      return <Navigate to="/verificar-email" replace state={{ from: location }} />;
+    }
+    return children;
+  }
+
   const rutasSinOrg = ['/configuracion/empresa', '/verificar-email'];
   if (!orgId && !rutasSinOrg.includes(location.pathname)) {
     return <Navigate to="/configuracion/empresa" replace />;

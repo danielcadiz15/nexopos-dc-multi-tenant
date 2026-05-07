@@ -650,9 +650,8 @@ exports.api = functions.https.onRequest(async (req, res) => {
         // DELETE /admin/empresas/:id -> eliminar empresa (solo super admin panel)
         if (path.match(/^\/admin\/empresas\/[^/]+$/) && req.method === 'DELETE') {
           const companyId = path.split('/')[3];
-          // Borrar información principal en companies y tenants, y documentos relacionados básicos
+          // Borrar Firestore + usuarios en Firebase Auth (antes solo se borraba Firestore)
           try {
-            // Eliminar subcolecciones críticas de companies: config (license/modules/empresa), caja, usuarios, sucursales, transferencias, compras, ventas, stock_sucursal, movimientos_stock
             async function deleteCollectionRecursive(colRef) {
               const snap = await colRef.get();
               const batchSize = 400;
@@ -669,22 +668,65 @@ exports.api = functions.https.onRequest(async (req, res) => {
             const companyRef = db.collection('companies').doc(companyId);
             const tenantRef = db.collection('tenants').doc(companyId);
 
-            // Borrar subcolecciones conocidas de companies
+            const uidSet = new Set();
+            try {
+              const companySnap = await companyRef.get();
+              if (companySnap.exists) {
+                const ow = companySnap.data()?.ownerUid;
+                if (ow) uidSet.add(ow);
+              }
+            } catch {}
+            try {
+              const uoSnap = await db.collection('usuariosOrg').where('orgId', '==', companyId).get();
+              uoSnap.forEach((d) => uidSet.add(d.id));
+            } catch {}
+            try {
+              const usrSnap = await companyRef.collection('usuarios').get();
+              usrSnap.forEach((d) => uidSet.add(d.id));
+            } catch {}
+
             const subcols = ['config','caja','usuarios','sucursales','transferencias','compras','ventas','stock_sucursal','movimientos_stock'];
             for (const sc of subcols) {
               try {
                 await deleteCollectionRecursive(companyRef.collection(sc));
               } catch {}
             }
-            // Borrar doc company
             await companyRef.delete().catch(()=>{});
-            // Borrar subcolecciones conocidas de tenants
             for (const sc of ['config','sucursales']) {
               try { await deleteCollectionRecursive(tenantRef.collection(sc)); } catch {}
             }
             await tenantRef.delete().catch(()=>{});
-            // Limpiar licencia central
+
+            try {
+              const rootSuc = await db.collection('sucursales').where('orgId', '==', companyId).get();
+              const batches = [];
+              let batch = db.batch();
+              let n = 0;
+              rootSuc.docs.forEach((d) => {
+                batch.delete(d.ref);
+                n += 1;
+                if (n >= 400) {
+                  batches.push(batch.commit());
+                  batch = db.batch();
+                  n = 0;
+                }
+              });
+              if (n > 0) batches.push(batch.commit());
+              await Promise.all(batches);
+            } catch {}
+
             await db.collection('licenses').doc(companyId).delete().catch(()=>{});
+
+            for (const uid of uidSet) {
+              try {
+                await db.collection('usuariosOrg').doc(uid).delete();
+              } catch {}
+              try {
+                await admin.auth().deleteUser(uid);
+              } catch (authErr) {
+                console.warn(`[ADMIN DELETE] Auth deleteUser omitido (${uid}):`, authErr?.message || authErr);
+              }
+            }
 
             return res.json({ success:true });
           } catch (e) {

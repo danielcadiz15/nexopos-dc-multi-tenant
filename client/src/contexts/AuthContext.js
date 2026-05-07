@@ -12,6 +12,7 @@ import {
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import { toast } from 'react-toastify';
+import { getEmailActionCodeSettings } from '../utils/emailVerification';
 import sucursalesService from '../services/sucursales.service';
 
 const AuthContext = createContext();
@@ -532,8 +533,14 @@ export function AuthProvider({ children }) {
       
       // Cargar sucursales despues del login
       await cargarSucursalesUsuario(user);
-      
-      toast.success(`Bienvenido ${user.rol}: ${user.email}`);
+
+      if (!firebaseUser.emailVerified) {
+        toast.warning(
+          'Debés verificar tu correo para usar NexoPOS. Abrí el mensaje «Verificación de correo» desde Firebase/noreply, tocá el enlace y revisá también la carpeta de spam.'
+        );
+      } else {
+        toast.success(`Bienvenido ${user.rol}: ${user.email}`);
+      }
       return user;
       
     } catch (error) {
@@ -579,7 +586,7 @@ export function AuthProvider({ children }) {
   const signUp = async (email, password, nombreEmpresa = null) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     const firebaseUser = cred.user;
-    await sendEmailVerification(firebaseUser);
+    await sendEmailVerification(firebaseUser, getEmailActionCodeSettings());
     if (nombreEmpresa && typeof window !== 'undefined') {
       sessionStorage.setItem('pendingEmpresaNombre', nombreEmpresa.trim());
     }
@@ -596,7 +603,9 @@ export function AuthProvider({ children }) {
       emailVerified: firebaseUser.emailVerified
     });
     setIsAuthenticated(true);
-    toast.info('Te enviamos un correo para verificar tu cuenta. Cuando lo confirmes podés crear la empresa.');
+    toast.success(
+      'Te enviamos un correo de verificación al mail que ingresaste. Abrí «Verificación de correo», tocá «Verificar», revisá spam y volvé aquí cuando esté confirmado.'
+    , { autoClose: 6500 });
     return firebaseUser;
   };
 

@@ -287,6 +287,12 @@ exports.setActiveTenant = onCall(async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Debe iniciar sesión');
     }
+    if (!request.auth.token?.email_verified) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Tenés que verificar tu correo electrónico antes de activar una empresa.'
+      );
+    }
     const uid = request.auth.uid;
     const { orgId } = request.data || {};
     if (!orgId) {

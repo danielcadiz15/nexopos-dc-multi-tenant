@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 // Servicios
 import configuracionService from '../../services/configuracion.service';
+import { getEmailActionCodeSettings } from '../../utils/emailVerification';
 import { createTenant, joinTenant, setActiveTenant } from '../../services/firebase.service';
 import { useAuth } from '../../contexts/AuthContext';
 import { isSuperAdminEmail } from '../../config/superAdmin';
@@ -225,10 +226,13 @@ const ConfiguracionEmpresa = () => {
       setCreandoCuentaEmpresa(true);
       // 1) Crear usuario
       const cred = await createUserWithEmailAndPassword(auth, regEmail.trim(), regPass);
-      await sendEmailVerification(cred.user);
+      await sendEmailVerification(cred.user, getEmailActionCodeSettings());
       const empresaTrim = regEmpresa.trim();
       sessionStorage.setItem('pendingEmpresaNombre', empresaTrim);
-      toast.info('Te enviamos un correo para verificar tu cuenta. Luego podés crear la empresa desde la pantalla de verificación.');
+      toast.success(
+        'Correo enviado: revisá tu bandeja para «Verificación de correo electrónico», tocá el enlace y si no ves el mensaje, revisá spam. Volvé a la pantalla «Verificá tu correo» del sistema para crear la empresa.',
+        { autoClose: 7000 }
+      );
       navigate('/verificar-email', { replace: true, state: { empresaNombre: empresaTrim } });
     } catch (err) {
       console.error('Error en registro+creación:', err);
@@ -237,6 +241,10 @@ const ConfiguracionEmpresa = () => {
       setCreandoCuentaEmpresa(false);
     }
   };
+
+  useEffect(() => {
+    sessionStorage.removeItem('postVerifyGoConfig');
+  }, []);
 
   useEffect(() => {
     cargarConfiguracion();
