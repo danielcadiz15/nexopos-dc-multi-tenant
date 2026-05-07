@@ -98,3 +98,9 @@ Variables de entorno del **cliente** (build): copiar desde `client/.env.example`
 ## 7. Nota para usuarios ya existentes
 
 Quienes nunca hubieran verificado el correo en Firebase pueden quedar **bloqueados** hasta verificar (o usar “Reenviar correo” en `/verificar-email`). Es comportamiento esperado tras exigir verificación en toda la app protegida.
+
+---
+
+## 8. Corrección “Ya verifiqué”: token JWT y estado React
+
+Tras hacer clic en el link del mail, `User.emailVerified` se actualiza con `reload()`, pero el **ID token** puede seguir llevando `email_verified: false` hasta forzar **`getIdToken(forceRefresh: true)`**. Las callables (`createTenant`, etc.) leen el token, no solo el objeto `User`. Por eso se expone **`refreshAuthSession`** en `AuthContext` (reload + token nuevo + actualización de `currentUser`). La pantalla `VerificarEmailEmpresa` y `handleCrearEmpresa` en configuración empresa lo usan antes de crear la organización o navegar al inicio.

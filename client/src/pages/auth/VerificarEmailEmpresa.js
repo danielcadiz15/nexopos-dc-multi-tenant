@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { reload, sendEmailVerification } from 'firebase/auth';
+import { sendEmailVerification } from 'firebase/auth';
 import { toast } from 'react-toastify';
 import { auth } from '../../firebase/config';
 import { createTenant, setActiveTenant } from '../../services/firebase.service';
@@ -11,7 +11,7 @@ import Button from '../../components/common/Button';
 const VerificarEmailEmpresa = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { completeCompanyAfterVerification, orgId, currentUser } = useAuth();
+  const { completeCompanyAfterVerification, orgId, currentUser, refreshAuthSession } = useAuth();
   const empresaFromNav = location.state?.empresaNombre;
   const [empresaNombre, setEmpresaNombre] = useState('');
   const [loading, setLoading] = useState(false);
@@ -77,19 +77,18 @@ const VerificarEmailEmpresa = () => {
   const continuarYaVerificado = async () => {
     try {
       setLoading(true);
-      const user = auth.currentUser;
-      if (!user) {
+      if (!auth.currentUser) {
         navigate('/login', { replace: true });
         return;
       }
-      await reload(user);
-      if (!auth.currentUser?.emailVerified) {
+      const { emailVerified } = await refreshAuthSession();
+      if (!emailVerified) {
         toast.warning(
           'Tu correo sigue sin verificar. Abrí el enlace del último correo «Verificación de correo» o pulsá «Reenviar». Revisá la carpeta de spam.'
         );
         return;
       }
-      toast.success('Correo verificado correctamente. Continuemos…');
+      toast.success('Correo verificado correctamente. Ya podés continuar.');
 
       if (!modoNuevaEmpresa) {
         navigate('/', { replace: true });

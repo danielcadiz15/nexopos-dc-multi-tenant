@@ -6,7 +6,13 @@
   "scripts": {
     "start": "concurrently \"npm run server\" \"npm run client\"",
     "server": "npx firebase emulators:start --only functions --project nexopos-dc",
+    "emulators": "firebase emulators:start --project nexopos-dc",
+    "emulators:functions-only": "firebase emulators:start --only functions --project nexopos-dc",
     "client": "npm --prefix client start",
+    "client:emu": "npm --prefix client run start:emu",
+    "client:emu:functions": "npm --prefix client run start:emu:functions",
+    "dev:full-emu": "concurrently \"npm run emulators\" \"npm run client:emu\"",
+    "dev:functions-emu": "concurrently \"npm run emulators:functions-only\" \"npm run client:emu:functions\"",
     "install-all": "npm install && cd functions && npm install && cd ../client && npm install",
     "build": "cd client && npm run build && cd ../functions && npm run build",
     "grant-admin": "node scripts/grant-admin.js",

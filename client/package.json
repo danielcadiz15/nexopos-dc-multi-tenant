@@ -26,6 +26,8 @@
   },
   "scripts": {
     "start": "react-scripts start",
+    "start:emu": "env-cmd -f .env.emulator react-scripts start",
+    "start:emu:functions": "env-cmd -f .env.emulator.functions-only react-scripts start",
     "start:3001": "set PORT=3001 && react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
@@ -60,6 +62,7 @@
   },
   "devDependencies": {
     "autoprefixer": "^10.4.14",
+    "env-cmd": "^11.0.0",
     "postcss": "^8.4.27",
     "tailwindcss": "^3.3.3"
   }

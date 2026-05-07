@@ -1,12 +1,13 @@
 // src/contexts/AuthContext.js - VERSION MEJORADA CON PERMISOS GRANULARES
 
-import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef, useCallback } from 'react';
 import { 
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut, 
   onAuthStateChanged,
   getIdToken,
+  reload,
   sendEmailVerification
 } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
@@ -609,6 +610,55 @@ export function AuthProvider({ children }) {
     return firebaseUser;
   };
 
+  /**
+   * Tras verificar correo desde el link: hay que hacer reload del usuario,
+   * forzar token nuevo (claim email_verified) y actualizar el estado React;
+   * si no, createTenant/login ven token viejo y la UI sigue como no verificado.
+   */
+  const refreshAuthSession = useCallback(async () => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) {
+      return { emailVerified: false };
+    }
+    try {
+      await reload(firebaseUser);
+      await getIdToken(firebaseUser, true);
+      const tokenResult = await firebaseUser.getIdTokenResult(true);
+      const verified = firebaseUser.emailVerified === true;
+      const claimCompanyId =
+        tokenResult.claims?.companyId ||
+        tokenResult.claims?.orgId ||
+        null;
+
+      setCurrentUser((prev) => {
+        if (!prev) return prev;
+        const nextOrg =
+          prev.orgId ||
+          prev.companyId ||
+          claimCompanyId ||
+          localStorage.getItem('companyId') ||
+          localStorage.getItem('orgId') ||
+          null;
+        return {
+          ...prev,
+          emailVerified: verified,
+          ...(nextOrg ? { orgId: nextOrg, companyId: nextOrg } : {})
+        };
+      });
+
+      if (claimCompanyId) {
+        setOrgId((pid) => pid || claimCompanyId);
+        localStorage.setItem('orgId', claimCompanyId);
+        localStorage.setItem('companyId', claimCompanyId);
+      }
+
+      return { emailVerified: verified };
+    } catch (e) {
+      console.warn('[AUTH] refreshAuthSession:', e?.message || e);
+      return { emailVerified: firebaseUser.emailVerified === true };
+    }
+  }, []);
+
   const completeCompanyAfterVerification = async () => {
     const firebaseUser = auth.currentUser;
     if (!firebaseUser) {
@@ -741,6 +791,7 @@ export function AuthProvider({ children }) {
     loading,
     login,
     signUp,
+    refreshAuthSession,
     completeCompanyAfterVerification,
     logout,
     getAccessToken,

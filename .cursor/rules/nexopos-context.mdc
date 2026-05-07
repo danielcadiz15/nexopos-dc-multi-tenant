@@ -9,3 +9,8 @@ alwaysApply: true
 - Este sistema va de la mano con el sistema de caja/cajero (`nexopos-cajero` o la carpeta local equivalente, actualmente `nexopos-dc-caja-android`).
 - Al cambiar flujos de autenticacion, tenants, sucursales, ventas, caja, stock o APIs compartidas, considerar el impacto en ambos sistemas.
 - Mantener especial cuidado con contratos de datos compartidos en Firebase/Firestore, endpoints de Functions y nombres de campos usados por caja/cajero.
+
+## Continuidad entre sesiones (obligatorio)
+
+- Trabajo sustantivo sobre este repo debe quedar registrado actualizando **`docs/CONTEXTO-ASISTENTE.md`**: comandos ejecutados, archivos tocados, decisiones, pendientes y enlaces útiles para el siguiente contexto o agente.
+- Tras cambios grandes, alinear ese documento con **`docs/cambios-pos-verificacion-admin-2026.md`** cuando aplique el mismo tema, o crear una nueva nota corta en `docs/` enlazando desde CONTEXTO.

@@ -12,7 +12,7 @@ import { isSuperAdminEmail } from '../../config/superAdmin';
 
 // Firebase
 import { db, auth } from '../../firebase/config';
-import { createUserWithEmailAndPassword, reload, sendEmailVerification } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 // Componentes
@@ -49,7 +49,7 @@ function Modal({ open, title, children, onClose }){
  * Permite configurar todos los datos que aparecerán en las facturas
  */
 const ConfiguracionEmpresa = () => {
-  const { orgId, currentUser } = useAuth();
+  const { orgId, currentUser, refreshAuthSession } = useAuth();
   const navigate = useNavigate();
 
   const getCompanyId = useCallback(async () => {
@@ -260,12 +260,11 @@ const ConfiguracionEmpresa = () => {
     e?.preventDefault?.();
     if (!empresaNombre.trim()) { toast.error('Nombre de empresa requerido'); return; }
     try {
-      const u = auth.currentUser;
-      if (u) {
-        await reload(u);
-      }
-      if (!auth.currentUser?.emailVerified) {
-        toast.error('Tenés que verificar tu correo antes de crear la empresa. Revisá el mail o entrá desde “Ya verifiqué” en verificación.');
+      const { emailVerified } = await refreshAuthSession();
+      if (!emailVerified) {
+        toast.error(
+          'Tenés que verificar tu correo antes de crear la empresa. Revisá el mail o usá el botón Ya verifiqué en la pantalla Verificá tu correo.'
+        );
         navigate('/verificar-email', { replace: false, state: { empresaNombre: empresaNombre.trim() } });
         return;
       }
