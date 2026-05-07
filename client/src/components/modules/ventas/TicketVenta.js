@@ -12,6 +12,7 @@ import { toast } from 'react-toastify';
 import configuracionService from '../../../services/configuracion.service';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { printHtmlDocument } from '../../../utils/print.utils';
 
 /**
  * Componente de ticket de venta optimizado para Nictom IT03
@@ -21,19 +22,7 @@ const TicketVenta = ({ venta, onClose }) => {
   const ticketA4Ref = useRef();
   
   // Estado para configuración de empresa
-  const [empresaConfig, setEmpresaConfig] = useState({
-    razon_social: 'NexoPOS DC',
-    nombre_fantasia: 'NexoPOS DC',
-    slogan: '',
-    cuit: '20-12345678-9',
-    direccion_calle: '123 Calle Principal',
-    direccion_localidad: 'Ciudad',
-    direccion_provincia: 'Provincia',
-    telefono_principal: '(123) 456-7890',
-    email: 'info@lafabrica.com',
-    logo_url: '',
-    mostrar_logo: true
-  });
+  const [empresaConfig, setEmpresaConfig] = useState(() => configuracionService.obtenerConfiguracionPorDefecto());
   
   // Estado para formato seleccionado
   const [formatoSeleccionado, setFormatoSeleccionado] = useState('termico');
@@ -87,8 +76,6 @@ const TicketVenta = ({ venta, onClose }) => {
       ? ticketTermicoRef.current 
       : ticketA4Ref.current;
       
-    const ventanaImpresion = window.open('', '_blank');
-    
     // Estilos MEJORADOS para Nictom IT03 - Letras más grandes y mejor formato
     const estilos = formatoSeleccionado === 'termico' ? `
       @page { 
@@ -302,15 +289,13 @@ const TicketVenta = ({ venta, onClose }) => {
       </html>
     `;
     
-    ventanaImpresion.document.write(htmlOptimizado);
-    ventanaImpresion.document.close();
-    ventanaImpresion.focus();
-    
-    setTimeout(() => {
-      ventanaImpresion.print();
-      ventanaImpresion.close();
+    try {
+      printHtmlDocument({ title: `Ticket - ${venta.numero || 'SN'}`, bodyHtml: htmlOptimizado });
       toast.success('Ticket enviado a la impresora');
-    }, 500);
+    } catch (error) {
+      console.error('Error imprimiendo ticket:', error);
+      toast.error('No se pudo abrir la impresión');
+    }
   };
 
   const descargarPDF = async () => {

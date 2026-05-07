@@ -24,6 +24,7 @@ import configuracionService from '../../services/configuracion.service';
 import productosService from '../../services/productos.service';
 import ventasService from '../../services/ventas.service';
 import useViewport from '../../hooks/useViewport';
+import { printHtmlDocument } from '../../utils/print.utils';
 
 const formatMoneda = (value) => `$${(parseFloat(value || 0)).toFixed(2)}`;
 
@@ -346,30 +347,12 @@ const MobilePuntoVenta = () => {
       </html>
     `;
 
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow?.document;
-    if (!doc) {
-      document.body.removeChild(iframe);
+    try {
+      printHtmlDocument({ title: 'Ticket', bodyHtml: html });
+    } catch (error) {
+      console.error('[MOBILE POS] Error imprimiendo ticket:', error);
       toast.error('No se pudo abrir la impresión del ticket');
-      return;
     }
-    doc.open();
-    doc.write(html);
-    doc.close();
-
-    setTimeout(() => {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-      setTimeout(() => document.body.removeChild(iframe), 1000);
-    }, 300);
   };
 
   const buscarProductos = async (termino) => {

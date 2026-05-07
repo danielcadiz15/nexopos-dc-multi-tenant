@@ -353,6 +353,10 @@ const ConfiguracionEmpresa = () => {
       try { const configExistente = await configuracionService.obtener(); if (configExistente && configExistente.razon_social) { await configuracionService.actualizar(datosCompletos); } else { await configuracionService.guardar(datosCompletos); } }
       catch { await configuracionService.guardar(datosCompletos); }
       toast.success('Configuración guardada correctamente'); setLogoUrl(logoUrlFinal); setLogoFile(null); setLogoPreview(null);
+      if (wizardMode && orgId) {
+        navigate('/', { replace: true });
+        return;
+      }
       setWizardMode(false);
     } catch (error) { console.error('Error al guardar configuración:', error); toast.error('Error al guardar la configuración'); }
     finally { setGuardando(false); }

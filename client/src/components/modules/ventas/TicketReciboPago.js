@@ -1,7 +1,8 @@
 // src/components/modules/ventas/TicketReciboPago.js
-import React, { forwardRef, useState, useEffect } from 'react';
+import React, { forwardRef, useState, useEffect, useRef } from 'react';
 import { FaTimes } from 'react-icons/fa';
 import configuracionService from '../../../services/configuracion.service';
+import { printHtmlDocument } from '../../../utils/print.utils';
 
 const TicketReciboPago = forwardRef(({ 
   isOpen, 
@@ -11,13 +12,42 @@ const TicketReciboPago = forwardRef(({
   cliente,
   modo = 'pago' // 'pago' para pago recién registrado, 'venta_pagada' para venta ya pagada
 }, ref) => {
+  const internalRef = useRef(null);
   const [configuracionEmpresa, setConfiguracionEmpresa] = useState({
-    nombre: 'NexoPOS DC',
-    direccion: 'Corrientes, Argentina',
+    nombre: '',
+    direccion: '',
     telefono: '',
     email: '',
     cuit: ''
   });
+
+  const setTicketRef = (node) => {
+    internalRef.current = node;
+    if (typeof ref === 'function') ref(node);
+    else if (ref && typeof ref === 'object') ref.current = node;
+  };
+
+  const imprimirRecibo = () => {
+    const node = internalRef.current;
+    if (!node) return;
+    const styles = `
+      @page { size: 80mm auto; margin: 0; }
+      body {
+        margin: 0;
+        padding: 5mm;
+        width: 80mm;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 14px;
+        font-weight: 700;
+      }
+      * { box-sizing: border-box; color: #000; }
+    `;
+    printHtmlDocument({
+      title: 'Recibo de pago',
+      styles,
+      bodyHtml: node.outerHTML
+    });
+  };
 
   useEffect(() => {
     const cargarConfiguracionEmpresa = async () => {
@@ -67,7 +97,7 @@ const TicketReciboPago = forwardRef(({
         {/* Controles */}
         <div className="flex gap-2 mb-4">
           <button
-            onClick={() => window.print()}
+            onClick={imprimirRecibo}
             className="flex-1 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
           >
             Imprimir
@@ -83,7 +113,7 @@ const TicketReciboPago = forwardRef(({
 
         {/* Ticket/Recibo MEJORADO */}
         <div 
-          ref={ref}
+          ref={setTicketRef}
           className="bg-white border border-gray-300 p-4 max-w-sm mx-auto"
           style={{ 
             width: '80mm',
