@@ -56,8 +56,8 @@ Se verificó `npm run emulators:functions-only` — emulador Functions en **5001
 
 ### Último deploy y git (operación humana / asistente)
 
-- **Hosting**: `firebase deploy --only hosting,functions` después de **`npm run build`** (cliente + functions). Sesión siguiente a esta entrada: incluye onboarding empresa (guía + defaults vacíos + service).
-- **Git**: cambios pusheados a `origin/main`; **hash exacto**: `git log -1 --oneline` en `nexopos-dc-multi-tenant`.
+- **Hosting**: `firebase deploy --only hosting,functions` después de **`npm run build`** (cliente + functions); bundle con onboarding empresa (guía sin `orgId`, placeholders, defaults vacíos en servicio/UI).
+- **Git**: `main` → `origin/main`, commit **`491594f`** (mensaje *feat(client): onboarding empresa, guía y datos por defecto vacíos*).
 
 ### Terminal 1 — emuladores (Auth + Firestore + Functions)
 
