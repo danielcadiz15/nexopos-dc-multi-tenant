@@ -11,11 +11,13 @@ Este archivo es **puente entre sesiones** (vos, otro desarrollador o el asistent
 |------|----------------|
 | **Onboarding / crear empresa (UI + datos)** | Sin `orgId`: guía paso a paso en la misma tarjeta (“Configurar empresa”), placeholders y textos cortos por campo para indicar qué va en cada lugar; valores iniciales del formulario ya no traen NexoPOS / Posadas / slogan de ejemplo — quedan vacíos y la referencia es el `placeholder`. Banner azul contextual si aún no hay empresa. Bloque ayuda en “Configuración de facturas” (numeración, PV 0001, térmico). Registro inicial: placeholders en email/nombre empresa. |
 | **`configuracion.service.js`** | `obtenerConfiguracionPorDefecto` y `formatearConfiguracion`: sin texto de marca ni localidad provincial por defecto. Al **guardar**, `punto_venta` vacío → se envía `0001` para no romper backend. Logo: salida API unificada a `tamaño_logo` en el objeto que consume el cliente; al guardar se toma `config.tamaño_logo` o `config.tamano_logo`. Fallback `obtenerConfiguracionEmpresa` ya no usa nombre/dirección de demo. |
+| **API configuración (`functions`)** | **Causa de datos “Condinea”/demo para todos**: el backend leía un documento **global** `configuracion_empresa/datos_principales`. **Fix**: rutas `/configuracion/*` ejecutan **`authenticateUser`** antes; empresa en `companies/{orgId}/config/empresa` y espejo en `tenants/{orgId}/config/empresa`. Sin `req.companyId` → plantilla vacía (solo placeholders del cliente). `?orgId` no reemplaza al token — si diffiere de la sesión, 403. Requiere **deploy de Functions** (el hosting solo no alcanza). |
 
 ### Archivos tocados en lo anterior (lista útil para diff)
 
 - `client/src/pages/configuracion/configuracionempresa.js` — onboarding, placeholders, guía, textos ayuda y banner
 - `client/src/services/configuracion.service.js` — defaults vacíos, `punto_venta` en guardado, `tamaño_logo`, errores nombre/dirección vacíos en fallback antiguo
+- `functions/routes/configuracion.routes.js`, `functions/index.js` — configuración por tenant + auth en `/configuracion`
 
 ### Historial cercano en este repo (contexto anterior)
 

@@ -765,8 +765,9 @@ exports.api = functions.https.onRequest(async (req, res) => {
           return res.json({ success:true, data: mods });
         }
       }
-      // ✅ NUEVO: CONFIGURACIÓN EMPRESARIAL (AGREGAR PRIMERO)
+      // ✅ CONFIGURACIÓN EMPRESARIAL — requiere contexto multi-tenant (req.companyId vía JWT/usuariosOrg)
       if (!responseEnviada && path.startsWith('/configuracion')) {
+        await authenticateUser(req, res, () => {});
         console.log('🏢 [CONFIGURACION] Enrutando a configuración empresarial:', path);
         const configuracionHandled = await configuracionRoutes(req, res, path);
         console.log('🏢 [CONFIGURACION] Handled:', configuracionHandled);

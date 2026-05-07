@@ -1,201 +1,254 @@
 // functions/routes/configuracion.routes.js
+// Configuración empresarial multi-tenant: companies/{orgId}/config/empresa (espejo en tenants)
 const admin = require('firebase-admin');
 const db = admin.firestore();
 
+function emptyEmpresaData() {
+  return {
+    razon_social: '',
+    nombre_fantasia: '',
+    slogan: '',
+    logo_url: '',
+    cuit: '',
+    condicion_iva: 'Responsable Inscripto',
+    ingresos_brutos: '',
+    punto_venta: '',
+    direccion: {
+      calle: '',
+      localidad: '',
+      provincia: '',
+      codigo_postal: '',
+      pais: ''
+    },
+    contacto: {
+      telefono_principal: '',
+      telefono_secundario: '',
+      email: '',
+      website: ''
+    },
+    facturacion: {
+      numeracion_inicial: 1,
+      serie_actual: 'A',
+      formato_predeterminado: 'termico',
+      mostrar_logo: true,
+      tamano_logo: 'mediano',
+      posicion_logo: 'centro',
+      imprimir_ticket_automaticamente: false
+    },
+    caja_modulos: {
+      clientes: true,
+      alerta_deudas: true,
+      pago_deudas: true,
+      ver_comprobante_deuda: true
+    },
+    caja_apk_url: '',
+    activo: true
+  };
+}
+
+function mergeEmpresaData(raw) {
+  const base = emptyEmpresaData();
+  if (!raw || typeof raw !== 'object') return base;
+  const d = { ...base, ...raw };
+  d.direccion = { ...base.direccion, ...(raw.direccion || {}) };
+  d.contacto = { ...base.contacto, ...(raw.contacto || {}) };
+  d.facturacion = { ...base.facturacion, ...(raw.facturacion || {}) };
+  d.caja_modulos = { ...base.caja_modulos, ...(raw.caja_modulos || {}) };
+  return d;
+}
+
+function patchEmpresa(existingMerged, patch) {
+  if (!patch || typeof patch !== 'object') return existingMerged;
+  const out = { ...existingMerged, ...patch };
+  if (patch.direccion) out.direccion = { ...existingMerged.direccion, ...patch.direccion };
+  if (patch.contacto) out.contacto = { ...existingMerged.contacto, ...patch.contacto };
+  if (patch.facturacion) out.facturacion = { ...existingMerged.facturacion, ...patch.facturacion };
+  if (patch.caja_modulos) out.caja_modulos = { ...existingMerged.caja_modulos, ...patch.caja_modulos };
+  return out;
+}
+
+/**
+ * orgId solo desde sesión (claims / usuariosOrg). Si viene ?orgId y no coincide → 403.
+ * No se usa orgId de query como sustituto (evita suplantación).
+ */
+function resolveCompanyId(req, res) {
+  const fromAuth = req.companyId || null;
+  const q = req.query?.orgId;
+  const fromQuery = typeof q === 'string' && q.trim() ? q.trim() : null;
+
+  if (fromQuery && fromAuth && fromQuery !== fromAuth) {
+    res.status(403).json({
+      success: false,
+      message: 'El orgId de la URL no coincide con tu sesión'
+    });
+    return null;
+  }
+
+  return fromAuth || null;
+}
+
+async function readEmpresaDoc(companyId) {
+  const compRef = db.collection('companies').doc(companyId).collection('config').doc('empresa');
+  let snap = await compRef.get();
+  if (snap.exists) return snap.data();
+  const tenRef = db.collection('tenants').doc(companyId).collection('config').doc('empresa');
+  snap = await tenRef.get();
+  if (snap.exists) return snap.data();
+  return null;
+}
+
+async function writeEmpresaDoc(companyId, payload) {
+  const compRef = db.collection('companies').doc(companyId).collection('config').doc('empresa');
+  const tenRef = db.collection('tenants').doc(companyId).collection('config').doc('empresa');
+
+  const prev = await readEmpresaDoc(companyId);
+  const ts = admin.firestore.FieldValue.serverTimestamp();
+  const fecha_creacion = prev?.fecha_creacion || payload.fecha_creacion || ts;
+
+  const data = {
+    ...payload,
+    fecha_creacion,
+    fecha_actualizacion: ts,
+    activo: true
+  };
+
+  await compRef.set(data, { merge: true });
+  await tenRef.set(data, { merge: true });
+
+  const after = await readEmpresaDoc(companyId);
+  return mergeEmpresaData(after || data);
+}
+
 const configuracionRoutes = async (req, res, path) => {
   try {
-    // ? CORS Headers
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    
-    // Manejar preflight OPTIONS
+
     if (req.method === 'OPTIONS') {
       res.status(200).send('');
       return true;
     }
-    
-    const pathParts = path.split('/').filter(p => p);
-    
-    // GET /configuracion/empresa - Obtener configuraci��n empresarial
+
+    const pathParts = path.split('/').filter((p) => p);
+
+    // GET /configuracion/empresa
     if (req.method === 'GET' && pathParts.length === 2 && pathParts[1] === 'empresa') {
       try {
-        console.log('?? [CONFIGURACION] Obteniendo configuraci��n empresarial...');
-        
-        const configDoc = await db.collection('configuracion_empresa').doc('datos_principales').get();
-        
-        if (!configDoc.exists) {
-          console.log('?? [CONFIGURACION] No existe configuraci��n, enviando configuraci��n por defecto');
-          
-          const configPorDefecto = {
-            razon_social: '',
-            nombre_fantasia: 'NexoPOS DC',
-            slogan: 'Especialistas en especias, condimentos e insumos para carnicerias e industria alimentaria',
-            logo_url: '',
-            cuit: '',
-            condicion_iva: 'Responsable Inscripto',
-            ingresos_brutos: '',
-            punto_venta: '0001',
-            direccion: {
-              calle: '',
-              localidad: 'Posadas',
-              provincia: 'Misiones',
-              codigo_postal: '',
-              pais: 'Argentina'
-            },
-            contacto: {
-              telefono_principal: '',
-              telefono_secundario: '',
-              email: '',
-              website: ''
-            },
-            facturacion: {
-              numeracion_inicial: 1,
-              serie_actual: 'A',
-              formato_predeterminado: 'termico',
-              mostrar_logo: true,
-              tamano_logo: 'mediano',
-              posicion_logo: 'centro'
-            },
-            fecha_creacion: new Date().toISOString(),
-            activo: true
-          };
-          
-          res.json({
-            success: true,
-            data: configPorDefecto,
-            message: 'Configuraci��n por defecto'
-          });
+        if (!req.user) {
+          res.status(401).json({ success: false, message: 'Autenticación requerida' });
           return true;
         }
 
-        const configuracion = {
-          id: configDoc.id,
-          ...configDoc.data()
-        };
+        const companyId = resolveCompanyId(req, res);
+        if (companyId === null && res.headersSent) return true;
 
-        console.log('? [CONFIGURACION] Configuraci��n obtenida correctamente');
-        
-        res.json({
-          success: true,
-          data: configuracion,
-          message: 'Configuraci��n obtenida correctamente'
-        });
-        return true;
-        
-      } catch (error) {
-        console.error('? [CONFIGURACION] Error al obtener configuraci��n:', error);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
-        return true;
-      }
-    }
-    
-    // POST /configuracion/empresa - Crear configuraci��n empresarial
-    if (req.method === 'POST' && pathParts.length === 2 && pathParts[1] === 'empresa') {
-      try {
-        const nuevaConfig = req.body;
-        
-        console.log('?? [CONFIGURACION] Creando configuraci��n empresarial:', nuevaConfig);
-
-        const configFirestore = {
-          ...nuevaConfig,
-          fecha_creacion: admin.firestore.FieldValue.serverTimestamp(),
-          fecha_actualizacion: admin.firestore.FieldValue.serverTimestamp(),
-          activo: true
-        };
-
-        await db.collection('configuracion_empresa').doc('datos_principales').set(configFirestore);
-
-        console.log('? [CONFIGURACION] Configuraci��n creada correctamente');
-
-        res.json({
-          success: true,
-          data: {
-            id: 'datos_principales',
-            ...configFirestore
-          },
-          message: 'Configuraci��n empresarial creada correctamente'
-        });
-        return true;
-        
-      } catch (error) {
-        console.error('? [CONFIGURACION] Error al crear configuraci��n:', error);
-        res.status(500).json({
-          success: false,
-          message: 'Error al crear configuraci��n',
-          error: error.message
-        });
-        return true;
-      }
-    }
-    
-    // PUT /configuracion/empresa - Actualizar configuraci��n empresarial
-    if (req.method === 'PUT' && pathParts.length === 2 && pathParts[1] === 'empresa') {
-      try {
-        const datosActualizados = req.body;
-        
-        console.log('?? [CONFIGURACION] Actualizando configuraci��n empresarial:', datosActualizados);
-
-        const configDoc = await db.collection('configuracion_empresa').doc('datos_principales').get();
-        
-        if (!configDoc.exists) {
-          console.log('?? [CONFIGURACION] No existe configuraci��n, creando nueva...');
-          req.method = 'POST';
-          return await configuracionRoutes(req, res, path);
+        if (!companyId) {
+          console.log('[CONFIGURACION] Sin orgId — plantilla vacía');
+          const data = mergeEmpresaData(null);
+          res.json({ success: true, data, message: 'Sin empresa activa' });
+          return true;
         }
 
-        const datosCompletos = {
-          ...datosActualizados,
-          fecha_actualizacion: admin.firestore.FieldValue.serverTimestamp()
-        };
-
-        await db.collection('configuracion_empresa').doc('datos_principales').update(datosCompletos);
-
-        console.log('? [CONFIGURACION] Configuraci��n actualizada correctamente');
+        const stored = await readEmpresaDoc(companyId);
+        const merged = mergeEmpresaData(stored || {});
 
         res.json({
           success: true,
-          data: {
-            id: 'datos_principales',
-            ...datosCompletos
-          },
-          message: 'Configuraci��n actualizada correctamente'
+          data: merged,
+          message: stored ? 'Configuración obtenida' : 'Configuración inicial (vacía)'
         });
         return true;
-        
       } catch (error) {
-        console.error('? [CONFIGURACION] Error al actualizar configuraci��n:', error);
-        res.status(500).json({
-          success: false,
-          message: 'Error al actualizar configuraci��n',
-          error: error.message
-        });
+        console.error('[CONFIGURACION] Error GET empresa:', error);
+        res.status(500).json({ success: false, error: error.message });
         return true;
       }
     }
-    
-    // POST /configuracion/upload-logo - Subir logo TEMPORAL
+
+    // POST /configuracion/empresa
+    if (req.method === 'POST' && pathParts.length === 2 && pathParts[1] === 'empresa') {
+      try {
+        if (!req.user) {
+          res.status(401).json({ success: false, message: 'Autenticación requerida' });
+          return true;
+        }
+
+        const companyId = resolveCompanyId(req, res);
+        if (companyId === null && res.headersSent) return true;
+
+        if (!companyId) {
+          res.status(400).json({ success: false, message: 'No hay empresa activa. Creá o uníte a una organización primero.' });
+          return true;
+        }
+
+        const nuevaConfig = req.body || {};
+        const existingRaw = await readEmpresaDoc(companyId);
+        const merged = patchEmpresa(mergeEmpresaData(existingRaw), nuevaConfig);
+
+        console.log('[CONFIGURACION] POST empresa org', companyId);
+        const data = await writeEmpresaDoc(companyId, merged);
+
+        res.json({
+          success: true,
+          data: { id: 'empresa', ...data },
+          message: 'Configuración empresarial guardada'
+        });
+        return true;
+      } catch (error) {
+        console.error('[CONFIGURACION] Error POST:', error);
+        res.status(500).json({ success: false, message: 'Error al crear configuración', error: error.message });
+        return true;
+      }
+    }
+
+    // PUT /configuracion/empresa
+    if (req.method === 'PUT' && pathParts.length === 2 && pathParts[1] === 'empresa') {
+      try {
+        if (!req.user) {
+          res.status(401).json({ success: false, message: 'Autenticación requerida' });
+          return true;
+        }
+
+        const companyId = resolveCompanyId(req, res);
+        if (companyId === null && res.headersSent) return true;
+
+        if (!companyId) {
+          res.status(400).json({ success: false, message: 'No hay empresa activa.' });
+          return true;
+        }
+
+        const datosActualizados = req.body || {};
+        console.log('[CONFIGURACION] PUT empresa org', companyId);
+
+        const existingRaw = await readEmpresaDoc(companyId);
+        const merged = patchEmpresa(mergeEmpresaData(existingRaw), datosActualizados);
+
+        const data = await writeEmpresaDoc(companyId, merged);
+
+        res.json({
+          success: true,
+          data: { id: 'empresa', ...data },
+          message: 'Configuración actualizada'
+        });
+        return true;
+      } catch (error) {
+        console.error('[CONFIGURACION] Error PUT:', error);
+        res.status(500).json({ success: false, message: 'Error al actualizar', error: error.message });
+        return true;
+      }
+    }
+
+    // POST /configuracion/upload-logo (sin cambio de tenant; temporal)
     if (req.method === 'POST' && pathParts.length === 2 && pathParts[1] === 'upload-logo') {
       try {
-        console.log('?? [CONFIGURACION] Logo guardado temporalmente...');
-
         const { logoData, fileName, mimeType } = req.body;
 
         if (!logoData || !fileName || !mimeType) {
-          res.status(400).json({
-            success: false,
-            message: 'Faltan datos del archivo'
-          });
+          res.status(400).json({ success: false, message: 'Faltan datos del archivo' });
           return true;
         }
 
-        // Guardar como data URL temporal
         const logoUrlTemporal = logoData.startsWith('data:') ? logoData : `data:${mimeType};base64,${logoData}`;
-        
-        console.log('? [CONFIGURACION] Logo guardado temporalmente');
 
         res.json({
           success: true,
@@ -203,28 +256,17 @@ const configuracionRoutes = async (req, res, path) => {
           message: 'Logo guardado temporalmente'
         });
         return true;
-        
       } catch (error) {
-        console.error('? [CONFIGURACION] Error:', error);
-        res.status(500).json({
-          success: false,
-          message: 'Error al procesar logo',
-          error: error.message
-        });
+        console.error('[CONFIGURACION] Error upload-logo:', error);
+        res.status(500).json({ success: false, message: 'Error al procesar logo', error: error.message });
         return true;
       }
     }
-    
-    // Si ninguna ruta coincide
+
     return false;
-    
   } catch (error) {
-    console.error('? [CONFIGURACION] Error en rutas de configuraci��n:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error interno del servidor',
-      error: error.message
-    });
+    console.error('[CONFIGURACION] Error en rutas:', error);
+    res.status(500).json({ success: false, message: 'Error interno', error: error.message });
     return true;
   }
 };
