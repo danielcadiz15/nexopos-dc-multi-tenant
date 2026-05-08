@@ -28,6 +28,8 @@ import { printHtmlDocument } from '../../utils/print.utils';
 
 const formatMoneda = (value) => `$${(parseFloat(value || 0)).toFixed(2)}`;
 const OFFLINE_SALES_KEY = 'mobile_pos_offline_sales_v1';
+const BALANZA_PREFIX_MIN = 20;
+const BALANZA_PREFIX_MAX = 29;
 
 const obtenerPrecioVenta = (producto) => {
   const precioLista =
@@ -75,6 +77,34 @@ const formatearFecha = (value) => {
   const fecha = value?.toDate ? value.toDate() : new Date(value);
   if (Number.isNaN(fecha.getTime())) return 'Sin fecha';
   return fecha.toLocaleDateString('es-AR');
+};
+
+/**
+ * Formato usado para etiquetas de balanza (EAN13 de peso variable):
+ * PP + CCCCC + WWWWW + D
+ * - PP: prefijo 20..29
+ * - CCCCC: código interno del producto (5 dígitos)
+ * - WWWWW: peso en gramos (5 dígitos)
+ * - D: check digit EAN13
+ */
+const parseBalanzaBarcode = (rawCode) => {
+  const code = String(rawCode || '').replace(/\D/g, '');
+  if (code.length !== 13) return null;
+
+  const prefix = parseInt(code.slice(0, 2), 10);
+  if (Number.isNaN(prefix) || prefix < BALANZA_PREFIX_MIN || prefix > BALANZA_PREFIX_MAX) return null;
+
+  const productCode = code.slice(2, 7);
+  const grams = parseInt(code.slice(7, 12), 10);
+  if (Number.isNaN(grams)) return null;
+
+  const weightKg = grams / 1000;
+  return {
+    productCode,
+    grams,
+    weightKg,
+    barcode: code
+  };
 };
 
 const MobilePuntoVenta = () => {
@@ -520,13 +550,28 @@ const MobilePuntoVenta = () => {
 
     try {
       setLoadingBusqueda(true);
-      const producto = await productosService.obtenerPorCodigoConStock(codigo, sucursalVenta);
+      const balanzaData = parseBalanzaBarcode(codigo);
+      const codigoBusqueda = balanzaData?.productCode || codigo;
+      const producto = await productosService.obtenerPorCodigoConStock(codigoBusqueda, sucursalVenta);
       if (!producto || !producto.id) {
         toast.warning('Producto no encontrado');
         return;
       }
 
-      agregarProducto(producto);
+      if (balanzaData) {
+        if (balanzaData.weightKg <= 0) {
+          toast.warning('Etiqueta de balanza inválida: peso no reconocido');
+          return;
+        }
+        agregarProducto(producto, {
+          forceNewLine: true,
+          cantidad: balanzaData.weightKg,
+          codigoBalanza: balanzaData.barcode
+        });
+        toast.success(`Etiqueta balanza: ${balanzaData.weightKg.toFixed(3)} kg de ${producto.nombre}`);
+      } else {
+        agregarProducto(producto);
+      }
     } catch (error) {
       console.error('[MOBILE POS] Error al buscar por código:', error);
       toast.error('Error al leer el código');
@@ -535,7 +580,9 @@ const MobilePuntoVenta = () => {
     }
   };
 
-  const agregarProducto = (producto) => {
+  const agregarProducto = (producto, options = {}) => {
+    const forceNewLine = options.forceNewLine === true;
+    const cantidadInicial = Number.isFinite(options.cantidad) ? options.cantidad : 1;
     const stockDisponible = obtenerStockSucursal(producto);
     const precio = obtenerPrecioVenta(producto);
 
@@ -547,8 +594,8 @@ const MobilePuntoVenta = () => {
     }
 
     setCarrito((items) => {
-      const existente = items.find((item) => item.id === producto.id);
-      if (existente) {
+      const existente = items.find((item) => item.producto_id === producto.id);
+      if (existente && !forceNewLine) {
         if (existente.cantidad >= existente.stock_disponible && existente.stock_disponible > 0) {
           const continuarSinStock = window.confirm(
             `Se agotó el stock de "${existente.nombre}".\n\n¿Querés facturar igual y continuar con stock negativo?`
@@ -557,7 +604,7 @@ const MobilePuntoVenta = () => {
         }
 
         return items.map((item) => (
-          item.id === producto.id
+          item.id === existente.id
             ? { ...item, cantidad: item.cantidad + 1 }
             : item
         ));
@@ -566,12 +613,14 @@ const MobilePuntoVenta = () => {
       return [
         ...items,
         {
-          id: producto.id,
+          id: forceNewLine ? `${producto.id}__${Date.now()}` : producto.id,
+          producto_id: producto.id,
           codigo: producto.codigo || producto.codigo_barras || '',
           nombre: producto.nombre || 'Producto sin nombre',
           precio,
-          cantidad: 1,
-          stock_disponible: stockDisponible
+          cantidad: cantidadInicial,
+          stock_disponible: stockDisponible,
+          codigo_balanza: options.codigoBalanza || null
         }
       ];
     });
@@ -625,7 +674,7 @@ const MobilePuntoVenta = () => {
     }
 
     const lineasConStockAgotado = carrito.filter(
-      (item) => item.stock_disponible > 0 && item.cantidad > item.stock_disponible
+      (item) => item.stock_disponible > 0 && Number(item.cantidad) > Number(item.stock_disponible)
     );
     if (lineasConStockAgotado.length > 0) {
       const confirmar = window.confirm(
@@ -667,14 +716,15 @@ const MobilePuntoVenta = () => {
       };
 
     const detalles = carrito.map((item) => ({
-        producto_id: item.id,
+        producto_id: item.producto_id || item.id,
         cantidad: item.cantidad,
         precio_unitario: item.precio,
         precio_lista: item.precio,
         lista_aplicada: 'interior',
         precio_total: item.precio * item.cantidad,
+        codigo_balanza: item.codigo_balanza || null,
         producto_info: {
-          id: item.id,
+          id: item.producto_id || item.id,
           codigo: item.codigo,
           nombre: item.nombre,
           precio: item.precio
@@ -1183,7 +1233,7 @@ const MobilePuntoVenta = () => {
                 buscarPorCodigoExacto();
               }
             }}
-            placeholder="Escanear código o escribir al menos 3 letras..."
+            placeholder="Escanear código (incluye balanza) o escribir al menos 3 letras..."
             className={`w-full rounded-2xl border-2 border-gray-200 pl-10 pr-3 font-semibold focus:border-blue-500 focus:outline-none sm:pl-12 sm:pr-4 ${compact ? 'py-2.5 text-base' : 'py-4 text-xl'}`}
             inputMode="search"
             disabled={!sucursalVenta || procesandoVenta}
@@ -1199,6 +1249,9 @@ const MobilePuntoVenta = () => {
           <FaBarcode className="mr-2" />
           Agregar por código
         </button>
+        <p className="mt-2 text-xs text-gray-500">
+          Carnicería/balanza: soporta etiquetas EAN13 de peso variable (prefijos 20 a 29).
+        </p>
       </div>
 
       {landscapeTablet ? (
