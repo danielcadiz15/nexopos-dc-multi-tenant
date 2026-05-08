@@ -229,6 +229,9 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
         data: {
           monthlyPriceARS: cfg.monthlyPriceARS,
           currencyId: cfg.currencyId,
+          /** Access token cargado (secreto o env); no implica precio configurado. */
+          mercadoPagoTokenPresent: tokenOk,
+          /** Listo para Checkout: token y precio mensual mayor a cero (Firestore o env). */
           mercadoPagoConfigured: tokenOk && cfg.monthlyPriceARS > 0
         }
       });

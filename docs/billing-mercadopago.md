@@ -75,7 +75,7 @@ Recomendado suscribir notificaciones de **Pagos** (`payment`). El handler acepta
 
 | Método | Ruta | Auth | Uso |
 |--------|------|------|-----|
-| GET | `/api/billing/mercadopago/public-config` | No | Precio y si MP está configurado. |
+| GET | `/api/billing/mercadopago/public-config` | No | Precio, `mercadoPagoTokenPresent`, `mercadoPagoConfigured`. |
 | POST | `/api/billing/mercadopago/preference` | Bearer + `orgId` | Crea preferencia Checkout. |
 | POST | `/api/billing/mercadopago/preapproval` | Bearer + `orgId` + email usuario | Crea preaprobación mensual. |
 | POST/GET | `/api/billing/mercadopago/webhook` | No (MP) | Notificaciones. |
@@ -88,6 +88,56 @@ Recomendado suscribir notificaciones de **Pagos** (`payment`). El handler acepta
 - `client/src/services/billing.service.js` — llamadas desde el front.
 - `client/src/pages/configuracion/configuracionempresa.js` — modal Licencia.
 - `client/src/pages/admin/AdminPanel.js` — precio mensual.
+
+## URLs de producción (proyecto `nexopos-dc`)
+
+| Recurso | URL |
+|--------|-----|
+| Front (Hosting) | `https://nexopos-dc.web.app` |
+| API Cloud Run (`api`) | `https://api-5q2i5764zq-uc.a.run.app` |
+| Webhook (pegar en MP Developers) | `https://api-5q2i5764zq-uc.a.run.app/api/billing/mercadopago/webhook` |
+| `public-config` (smoke test) | `https://api-5q2i5764zq-uc.a.run.app/api/billing/mercadopago/public-config` |
+
+Si en el futuro cambia el host de Cloud Run, actualizá el webhook en Mercado Pago y, si aplica, `PUBLIC_API_BASE` / `MERCADOPAGO_WEBHOOK_URL` en el entorno de la función.
+
+## Checklist de puesta en marcha
+
+1. **Secreto** `MERCADOPAGO_ACCESS_TOKEN` en Google Secret Manager (vía `scripts/mercadopago-secret.ps1` o consola Firebase).
+2. **Redeploy** de `functions:api` tras rotar el secreto (`firebase deploy --only functions:api --project nexopos-dc --force`).
+3. **Precio** `monthlyPriceARS` mayor que cero en Firestore `platform/billing` (super admin → `/admin` → tarjeta de precio licencias) **o** variable `LICENSE_MONTHLY_PRICE_ARS` en Cloud Run.
+4. **Webhook** en [Mercado Pago Developers](https://www.mercadopago.com.ar/developers/panel/app): misma URL de la tabla, eventos de **payment**.
+5. **Prueba manual**: en una empresa, **Configuración → Licencia** → pago de un mes; tras aprobar, revisar `paidUntil` en `companies/{orgId}/config/license` y doc idempotente `billingMercadoPago/pay_<paymentId>`.
+
+## Verificación automática (smoke tests)
+
+Desde PowerShell en la raíz del repo:
+
+```powershell
+.\scripts\verify-billing-mp.ps1
+```
+
+Equivalente con `curl` (no envía credenciales):
+
+```bash
+curl -sS "https://api-5q2i5764zq-uc.a.run.app/api/billing/mercadopago/public-config"
+curl -sS -o /dev/null -w "%{http_code}\n" "https://api-5q2i5764zq-uc.a.run.app/api/billing/mercadopago/webhook"
+```
+
+### Respuesta de `public-config`
+
+| Campo | Significado |
+|-------|----------------|
+| `monthlyPriceARS` | Precio leído de `platform/billing` o `LICENSE_MONTHLY_PRICE_ARS`. |
+| `mercadoPagoTokenPresent` | El servidor tiene access token (secreto o env). |
+| `mercadoPagoConfigured` | **Listo para cobrar en UI**: `mercadoPagoTokenPresent` **y** `monthlyPriceARS > 0`. Si es `false`, mirá los dos campos anteriores: suele faltar precio en Firestore aunque el token esté bien. |
+
+El webhook responde **200** y cuerpo `OK` incluso sin `payment_id` (MP puede hacer pings de prueba); el procesamiento ocurre en segundo plano cuando hay id.
+
+## Resolución de problemas
+
+- **Botones de licencia deshabilitados**: `mercadoPagoConfigured` es `false` → subí precio en `/admin` o variable de entorno; verificá `mercadoPagoTokenPresent`.
+- **Webhook no extiende licencia**: confirmá URL en MP, notificaciones `payment`, y en logs de Cloud Run búsquedas `[MP]` / `[MP webhook]`. El pago debe quedar `approved` y traer `org_id` en metadata o `external_reference` con el `orgId`.
+- **Cambié el token**: nueva versión del secreto + redeploy de `api`.
 
 ## Notas
 
