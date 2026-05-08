@@ -27,6 +27,7 @@ import useViewport from '../../hooks/useViewport';
 import { printHtmlDocument } from '../../utils/print.utils';
 
 const formatMoneda = (value) => `$${(parseFloat(value || 0)).toFixed(2)}`;
+const OFFLINE_SALES_KEY = 'mobile_pos_offline_sales_v1';
 
 const obtenerPrecioVenta = (producto) => {
   const precioLista =
@@ -110,6 +111,8 @@ const MobilePuntoVenta = () => {
   const [medioPagoDeuda, setMedioPagoDeuda] = useState('efectivo');
   const [pagandoDeuda, setPagandoDeuda] = useState(false);
   const [actualizandoApp, setActualizandoApp] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [pendingSalesCount, setPendingSalesCount] = useState(0);
   const viewport = useViewport();
   /**
    * Pico de altura interior: al abrir el teclado `innerHeight` baja y si usamos eso para el layout,
@@ -161,6 +164,54 @@ const MobilePuntoVenta = () => {
       toast.error('No se pudo cerrar la sesión');
     }
   };
+
+  const readOfflineQueue = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(OFFLINE_SALES_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const writeOfflineQueue = useCallback((items) => {
+    const normalized = Array.isArray(items) ? items : [];
+    localStorage.setItem(OFFLINE_SALES_KEY, JSON.stringify(normalized));
+    setPendingSalesCount(normalized.length);
+  }, []);
+
+  const enqueueOfflineSale = useCallback((payload) => {
+    const queue = readOfflineQueue();
+    queue.push({
+      ...payload,
+      offlineSaleId: `offline_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      createdAt: new Date().toISOString()
+    });
+    writeOfflineQueue(queue);
+  }, [readOfflineQueue, writeOfflineQueue]);
+
+  const syncOfflineSales = useCallback(async () => {
+    if (!navigator.onLine) return;
+    const queue = readOfflineQueue();
+    if (!queue.length) return;
+
+    let remaining = [...queue];
+    let synced = 0;
+
+    for (const item of queue) {
+      try {
+        await ventasService.crear(item.venta, item.detalles, item.sucursalVenta);
+        remaining = remaining.filter((r) => r.offlineSaleId !== item.offlineSaleId);
+        synced += 1;
+      } catch (error) {
+        console.warn('[MOBILE POS] No se pudo sincronizar pendiente:', item.offlineSaleId, error?.message);
+      }
+    }
+
+    writeOfflineQueue(remaining);
+    if (synced > 0) toast.success(`Se sincronizaron ${synced} venta(s) pendiente(s).`);
+  }, [readOfflineQueue, writeOfflineQueue]);
 
   const cargarConfigTicket = useCallback(async () => {
     try {
@@ -220,6 +271,28 @@ const MobilePuntoVenta = () => {
   useEffect(() => {
     searchInputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    setPendingSalesCount(readOfflineQueue().length);
+  }, [readOfflineQueue]);
+
+  useEffect(() => {
+    const goOnline = () => {
+      setIsOnline(true);
+      syncOfflineSales();
+    };
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, [syncOfflineSales]);
+
+  useEffect(() => {
+    if (isOnline) syncOfflineSales();
+  }, [isOnline, syncOfflineSales]);
 
   useEffect(() => {
     cargarConfigTicket();
@@ -362,7 +435,7 @@ const MobilePuntoVenta = () => {
     try {
       setLoadingBusqueda(true);
       const productos = await productosService.buscarConStockPorSucursal(texto, sucursalVenta);
-      setResultados((Array.isArray(productos) ? productos : []).filter((producto) => obtenerStockSucursal(producto) > 0));
+      setResultados(Array.isArray(productos) ? productos : []);
     } catch (error) {
       console.error('[MOBILE POS] Error al buscar productos:', error);
       toast.error('No se pudieron buscar productos');
@@ -448,8 +521,8 @@ const MobilePuntoVenta = () => {
     try {
       setLoadingBusqueda(true);
       const producto = await productosService.obtenerPorCodigoConStock(codigo, sucursalVenta);
-      if (!producto || !producto.id || obtenerStockSucursal(producto) <= 0) {
-        toast.warning('Producto no encontrado o sin stock en esta sucursal');
+      if (!producto || !producto.id) {
+        toast.warning('Producto no encontrado');
         return;
       }
 
@@ -467,16 +540,20 @@ const MobilePuntoVenta = () => {
     const precio = obtenerPrecioVenta(producto);
 
     if (stockDisponible <= 0) {
-      toast.warning(`${producto.nombre} no tiene stock en esta sucursal`);
-      return;
+      const continuarSinStock = window.confirm(
+        `El stock de "${producto.nombre}" está agotado.\n\n¿Querés facturar de todas maneras?`
+      );
+      if (!continuarSinStock) return;
     }
 
     setCarrito((items) => {
       const existente = items.find((item) => item.id === producto.id);
       if (existente) {
-        if (existente.cantidad >= existente.stock_disponible) {
-          toast.warning(`Stock máximo alcanzado: ${existente.stock_disponible}`);
-          return items;
+        if (existente.cantidad >= existente.stock_disponible && existente.stock_disponible > 0) {
+          const continuarSinStock = window.confirm(
+            `Se agotó el stock de "${existente.nombre}".\n\n¿Querés facturar igual y continuar con stock negativo?`
+          );
+          if (!continuarSinStock) return items;
         }
 
         return items.map((item) => (
@@ -512,7 +589,7 @@ const MobilePuntoVenta = () => {
 
       return [{
         ...item,
-        cantidad: Math.min(cantidad, item.stock_disponible)
+        cantidad
       }];
     }));
   };
@@ -547,11 +624,18 @@ const MobilePuntoVenta = () => {
       return;
     }
 
-    try {
-      setProcesandoVenta(true);
+    const lineasConStockAgotado = carrito.filter(
+      (item) => item.stock_disponible > 0 && item.cantidad > item.stock_disponible
+    );
+    if (lineasConStockAgotado.length > 0) {
+      const confirmar = window.confirm(
+        `Hay productos con stock agotado:\n- ${lineasConStockAgotado.map((i) => i.nombre).join('\n- ')}\n\n¿Querés facturar de todas maneras?`
+      );
+      if (!confirmar) return;
+    }
 
-      const totalPagado = metodoPago === 'efectivo' ? total : total;
-      const venta = {
+    const totalPagado = metodoPago === 'efectivo' ? total : total;
+    const venta = {
         sucursal_id: sucursalVenta,
         cliente_id: clienteSeleccionado?.id || null,
         cliente_nombre: clienteSeleccionado?.id ? nombreCliente(clienteSeleccionado) : 'Cliente General',
@@ -582,7 +666,7 @@ const MobilePuntoVenta = () => {
         estado_pago: 'pagado'
       };
 
-      const detalles = carrito.map((item) => ({
+    const detalles = carrito.map((item) => ({
         producto_id: item.id,
         cantidad: item.cantidad,
         precio_unitario: item.precio,
@@ -597,6 +681,8 @@ const MobilePuntoVenta = () => {
         }
       }));
 
+    try {
+      setProcesandoVenta(true);
       const respuesta = await ventasService.crear(venta, detalles, sucursalVenta);
       const ventaCreada = respuesta?.data?.data || respuesta?.data || respuesta || {};
       const ticket = {
@@ -627,7 +713,32 @@ const MobilePuntoVenta = () => {
       limpiarVenta();
     } catch (error) {
       console.error('[MOBILE POS] Error al finalizar venta:', error);
-      toast.error(error?.message || 'No se pudo registrar la venta');
+      const msg = String(error?.message || '').toLowerCase();
+      const networkError = !navigator.onLine || msg.includes('network') || msg.includes('fetch') || msg.includes('timeout') || msg.includes('conexion');
+      if (networkError) {
+        const offlineTs = Date.now();
+        const offlineTicket = {
+          ...venta,
+          id: `PEND-${offlineTs}`,
+          numero: `PEND-${offlineTs}`,
+          fecha: new Date().toISOString(),
+          detalles: carrito.map((item) => ({
+            nombre: item.nombre,
+            codigo: item.codigo,
+            cantidad: item.cantidad,
+            precio_unitario: item.precio,
+            precio_total: item.precio * item.cantidad
+          }))
+        };
+        enqueueOfflineSale({ venta, detalles, sucursalVenta });
+        setUltimaVenta({ id: offlineTicket.id, total, vuelto, metodoPago });
+        if (configTicket?.imprimir_ticket_automaticamente) imprimirTicket(offlineTicket);
+        else setTicketPendiente(offlineTicket);
+        limpiarVenta();
+        toast.warning('Sin conexión: venta guardada como pendiente. Se sincronizará automáticamente al reconectar.');
+      } else {
+        toast.error(error?.message || 'No se pudo registrar la venta');
+      }
     } finally {
       setProcesandoVenta(false);
     }
@@ -674,7 +785,7 @@ const MobilePuntoVenta = () => {
                 <div className="min-w-0">
                   <div className={`font-black text-gray-900 ${landscapeTablet ? 'text-base leading-snug' : 'text-lg'}`}>{producto.nombre}</div>
                   <div className="text-sm text-gray-500">Código: {producto.codigo || 'Sin código'}</div>
-                  <div className="mt-1 text-sm font-semibold text-green-700">
+                  <div className={`mt-1 text-sm font-semibold ${obtenerStockSucursal(producto) > 0 ? 'text-green-700' : 'text-red-600'}`}>
                     Stock: {obtenerStockSucursal(producto)}
                   </div>
                 </div>
@@ -727,7 +838,7 @@ const MobilePuntoVenta = () => {
         <button
           type="button"
           onClick={() => actualizarCantidad(item.id, item.cantidad + 1)}
-          disabled={item.cantidad >= item.stock_disponible}
+          disabled={false}
           className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-700 disabled:opacity-40"
           aria-label={`Sumar ${item.nombre}`}
         >
@@ -988,6 +1099,12 @@ const MobilePuntoVenta = () => {
             </button>
           </div>
         </div>
+      </div>
+
+      <div className={`shrink-0 rounded-xl border p-2 text-sm font-semibold shadow-sm ${isOnline ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+        {isOnline
+          ? `En linea${pendingSalesCount > 0 ? ` · Pendientes por sincronizar: ${pendingSalesCount}` : ' · Sin pendientes'}`
+          : `Sin conexion · Ventas pendientes: ${pendingSalesCount}. Podes seguir facturando y se sincroniza al volver internet.`}
       </div>
 
       {sucursalesDisponibles?.length > 1 && (
@@ -1377,7 +1494,7 @@ const MobilePuntoVenta = () => {
                         <button
                           type="button"
                           onClick={() => actualizarCantidad(item.id, item.cantidad + 1)}
-                          disabled={item.cantidad >= item.stock_disponible}
+                          disabled={false}
                           className="flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100 text-gray-700 disabled:opacity-40"
                         >
                           <FaPlus />
