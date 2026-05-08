@@ -5,7 +5,20 @@ Este archivo es **puente entre sesiones** (vos, otro desarrollador o el asistent
 
 ---
 
-## Última actualización resumida (sesión más reciente)
+## Última actualización resumida (sesión más reciente — 2026-05-08)
+
+| Tema | Qué se hizo |
+|------|----------------|
+| **Deploy + doc + revisión funcional** | Se ejecutó **`npm run build`**: compilación OK (solo ESLint/source map/Browserslist como antes). Doc ampliado en **`docs/cambios-pos-verificacion-admin-2026.md`** (§9 balanza EAN13, §10 offline/cola, §11 checklist deploy). **`.gitignore`**: carpeta **`backups/`** ignorada. Push a **`origin/main`** y **`firebase deploy --only hosting,functions`** (con timeout de discovery ampliado si hace falta). |
+| **POS móvil — balanza EAN13** | En `MobilePuntoVenta.js`: etiquetas peso variable prefijo 20–29, cantidad desde gramos, líneas separadas con `producto_id`/`codigo_balanza`. Commit **`88684fb`**. |
+
+### Histórico inmediato (mismo día, commit anterior)
+
+| Tema | Qué se hizo |
+|------|----------------|
+| **Caja móvil offline** | Cola en `localStorage`, sync al volver online, flujo venta con confirmación ante stock superado / negativo. Commit del **2026-05-08** (mensaje feat caja offline). |
+
+### Sesiones anteriores (contexto Wizard / API empresa)
 
 | Tema | Qué se hizo |
 |------|----------------|
@@ -59,8 +72,11 @@ Se verificó `npm run emulators:functions-only` — emulador Functions en **5001
 
 ### Último deploy y git (operación humana / asistente)
 
-- **Hosting**: `firebase deploy --only hosting,functions` tras **`npm run build`**. Último deploy incorpora wizard interactivo de configuración en [nexopos-dc.web.app](https://nexopos-dc.web.app) (Hosting actualizó 23 archivos; Functions sin cambios).
-- **Git**: `main` → `origin/main` con wizard en **`9413f31`**. Historial anterior relevante: `a1a6707` (fix API configuración por tenant) + docs de seguimiento.
+- Ver **primer commit que aparezca** tras esta sesión con mensaje tipo *deploy / docs 2026-05-08* — convive con **`88684fb`** (balanza POS) ya en `origin/main`.
+- Comando estándar: **`npm run build`** → **`firebase deploy --only hosting,functions`** (si CLI da timeout en discovery de Functions: `FUNCTIONS_DISCOVERY_TIMEOUT=60` o equivalente PowerShell antes del deploy).
+- Sitio: [nexopos-dc.web.app](https://nexopos-dc.web.app).
+
+*(Despliegues Wizard/config API anteriores: commits `9413f31`, `a1a6707` en el mismo repo.)*
 
 ### Terminal 1 — emuladores (Auth + Firestore + Functions)
 

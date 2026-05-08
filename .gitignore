@@ -89,3 +89,6 @@ temp/
 
 # DynamoDB Local files
 .dynamodb/
+
+# Backups locales (no versionar dumps)
+backups/

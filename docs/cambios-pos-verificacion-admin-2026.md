@@ -82,7 +82,7 @@ Variables de entorno del **cliente** (build): copiar desde `client/.env.example`
 
 | Área | Archivos |
 |------|----------|
-| Caja móvil landscape | `client/src/components/mobile/MobilePuntoVenta.js` |
+| Caja móvil landscape + balanza + offline | `client/src/components/mobile/MobilePuntoVenta.js` |
 | Rutas admin móvil | `client/src/App.js` |
 | Protección + verificación | `client/src/components/common/ProtectedRoute.js` |
 | Auth / signup | `client/src/contexts/AuthContext.js` |
@@ -104,3 +104,34 @@ Quienes nunca hubieran verificado el correo en Firebase pueden quedar **bloquead
 ## 8. Corrección “Ya verifiqué”: token JWT y estado React
 
 Tras hacer clic en el link del mail, `User.emailVerified` se actualiza con `reload()`, pero el **ID token** puede seguir llevando `email_verified: false` hasta forzar **`getIdToken(forceRefresh: true)`**. Las callables (`createTenant`, etc.) leen el token, no solo el objeto `User`. Por eso se expone **`refreshAuthSession`** en `AuthContext` (reload + token nuevo + actualización de `currentUser`). La pantalla `VerificarEmailEmpresa` y `handleCrearEmpresa` en configuración empresa lo usan antes de crear la organización o navegar al inicio.
+
+---
+
+## 9. POS móvil — etiquetas de balanza (EAN-13 peso variable)
+
+Archivo: `client/src/components/mobile/MobilePuntoVenta.js`.
+
+- **Detección**: código de **13 dígitos** tras quitar caracteres no numéricos; **prefijo 20–29** (configurable con `BALANZA_PREFIX_MIN` / `BALANZA_PREFIX_MAX`).
+- **Parseo**: `PP` + **`CCCCC`** (código interno 5 dígitos para buscar el producto) + **`WWWWW`** (peso en gramos) + dígito verificador EAN-13.
+- **Carrito**: al leer una etiqueta válida se agrega línea nueva con **`forceNewLine: true`** y **`cantidad` = peso en kg**, para no sumar líneas cuando el mismo producto se pesó varias veces. Cada ítem usa **`producto_id`** como ID Firebase del producto y **`id`** de línea (único cuando aplica balanza: `producto.id + timestamp`).
+- **`detalles` de venta**: `producto_id` y campos relacionados priorizan `producto_id` sobre la `id` de línea; **`codigo_balanza`** guarda la lectura para trazabilidad.
+- UI: texto de ayuda debajo del botón “Agregar por código” y placeholder del buscador indican soporte balanza.
+
+---
+
+## 10. POS móvil — cola offline y ventas con stock negativo (mismo día, commit previo)
+
+- Cola **`localStorage`** (`mobile_pos_offline_sales_v1`): ventas encoladas sin red; sincronización al volver **`online`**.
+- Opción de confirmar cobro cuando el stock muestra líneas sobre disponible (**stock negativo** permitido tras confirmación).
+- Listener `offline`/`online` para modo degradado.
+
+(Detalle línea por línea: commit **`feat(caja): modo offline con cola local y venta con stock agotado`**.)
+
+---
+
+## 11. Verificación previa deploy (2026-05-08)
+
+- **`npm run build`** desde la raíz: `client` (CRA) → `functions` (sin paso de compilación TS adicional configurado).
+- Esperado: **solo warnings ESLint** y aviso opcional **Browserslist** / source map ausente (`html2pdf.js`); la salida debe terminar con “The build folder is ready to be deployed”.
+- Si **Firebase CLI** falla por *discovery timeout*: `FUNCTIONS_DISCOVERY_TIMEOUT=60` (o `$env:FUNCTIONS_DISCOVERY_TIMEOUT='60'` en PowerShell) antes de `firebase deploy --only hosting,functions`.
+- URL producción habitual: **`https://nexopos-dc.web.app`**.
