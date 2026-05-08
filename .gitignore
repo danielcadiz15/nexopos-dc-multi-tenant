@@ -92,3 +92,7 @@ temp/
 
 # Backups locales (no versionar dumps)
 backups/
+
+# Token Mercado Pago (nunca commitear)
+secrets/mercadopago-token.txt
+.mp-token.local

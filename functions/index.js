@@ -1,6 +1,11 @@
 // functions/index.js - VERSIÓN MODIFICADA PARA MIGRACIÓN + CONFIGURACIÓN
 const functions = require('firebase-functions');
+const { onRequest } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
+
+/** Secreto en Google Secret Manager (configurás con Firebase CLI tras deploy). Ver scripts/mercadopago-secret.ps1 */
+const mercadopagoAccessTokenSecret = defineSecret('MERCADOPAGO_ACCESS_TOKEN');
 
 // ==================== INICIALIZAR FIREBASE PRIMERO ====================
 admin.initializeApp();
@@ -378,7 +383,7 @@ async function enriquecerVentasConClientes(ventas) {
 
 // ==================== API PRINCIPAL (CONSOLIDADA Y CORREGIDA) ====================
 
-exports.api = functions.https.onRequest(async (req, res) => {
+async function nexoposMainApi(req, res) {
   try {
     // Configurar CORS una sola vez
     configurarCORS(res);
@@ -1130,7 +1135,27 @@ exports.api = functions.https.onRequest(async (req, res) => {
       });
     }
   }
-});
+}
+
+exports.api = onRequest(
+  {
+    region: 'us-central1',
+    invoker: 'public',
+    cors: false,
+    secrets: [mercadopagoAccessTokenSecret]
+  },
+  async (req, res) => {
+    try {
+      const v = mercadopagoAccessTokenSecret.value();
+      if (typeof v === 'string' && v.trim()) {
+        process.env.MERCADOPAGO_ACCESS_TOKEN = v.trim();
+      }
+    } catch (e) {
+      console.warn('[api] secreto Mercado Pago no disponible aún:', e?.message || e);
+    }
+    return nexoposMainApi(req, res);
+  }
+);
 
 // Eliminar la función limpiarSucursalesDuplicadas
 

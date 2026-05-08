@@ -12,12 +12,34 @@ Integración server-side para cobrar la **licencia NexoPOS** en **ARS** y **exte
 2. **Firestore**: el backend escribe `companies/{orgId}/config/license`, `licenses/{orgId}`, `billingMercadoPago/*` y opcionalmente `platform/billing`.
 3. **Cloud Functions / Cloud Run**: URL pública estable del API (ej. `https://…run.app/api`).
 
-## Configuración en el servidor
+## Configuración en el servidor (recomendado: Firebase Secrets)
+
+La función **`api`** usa **`defineSecret('MERCADOPAGO_ACCESS_TOKEN')`**: el token vive en **Google Secret Manager** y Firebase inyecta el valor en tiempo de ejecución.
+
+### Cómo cargar el token real (Mercado Pago → Credenciales de producción → Access Token)
+
+Desde la raíz del repo, **sin pegar el token en el código**:
+
+```powershell
+$env:MERCADOPAGO_ACCESS_TOKEN = "APP_USR-xxxx"   # tu token real
+.\scripts\mercadopago-secret.ps1
+```
+
+O un archivo `./secrets/mercadopago-token.txt` con **una línea** (está en `.gitignore):
+
+```powershell
+.\scripts\mercadopago-secret.ps1 -TokenFile ".\secrets\mercadopago-token.txt"
+```
+
+El comando `firebase functions:secrets:set … --force` crea una **nueva versión** del secreto; tras unos minutos Cloud Run usará esa versión (o redeploy menor de `api` si hiciera falta).
+
+### Fallback (solo si trabajás sin Secrets)
+
+Si en algún momento asignás `process.env.MERCADOPAGO_ACCESS_TOKEN` desde Cloud Run, el mismo código también lo contempla después de leer el secreto.
 
 | Variable / config | Descripción |
 |-------------------|-------------|
-| `MERCADOPAGO_ACCESS_TOKEN` | Access token de la aplicación MP (Producción o Test). Preferir **secreto de entorno** en Firebase/Google Cloud. |
-| Alternativa Firebase | `firebase functions:config:set mercadopago.access_token="APP_USR-..."` (legacy; el código lee `mercadopago.access_token`). |
+| `MERCADOPAGO_ACCESS_TOKEN` | Access token MP; **prioridad**: secreto Firebase `MERCADOPAGO_ACCESS_TOKEN`, luego variable de entorno en Cloud Run. |
 | `LICENSE_MONTHLY_PRICE_ARS` | Fallback de precio si no hay doc en Firestore (opcional). |
 | `PUBLIC_APP_URL` | Base del front para `back_urls` (default `https://nexopos-dc.web.app`). |
 | `PUBLIC_API_BASE` | Base del API **sin** path final; se arma el webhook como `{PUBLIC_API_BASE}/api/billing/mercadopago/webhook`. |
