@@ -21,7 +21,11 @@ Write-Host "`nInterpretación:" -ForegroundColor Yellow
 $d = $cfg.data
 if ($d.mercadoPagoTokenPresent) { Write-Host "  - Access token: presente en el servidor." -ForegroundColor Green }
 else { Write-Host "  - Access token: NO detectado (revisá secreto MERCADOPAGO_ACCESS_TOKEN y redeploy de api)." -ForegroundColor Red }
-if ([double]$d.monthlyPriceARS -gt 0) { Write-Host "  - Precio mensual ARS:" $d.monthlyPriceARS -ForegroundColor Green }
-else { Write-Host "  - Precio mensual: 0 (configurá /admin Licencias o doc platform/billing)." -ForegroundColor Red }
-if ($d.mercadoPagoConfigured) { Write-Host "  - Checkout habilitado: sí." -ForegroundColor Green }
-else { Write-Host "  - Checkout habilitado: no (hace falta token Y precio > 0)." -ForegroundColor Yellow }
+$pp = $d.planPrices
+if ($null -ne $pp) {
+  Write-Host "  - Precios por plan (ARS/mes): Básica=$($pp.basic) Intermedia=$($pp.intermediate) Premium=$($pp.premium)" -ForegroundColor Cyan
+}
+if ([double]$d.monthlyPriceARS -gt 0) { Write-Host "  - monthlyPriceARS (espejo Básica):" $d.monthlyPriceARS -ForegroundColor Green }
+else { Write-Host "  - monthlyPriceARS / plan Básica: 0 (cargá precios en /admin o platform/billing.planPrices)." -ForegroundColor Red }
+if ($d.mercadoPagoConfigured) { Write-Host "  - Al menos un plan con precio + token: sí." -ForegroundColor Green }
+else { Write-Host "  - Cobro online: no (hace falta token y al menos un plan con precio mayor a cero)." -ForegroundColor Yellow }

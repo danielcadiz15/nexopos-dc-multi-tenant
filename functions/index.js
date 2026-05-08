@@ -56,6 +56,7 @@ const serviciosVehiculosRoutes = require('./routes/servicios.vehiculos.routes');
 // Rutas de Caja
 const cajaRoutes = require('./routes/caja.routes');
 const billingMercadoPagoRoutes = require('./routes/billing-mercadopago.routes');
+const { normalizePlan: normalizeLicensePlanId } = require('./utils/planTiers');
 
 // Rutas de Control de Stock
 const controlStockRoutes = require('./routes/control-stock.routes');
@@ -744,6 +745,9 @@ async function nexoposMainApi(req, res) {
         if (path.match(/^\/admin\/empresas\/[^/]+\/licencia$/) && req.method === 'PUT') {
           const companyId = path.split('/')[3];
           const payload = req.body || {};
+          if (payload.plan != null) {
+            payload.plan = normalizeLicensePlanId(payload.plan);
+          }
           payload.updatedAt = new Date().toISOString();
           await db.collection('licenses').doc(companyId).set(payload, { merge: true });
           await db.collection('companies').doc(companyId).collection('config').doc('license').set(payload, { merge: true });
@@ -771,26 +775,82 @@ async function nexoposMainApi(req, res) {
           return res.json({ success:true, data: mods });
         }
 
-        // GET/PUT /admin/platform/billing — precio público de licencia mensual (Mercado Pago)
+        // GET/PUT /admin/platform/billing — precios licencia por plan (Mercado Pago)
         if (path === '/admin/platform/billing' && req.method === 'GET') {
           const snap = await db.collection('platform').doc('billing').get();
+          const raw = snap.exists ? snap.data() || {} : {};
+          const planTiers = ['basic', 'intermediate', 'premium'];
+          const planPrices = { basic: 0, intermediate: 0, premium: 0 };
+          if (raw.planPrices && typeof raw.planPrices === 'object') {
+            for (const k of planTiers) {
+              if (raw.planPrices[k] != null && !Number.isNaN(Number(raw.planPrices[k]))) {
+                planPrices[k] = Number(raw.planPrices[k]);
+              }
+            }
+          }
+          const legacy = raw.monthlyPriceARS != null ? Number(raw.monthlyPriceARS) : null;
+          if (planPrices.basic <= 0 && legacy != null && !Number.isNaN(legacy) && legacy > 0) {
+            planPrices.basic = legacy;
+          }
           return res.json({
             success: true,
-            data: snap.exists ? snap.data() : { monthlyPriceARS: null }
+            data: {
+              ...raw,
+              planPrices,
+              monthlyPriceARS:
+                planPrices.basic > 0 ? planPrices.basic : legacy != null ? legacy : null
+            }
           });
         }
         if (path === '/admin/platform/billing' && req.method === 'PUT') {
           const body = req.body || {};
-          const monthlyPriceARS =
-            body.monthlyPriceARS != null ? Number(body.monthlyPriceARS) : NaN;
-          if (Number.isNaN(monthlyPriceARS) || monthlyPriceARS < 0) {
+          const planTiers = ['basic', 'intermediate', 'premium'];
+          const snap = await db.collection('platform').doc('billing').get();
+          const existing = snap.exists ? snap.data() || {} : {};
+          const mergedPrices = {
+            basic: 0,
+            intermediate: 0,
+            premium: 0,
+            ...(existing.planPrices && typeof existing.planPrices === 'object' ? existing.planPrices : {})
+          };
+
+          if (body.planPrices && typeof body.planPrices === 'object') {
+            for (const k of planTiers) {
+              if (body.planPrices[k] === undefined || body.planPrices[k] === null) continue;
+              const n = Number(body.planPrices[k]);
+              if (Number.isNaN(n) || n < 0) {
+                return res.status(400).json({
+                  success: false,
+                  message: `planPrices.${k} inválido`
+                });
+              }
+              mergedPrices[k] = n;
+            }
+          }
+
+          if (body.monthlyPriceARS != null) {
+            const monthlyPriceARS = Number(body.monthlyPriceARS);
+            if (Number.isNaN(monthlyPriceARS) || monthlyPriceARS < 0) {
+              return res.status(400).json({
+                success: false,
+                message: 'monthlyPriceARS inválido'
+              });
+            }
+            mergedPrices.basic = monthlyPriceARS;
+          }
+
+          if (!body.planPrices && body.monthlyPriceARS == null) {
             return res.status(400).json({
               success: false,
-              message: 'monthlyPriceARS inválido'
+              message: 'Enviá planPrices (basic, intermediate, premium) o monthlyPriceARS (solo Básica).'
             });
           }
+
+          const monthlyPriceARS = mergedPrices.basic;
+
           await db.collection('platform').doc('billing').set(
             {
+              planPrices: mergedPrices,
               monthlyPriceARS,
               updatedAt: new Date().toISOString()
             },

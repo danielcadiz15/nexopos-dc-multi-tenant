@@ -10,12 +10,12 @@ export async function getBillingPublicConfig() {
   return { data, status };
 }
 
-/** Checkout Pro — un mes; abre init_point en nueva pestaña. */
-export async function createLicenseMercadoPagoPreference() {
-  return api.post('/preference', {});
+/** Checkout Pro — un mes; `plan` = basic | intermediate | premium (default: plan de la empresa). */
+export async function createLicenseMercadoPagoPreference(body = {}) {
+  return api.post('/preference', body);
 }
 
 /** Suscripción con débito automático mensual (preapproval). */
-export async function createLicenseMercadoPagoPreapproval() {
-  return api.post('/preapproval', {});
+export async function createLicenseMercadoPagoPreapproval(body = {}) {
+  return api.post('/preapproval', body);
 }

@@ -40,17 +40,29 @@ Si en algún momento asignás `process.env.MERCADOPAGO_ACCESS_TOKEN` desde Cloud
 | Variable / config | Descripción |
 |-------------------|-------------|
 | `MERCADOPAGO_ACCESS_TOKEN` | Access token MP; **prioridad**: secreto Firebase `MERCADOPAGO_ACCESS_TOKEN`, luego variable de entorno en Cloud Run. |
-| `LICENSE_MONTHLY_PRICE_ARS` | Fallback de precio si no hay doc en Firestore (opcional). |
+| `LICENSE_MONTHLY_PRICE_ARS` | Fallback solo para precio **Básica** si no hay `planPrices.basic` en Firestore (opcional). |
 | `PUBLIC_APP_URL` | Base del front para `back_urls` (default `https://nexopos-dc.web.app`). |
 | `PUBLIC_API_BASE` | Base del API **sin** path final; se arma el webhook como `{PUBLIC_API_BASE}/api/billing/mercadopago/webhook`. |
 | `MERCADOPAGO_WEBHOOK_URL` | Si se define, **reemplaza** el armado automático del webhook (URL completa). |
 
-## Precio mensual (operación)
+## Precios por plan (operación)
 
-- **Panel super admin** (`/admin`): tarjeta *Licencias — precio Mercado Pago* → escribe `platform/billing.monthlyPriceARS`.
-- O variable `LICENSE_MONTHLY_PRICE_ARS` en el entorno de Functions.
+Hay **tres planes** con precio mensual independiente en **ARS**:
 
-Sin precio `> 0` o sin token MP, los botones en **Configuración → Licencia** quedan deshabilitados con mensaje claro.
+| Plan (Firestore / API) | Etiqueta UI |
+|------------------------|-------------|
+| `basic` | Básica |
+| `intermediate` | Intermedia |
+| `premium` | Premium |
+
+- **Firestore** `platform/billing.planPrices`: objeto `{ basic, intermediate, premium }` (números ≥ 0).
+- **Compatibilidad**: si solo existe `monthlyPriceARS` (dato viejo), se usa como precio de **Básica** y se refleja en `planPrices.basic` al guardar desde admin.
+- **Panel super admin** (`/admin`): tarjeta *Licencias — precios por plan* → guarda los tres valores.
+- Variable **`LICENSE_MONTHLY_PRICE_ARS`** en Functions sigue siendo solo **fallback para Básica** si no hay `planPrices.basic` en Firestore.
+
+**Checkout y suscripción** usan el plan de la empresa (`companies/.../config/license.plan`) o el plan elegido en el modal **Configuración → Licencia**, y cobran el monto de `planPrices` correspondiente. Si ese plan tiene precio 0, los botones de pago quedan deshabilitados aunque otro plan sí tenga precio.
+
+Los valores históricos de plan **`pro`** y **`enterprise`** se normalizan a **Intermedia** y **Premium** al leer/guardar.
 
 ## Webhook en Mercado Pago
 
@@ -75,16 +87,18 @@ Recomendado suscribir notificaciones de **Pagos** (`payment`). El handler acepta
 
 | Método | Ruta | Auth | Uso |
 |--------|------|------|-----|
-| GET | `/api/billing/mercadopago/public-config` | No | Precio, `mercadoPagoTokenPresent`, `mercadoPagoConfigured`. |
-| POST | `/api/billing/mercadopago/preference` | Bearer + `orgId` | Crea preferencia Checkout. |
-| POST | `/api/billing/mercadopago/preapproval` | Bearer + `orgId` + email usuario | Crea preaprobación mensual. |
+| GET | `/api/billing/mercadopago/public-config` | No | `planPrices`, `monthlyPriceARS` (espejo Básica), flags MP. |
+| POST | `/api/billing/mercadopago/preference` | Bearer + `orgId` | Body opcional `{ "plan": "basic" \| "intermediate" \| "premium" }` (default: plan de la empresa). |
+| POST | `/api/billing/mercadopago/preapproval` | Bearer + `orgId` + email usuario | Igual, body opcional `plan`. Guarda `mercadopagoBillingPlan` en la licencia. |
 | POST/GET | `/api/billing/mercadopago/webhook` | No (MP) | Notificaciones. |
-| GET/PUT | `/api/admin/platform/billing` | Super admin email | Leer/escribir precio global. |
+| GET/PUT | `/api/admin/platform/billing` | Super admin email | GET: `planPrices` + `monthlyPriceARS`. PUT: `{ planPrices: { basic, intermediate, premium } }` y/o `monthlyPriceARS` (solo Básica). |
 
 ## Archivos relevantes
 
 - `functions/routes/billing-mercadopago.routes.js` — lógica MP + extensión de licencia.
+- `functions/utils/planTiers.js` — normalización de IDs de plan (basic / intermediate / premium).
 - `functions/index.js` — registro de rutas `/billing` y `/admin/platform/billing`.
+- `client/src/utils/planTiers.js` — misma semántica de planes en el front (mantener alineado con Functions).
 - `client/src/services/billing.service.js` — llamadas desde el front.
 - `client/src/pages/configuracion/configuracionempresa.js` — modal Licencia.
 - `client/src/pages/admin/AdminPanel.js` — precio mensual.
@@ -104,7 +118,7 @@ Si en el futuro cambia el host de Cloud Run, actualizá el webhook en Mercado Pa
 
 1. **Secreto** `MERCADOPAGO_ACCESS_TOKEN` en Google Secret Manager (vía `scripts/mercadopago-secret.ps1` o consola Firebase).
 2. **Redeploy** de `functions:api` tras rotar el secreto (`firebase deploy --only functions:api --project nexopos-dc --force`).
-3. **Precio** `monthlyPriceARS` mayor que cero en Firestore `platform/billing` (super admin → `/admin` → tarjeta de precio licencias) **o** variable `LICENSE_MONTHLY_PRICE_ARS` en Cloud Run.
+3. **Precios** `platform/billing.planPrices` (Básica / Intermedia / Premium): al menos uno mayor que cero; **o** solo `monthlyPriceARS` legacy (equivale a Básica); **o** `LICENSE_MONTHLY_PRICE_ARS` en Cloud Run como fallback de Básica.
 4. **Webhook** en [Mercado Pago Developers](https://www.mercadopago.com.ar/developers/panel/app): misma URL de la tabla, eventos de **payment**.
 5. **Prueba manual**: en una empresa, **Configuración → Licencia** → pago de un mes; tras aprobar, revisar `paidUntil` en `companies/{orgId}/config/license` y doc idempotente `billingMercadoPago/pay_<paymentId>`.
 
@@ -127,9 +141,10 @@ curl -sS -o /dev/null -w "%{http_code}\n" "https://api-5q2i5764zq-uc.a.run.app/a
 
 | Campo | Significado |
 |-------|----------------|
-| `monthlyPriceARS` | Precio leído de `platform/billing` o `LICENSE_MONTHLY_PRICE_ARS`. |
+| `planPrices` | `{ basic, intermediate, premium }` desde `platform/billing`. |
+| `monthlyPriceARS` | Espejo del precio **Básica** (compatibilidad con clientes viejos). |
 | `mercadoPagoTokenPresent` | El servidor tiene access token (secreto o env). |
-| `mercadoPagoConfigured` | **Listo para cobrar en UI**: `mercadoPagoTokenPresent` **y** `monthlyPriceARS > 0`. Si es `false`, mirá los dos campos anteriores: suele faltar precio en Firestore aunque el token esté bien. |
+| `mercadoPagoConfigured` | Token y **al menos un** plan con precio mayor a cero. |
 
 El webhook responde **200** y cuerpo `OK` incluso sin `payment_id` (MP puede hacer pings de prueba); el procesamiento ocurre en segundo plano cuando hay id.
 

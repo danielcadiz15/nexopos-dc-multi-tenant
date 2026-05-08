@@ -9,8 +9,15 @@ const admin = require('firebase-admin');
 const functions = require('firebase-functions');
 const db = admin.firestore();
 const { authenticateUser } = require('../utils/auth');
+const { PLAN_TIERS, normalizePlan } = require('../utils/planTiers');
 
 const MP_API = 'https://api.mercadopago.com';
+
+const PLAN_LABEL_ES = {
+  basic: 'Básica',
+  intermediate: 'Intermedia',
+  premium: 'Premium'
+};
 
 function getAccessToken() {
   const fromEnv = process.env.MERCADOPAGO_ACCESS_TOKEN;
@@ -50,20 +57,80 @@ async function mpFetch(path, options = {}) {
   return data;
 }
 
+function emptyPlanPrices() {
+  return { basic: 0, intermediate: 0, premium: 0 };
+}
+
 async function loadBillingConfig() {
-  let monthlyPriceARS = Number(process.env.LICENSE_MONTHLY_PRICE_ARS || 0);
+  let legacyMonthly = Number(process.env.LICENSE_MONTHLY_PRICE_ARS || 0);
+  const planPrices = emptyPlanPrices();
   try {
     const snap = await db.collection('platform').doc('billing').get();
     if (snap.exists) {
       const d = snap.data() || {};
       if (d.monthlyPriceARS != null && !Number.isNaN(Number(d.monthlyPriceARS))) {
-        monthlyPriceARS = Number(d.monthlyPriceARS);
+        legacyMonthly = Number(d.monthlyPriceARS);
+      }
+      const pp = d.planPrices && typeof d.planPrices === 'object' ? d.planPrices : {};
+      for (const k of PLAN_TIERS) {
+        if (pp[k] != null && !Number.isNaN(Number(pp[k]))) {
+          planPrices[k] = Number(pp[k]);
+        }
       }
     }
   } catch (e) {
     console.warn('[billing] loadBillingConfig:', e.message);
   }
-  return { monthlyPriceARS, currencyId: 'ARS' };
+  if (planPrices.basic <= 0 && legacyMonthly > 0) {
+    planPrices.basic = legacyMonthly;
+  }
+  const monthlyPriceARS = planPrices.basic;
+  return { monthlyPriceARS, planPrices, currencyId: 'ARS' };
+}
+
+function priceForPlan(cfg, planId) {
+  const id = normalizePlan(planId);
+  const n = cfg.planPrices[id];
+  return typeof n === 'number' && !Number.isNaN(n) ? n : 0;
+}
+
+function anyPlanHasPositivePrice(cfg) {
+  return PLAN_TIERS.some((k) => priceForPlan(cfg, k) > 0);
+}
+
+async function loadCompanyPlanForBilling(orgId) {
+  const id = String(orgId || '').trim();
+  if (!id) return 'basic';
+  try {
+    const ref = db.collection('companies').doc(id).collection('config').doc('license');
+    let snap = await ref.get();
+    let lic = snap.exists ? snap.data() || {} : {};
+    if (!lic.plan && !snap.exists) {
+      const r2 = await db.collection('licenses').doc(id).get();
+      if (r2.exists) lic = { ...lic, ...(r2.data() || {}) };
+    }
+    return normalizePlan(lic.plan);
+  } catch (e) {
+    console.warn('[billing] loadCompanyPlanForBilling:', e.message);
+    return 'basic';
+  }
+}
+
+async function resolvePlanFromApprovedPayment(payment, orgId) {
+  const meta = payment.metadata || {};
+  const fromMeta = meta.plan || meta.plan_id;
+  if (fromMeta) return normalizePlan(fromMeta);
+
+  const id = String(orgId || '').trim();
+  if (!id) return null;
+  try {
+    const snap = await db.collection('companies').doc(id).collection('config').doc('license').get();
+    const lic = snap.exists ? snap.data() || {} : {};
+    const fromLic = lic.mercadopagoBillingPlan || lic.plan;
+    return normalizePlan(fromLic);
+  } catch {
+    return 'basic';
+  }
 }
 
 function getPublicAppUrl() {
@@ -100,7 +167,7 @@ function resolveOrgIdFromPayment(payment) {
   return null;
 }
 
-async function extendLicenseByOneMonth(orgId, paymentId, sourceLabel) {
+async function extendLicenseByOneMonth(orgId, paymentId, sourceLabel, planToApply = null) {
   const id = String(orgId).trim();
   if (!id) return { skipped: true, reason: 'no_org' };
 
@@ -141,18 +208,23 @@ async function extendLicenseByOneMonth(orgId, paymentId, sourceLabel) {
       updatedAt: new Date().toISOString()
     };
 
+    if (planToApply != null && String(planToApply).trim() !== '') {
+      payload.plan = normalizePlan(planToApply);
+    }
+
     t.set(txnRef, {
       orgId: id,
       paymentId: String(paymentId),
       source: sourceLabel || 'webhook',
       paidUntil,
+      plan: payload.plan || null,
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     t.set(licRefCompany, payload, { merge: true });
     t.set(licRefRoot, payload, { merge: true });
 
-    return { alreadyApplied: false, paidUntil };
+    return { alreadyApplied: false, paidUntil, plan: payload.plan || null };
   });
 }
 
@@ -170,7 +242,8 @@ async function processPaymentNotification(paymentId) {
     return;
   }
 
-  const result = await extendLicenseByOneMonth(orgId, paymentId, 'payment_approved');
+  const planToApply = await resolvePlanFromApprovedPayment(payment, orgId);
+  const result = await extendLicenseByOneMonth(orgId, paymentId, 'payment_approved', planToApply);
   console.log('[MP] licencia extendida:', orgId, result);
 }
 
@@ -228,11 +301,12 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
         success: true,
         data: {
           monthlyPriceARS: cfg.monthlyPriceARS,
+          planPrices: cfg.planPrices,
           currencyId: cfg.currencyId,
           /** Access token cargado (secreto o env); no implica precio configurado. */
           mercadoPagoTokenPresent: tokenOk,
-          /** Listo para Checkout: token y precio mensual mayor a cero (Firestore o env). */
-          mercadoPagoConfigured: tokenOk && cfg.monthlyPriceARS > 0
+          /** Al menos un plan con precio mensual mayor a cero. */
+          mercadoPagoConfigured: tokenOk && anyPlanHasPositivePrice(cfg)
         }
       });
     } catch (e) {
@@ -253,27 +327,33 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
           message: 'Pagos online no configurados. Contactá al administrador.'
         });
       }
-      if (!(cfg.monthlyPriceARS > 0)) {
+
+      const body = req.body || {};
+      const requestedPlan = body.plan != null ? normalizePlan(body.plan) : null;
+      const plan = requestedPlan || (await loadCompanyPlanForBilling(orgId));
+      const unitPrice = priceForPlan(cfg, plan);
+      if (!(unitPrice > 0)) {
         return res.status(503).json({
           success: false,
-          message: 'Precio de licencia no configurado (platform/billing o LICENSE_MONTHLY_PRICE_ARS).'
+          message: `Precio no configurado para el plan «${plan}» (panel admin → planPrices o platform/billing).`
         });
       }
 
       const appUrl = getPublicAppUrl();
       const notificationUrl = getWebhookUrl(req);
       const payerEmail = req.user.email || '';
+      const planLabel = PLAN_LABEL_ES[plan] || plan;
 
       const preference = await mpFetch('/checkout/preferences', {
         method: 'POST',
         body: JSON.stringify({
           items: [
             {
-              id: 'nexopos_license_1m',
-              title: 'NexoPOS — Licencia 1 mes',
-              description: `Organización ${orgId}`,
+              id: `nexopos_license_1m_${plan}`,
+              title: `NexoPOS — Licencia 1 mes (${planLabel})`,
+              description: `Organización ${orgId} — plan ${planLabel}`,
               quantity: 1,
-              unit_price: cfg.monthlyPriceARS,
+              unit_price: unitPrice,
               currency_id: cfg.currencyId
             }
           ],
@@ -281,7 +361,8 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
           external_reference: `org:${orgId}`,
           metadata: {
             org_id: orgId,
-            kind: 'license_month'
+            kind: 'license_month',
+            plan
           },
           back_urls: {
             success: `${appUrl}/configuracion/empresa?mp=approved`,
@@ -325,10 +406,15 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
           message: 'Pagos online no configurados.'
         });
       }
-      if (!(cfg.monthlyPriceARS > 0)) {
+
+      const body = req.body || {};
+      const requestedPlan = body.plan != null ? normalizePlan(body.plan) : null;
+      const plan = requestedPlan || (await loadCompanyPlanForBilling(orgId));
+      const unitPrice = priceForPlan(cfg, plan);
+      if (!(unitPrice > 0)) {
         return res.status(503).json({
           success: false,
-          message: 'Precio de licencia no configurado.'
+          message: `Precio no configurado para el plan «${plan}».`
         });
       }
 
@@ -344,15 +430,17 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
       const end = new Date();
       end.setFullYear(end.getFullYear() + 3);
 
+      const planLabel = PLAN_LABEL_ES[plan] || plan;
+
       const pre = await mpFetch('/preapproval', {
         method: 'POST',
         body: JSON.stringify({
-          reason: 'Abono mensual NexoPOS',
+          reason: `Abono mensual NexoPOS (${planLabel})`,
           external_reference: `org:${orgId}`,
           auto_recurring: {
             frequency: 1,
             frequency_type: 'months',
-            transaction_amount: cfg.monthlyPriceARS,
+            transaction_amount: unitPrice,
             currency_id: cfg.currencyId,
             start_date: start.toISOString(),
             end_date: end.toISOString()
@@ -368,6 +456,7 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
         {
           mercadopagoPreapprovalId: String(pre.id),
           mercadopagoPreapprovalStatus: pre.status || 'pending',
+          mercadopagoBillingPlan: plan,
           updatedAt: new Date().toISOString()
         },
         { merge: true }
@@ -376,6 +465,7 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
         {
           mercadopagoPreapprovalId: String(pre.id),
           mercadopagoPreapprovalStatus: pre.status || 'pending',
+          mercadopagoBillingPlan: plan,
           updatedAt: new Date().toISOString()
         },
         { merge: true }

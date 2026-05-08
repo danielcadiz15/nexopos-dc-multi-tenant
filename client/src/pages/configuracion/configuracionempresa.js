@@ -19,6 +19,7 @@ import {
   createLicenseMercadoPagoPreference,
   createLicenseMercadoPagoPreapproval
 } from '../../services/billing.service';
+import { normalizeLicensePlan, PLAN_LABELS_ES } from '../../utils/planTiers';
 
 // Componentes
 import Card from '../../components/common/Card';
@@ -152,7 +153,9 @@ const ConfiguracionEmpresa = () => {
   const abrirPagoMercadoPagoMes = async () => {
     setBillingMpLoading(true);
     try {
-      const { data, status } = await createLicenseMercadoPagoPreference();
+      const { data, status } = await createLicenseMercadoPagoPreference({
+        plan: normalizeLicensePlan(lic.plan)
+      });
       const url = data?.data?.init_point || data?.data?.sandbox_init_point;
       if (status === 200 && data?.success && url) {
         window.open(url, '_blank', 'noopener,noreferrer');
@@ -172,7 +175,9 @@ const ConfiguracionEmpresa = () => {
   const abrirSuscripcionMercadoPago = async () => {
     setBillingMpLoading(true);
     try {
-      const { data, status } = await createLicenseMercadoPagoPreapproval();
+      const { data, status } = await createLicenseMercadoPagoPreapproval({
+        plan: normalizeLicensePlan(lic.plan)
+      });
       const url = data?.data?.init_point || data?.data?.sandbox_init_point;
       if (status === 200 && data?.success && url) {
         window.open(url, '_blank', 'noopener,noreferrer');
@@ -203,6 +208,7 @@ const ConfiguracionEmpresa = () => {
         if(s2.exists()) data = s2.data();
       }
       const merged = { paidUntil: '', blocked: false, reason: '', plan: 'basic', pagoBilleteraUrl: '', ...(data||{}) };
+      merged.plan = normalizeLicensePlan(merged.plan);
       setLic(merged);
       // calcular días restantes
       if (merged.paidUntil) {
@@ -245,7 +251,7 @@ const ConfiguracionEmpresa = () => {
       const cid = await getCompanyId();
       if(!cid) { toast.error('OrgId no disponible'); return; }
       setSavingLic(true);
-      const payload = { ...lic, updatedAt: new Date().toISOString() };
+      const payload = { ...lic, plan: normalizeLicensePlan(lic.plan), updatedAt: new Date().toISOString() };
       await setDoc(doc(db, `licenses/${cid}`), payload, { merge: true });
       await setDoc(doc(db, `companies/${cid}/config/license`), payload, { merge: true });
       toast.success('Licencia actualizada');
@@ -1508,9 +1514,9 @@ const ConfiguracionEmpresa = () => {
           <div>
             <label className="block text-sm text-gray-700 mb-1">Plan</label>
             <select className="input" value={lic.plan} onChange={e=> setLic(prev=> ({ ...prev, plan: e.target.value }))}>
-              <option value="basic">Basic</option>
-              <option value="pro">Pro</option>
-              <option value="enterprise">Enterprise</option>
+              <option value="basic">{PLAN_LABELS_ES.basic}</option>
+              <option value="intermediate">{PLAN_LABELS_ES.intermediate}</option>
+              <option value="premium">{PLAN_LABELS_ES.premium}</option>
             </select>
           </div>
           <div>
@@ -1531,38 +1537,67 @@ const ConfiguracionEmpresa = () => {
               Cada pago aprobado suma <strong>un mes</strong> a «Válida hasta». El cobro recurrente usa tu email de
               sesión en Mercado Pago.
             </p>
-            {billingMp?.mercadoPagoConfigured ? (
-              <p className="mt-2 text-sm text-gray-800">
-                Precio configurado:{' '}
-                <strong>
-                  ${Number(billingMp.monthlyPriceARS || 0).toLocaleString('es-AR')} ARS
-                </strong>{' '}
-                / mes
-              </p>
-            ) : (
-              <p className="mt-2 text-xs text-amber-800">
-                Aún no está activo el cobro online: el administrador debe cargar el Access Token en el servidor y el
-                precio mensual (panel admin o variable de entorno).
-              </p>
-            )}
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              <button
-                type="button"
-                disabled={billingMpLoading || !billingMp?.mercadoPagoConfigured}
-                onClick={abrirPagoMercadoPagoMes}
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-              >
-                {billingMpLoading ? 'Abriendo…' : 'Pagar 1 mes (Checkout)'}
-              </button>
-              <button
-                type="button"
-                disabled={billingMpLoading || !billingMp?.mercadoPagoConfigured}
-                onClick={abrirSuscripcionMercadoPago}
-                className="rounded-md border border-indigo-600 px-4 py-2 text-sm font-semibold text-indigo-700 disabled:opacity-50"
-              >
-                {billingMpLoading ? 'Abriendo…' : 'Suscripción mensual automática'}
-              </button>
-            </div>
+            {(() => {
+              const planKey = normalizeLicensePlan(lic.plan);
+              const arsPlan = Number(billingMp?.planPrices?.[planKey] ?? billingMp?.monthlyPriceARS ?? 0);
+              const tokenOk = billingMp?.mercadoPagoTokenPresent;
+              const puedeEstePlan = tokenOk && arsPlan > 0;
+              return (
+                <>
+                  {billingMp?.mercadoPagoConfigured ? (
+                    <div className="mt-2 space-y-1 text-sm text-gray-800">
+                      <p>
+                        Plan en el desplegable: <strong>{PLAN_LABELS_ES[planKey]}</strong> —{' '}
+                        <strong>${arsPlan.toLocaleString('es-AR')} ARS</strong> / mes
+                      </p>
+                      <ul className="text-xs text-gray-600 list-disc list-inside">
+                        <li>
+                          {PLAN_LABELS_ES.basic}:{' '}
+                          ${Number(billingMp?.planPrices?.basic ?? 0).toLocaleString('es-AR')} ARS
+                        </li>
+                        <li>
+                          {PLAN_LABELS_ES.intermediate}:{' '}
+                          ${Number(billingMp?.planPrices?.intermediate ?? 0).toLocaleString('es-AR')} ARS
+                        </li>
+                        <li>
+                          {PLAN_LABELS_ES.premium}: $
+                          {Number(billingMp?.planPrices?.premium ?? 0).toLocaleString('es-AR')} ARS
+                        </li>
+                      </ul>
+                      {!puedeEstePlan && tokenOk ? (
+                        <p className="text-xs text-amber-800">
+                          Este plan no tiene precio mayor a cero. Elegí otro plan o pedí al administrador que cargue
+                          precios en /admin.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-amber-800">
+                      Aún no está activo el cobro online: el administrador debe cargar el Access Token en el servidor y
+                      al menos un precio por plan (panel admin o variable de entorno).
+                    </p>
+                  )}
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    <button
+                      type="button"
+                      disabled={billingMpLoading || !puedeEstePlan}
+                      onClick={abrirPagoMercadoPagoMes}
+                      className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      {billingMpLoading ? 'Abriendo…' : 'Pagar 1 mes (Checkout)'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={billingMpLoading || !puedeEstePlan}
+                      onClick={abrirSuscripcionMercadoPago}
+                      className="rounded-md border border-indigo-600 px-4 py-2 text-sm font-semibold text-indigo-700 disabled:opacity-50"
+                    >
+                      {billingMpLoading ? 'Abriendo…' : 'Suscripción mensual automática'}
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
           <div className="col-span-2">
             <label className="block text-sm text-gray-700 mb-1">Enlace de pago manual (opcional)</label>

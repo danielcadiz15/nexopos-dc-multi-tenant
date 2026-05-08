@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import ApiService from '../../services/api.service';
 import { toast } from 'react-toastify';
+import { normalizeLicensePlan, PLAN_LABELS_ES } from '../../utils/planTiers';
 
 const api = new ApiService('/admin');
 
@@ -10,14 +11,20 @@ const AdminPanel = () => {
   const [editLic, setEditLic] = useState(null); // { id, plan, paidUntil, blocked, reason }
   const [editMods, setEditMods] = useState(null); // { id, modules }
   const [saving, setSaving] = useState(false);
-  const [precioLicenciaMensual, setPrecioLicenciaMensual] = useState('');
+  const [planPricesForm, setPlanPricesForm] = useState({ basic: '', intermediate: '', premium: '' });
   const [savingPrecio, setSavingPrecio] = useState(false);
 
   const cargarPrecioPlataforma = async () => {
     try {
       const { data, status } = await api.get('/platform/billing');
-      if (status === 200 && data?.success && data?.data?.monthlyPriceARS != null) {
-        setPrecioLicenciaMensual(String(data.data.monthlyPriceARS));
+      if (status === 200 && data?.success && data?.data) {
+        const d = data.data;
+        const pp = d.planPrices || {};
+        setPlanPricesForm({
+          basic: String(pp.basic ?? d.monthlyPriceARS ?? ''),
+          intermediate: String(pp.intermediate ?? ''),
+          premium: String(pp.premium ?? '')
+        });
       }
     } catch {
       /* ignorar */
@@ -26,17 +33,23 @@ const AdminPanel = () => {
 
   const guardarPrecioPlataforma = async () => {
     try {
-      const n = Number(precioLicenciaMensual);
-      if (Number.isNaN(n) || n < 0) {
-        toast.error('Precio inválido');
-        return;
+      const planPrices = {
+        basic: Number(planPricesForm.basic),
+        intermediate: Number(planPricesForm.intermediate),
+        premium: Number(planPricesForm.premium)
+      };
+      for (const k of ['basic', 'intermediate', 'premium']) {
+        if (Number.isNaN(planPrices[k]) || planPrices[k] < 0) {
+          toast.error(`Precio inválido (${k})`);
+          return;
+        }
       }
       setSavingPrecio(true);
-      const { status } = await api.put('/platform/billing', { monthlyPriceARS: n });
-      if (status === 200) toast.success('Precio mensual NexoPOS guardado');
+      const { status } = await api.put('/platform/billing', { planPrices });
+      if (status === 200) toast.success('Precios por plan guardados');
       else toast.error('No se pudo guardar');
     } catch {
-      toast.error('Error al guardar precio');
+      toast.error('Error al guardar precios');
     } finally {
       setSavingPrecio(false);
     }
@@ -69,7 +82,7 @@ const AdminPanel = () => {
     try {
       if (!editLic) return;
       setSaving(true);
-      const payload = { plan: editLic.plan||'basic', paidUntil: editLic.paidUntil||'', blocked: !!editLic.blocked, reason: editLic.reason||'' };
+      const payload = { plan: normalizeLicensePlan(editLic.plan), paidUntil: editLic.paidUntil||'', blocked: !!editLic.blocked, reason: editLic.reason||'' };
       const { status } = await api.put(`/empresas/${editLic.id}/licencia`, payload);
       if (status === 200) { toast.success('Licencia actualizada'); setEditLic(null); await cargar(); }
       else toast.error('No se pudo actualizar licencia');
@@ -129,32 +142,41 @@ const AdminPanel = () => {
       </div>
 
       <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
-        <h2 className="text-lg font-semibold text-gray-800">Licencias — precio Mercado Pago (ARS / mes)</h2>
+        <h2 className="text-lg font-semibold text-gray-800">Licencias — precios por plan (ARS / mes)</h2>
         <p className="text-sm text-gray-600 mt-1">
-          Lo usan Checkout y la suscripción recurrente. Debés configurar además{' '}
-          <code className="bg-gray-100 px-1 rounded">MERCADOPAGO_ACCESS_TOKEN</code> en Cloud Functions y la URL del
-          webhook en el panel de Mercado Pago (ver <code className="bg-gray-100 px-1 rounded">docs/billing-mercadopago.md</code>).
+          Planes <strong>Básica</strong>, <strong>Intermedia</strong> y <strong>Premium</strong>. Checkout y suscripción
+          cobran según el plan de la empresa (o el que elija en Configuración → Licencia). También:{' '}
+          <code className="bg-gray-100 px-1 rounded">MERCADOPAGO_ACCESS_TOKEN</code> y webhook MP (
+          <code className="bg-gray-100 px-1 rounded">docs/billing-mercadopago.md</code>).
         </p>
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Precio mensual</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              className="border rounded px-3 py-2 w-40"
-              value={precioLicenciaMensual}
-              onChange={(e) => setPrecioLicenciaMensual(e.target.value)}
-              placeholder="ej. 15000"
-            />
-          </div>
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {[
+            { key: 'basic', label: 'Básica' },
+            { key: 'intermediate', label: 'Intermedia' },
+            { key: 'premium', label: 'Premium' }
+          ].map(({ key, label }) => (
+            <div key={key}>
+              <label className="block text-xs text-gray-500 mb-1">{label}</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="border rounded px-3 py-2 w-full max-w-[11rem]"
+                value={planPricesForm[key]}
+                onChange={(e) => setPlanPricesForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                placeholder="0"
+              />
+            </div>
+          ))}
+        </div>
+        <div className="mt-3">
           <button
             type="button"
             disabled={savingPrecio}
             className="px-4 py-2 rounded bg-green-600 text-white disabled:opacity-50"
             onClick={guardarPrecioPlataforma}
           >
-            {savingPrecio ? 'Guardando…' : 'Guardar precio'}
+            {savingPrecio ? 'Guardando…' : 'Guardar precios'}
           </button>
         </div>
       </div>
@@ -180,12 +202,12 @@ const AdminPanel = () => {
                 <tr key={e.id} className="border-t">
                   <td className="px-4 py-2">{e.name||'(sin nombre)'}</td>
                   <td className="px-4 py-2">{e.ownerEmail || '(sin email)'}</td>
-                  <td className="px-4 py-2">{lic.plan||'basic'}</td>
+                  <td className="px-4 py-2">{PLAN_LABELS_ES[normalizeLicensePlan(lic.plan)] || normalizeLicensePlan(lic.plan)}</td>
                   <td className="px-4 py-2">{paid}</td>
                   <td className="px-4 py-2">{e.daysLeft ?? '-'}</td>
                   <td className="px-4 py-2">{lic.blocked? 'Sí':'No'}</td>
                   <td className="px-4 py-2 space-x-2">
-                    <button className="px-2 py-1 bg-indigo-600 text-white rounded" onClick={()=> setEditLic({ id:e.id, plan: lic.plan||'basic', paidUntil: lic.paidUntil||'', blocked: !!lic.blocked, reason: lic.reason||'' })}>Licencia</button>
+                    <button className="px-2 py-1 bg-indigo-600 text-white rounded" onClick={()=> setEditLic({ id:e.id, plan: normalizeLicensePlan(lic.plan), paidUntil: lic.paidUntil||'', blocked: !!lic.blocked, reason: lic.reason||'' })}>Licencia</button>
                     <button className="px-2 py-1 bg-gray-700 text-white rounded" onClick={()=> abrirModulos(e.id)}>Módulos</button>
                     <button className="px-2 py-1 bg-red-600 text-white rounded" onClick={()=> eliminarEmpresa(e.id)}>Eliminar</button>
                   </td>
@@ -204,9 +226,9 @@ const AdminPanel = () => {
               <div>
                 <label className="text-sm">Plan</label>
                 <select className="input w-full" value={editLic.plan} onChange={e=> setEditLic(prev=>({...prev, plan:e.target.value}))}>
-                  <option value="basic">Basic</option>
-                  <option value="pro">Pro</option>
-                  <option value="enterprise">Enterprise</option>
+                  <option value="basic">Básica</option>
+                  <option value="intermediate">Intermedia</option>
+                  <option value="premium">Premium</option>
                 </select>
               </div>
               <div>

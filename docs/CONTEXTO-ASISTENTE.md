@@ -9,7 +9,7 @@ Este archivo es **puente entre sesiones** (vos, otro desarrollador o el asistent
 
 | Tema | Qué se hizo |
 |------|----------------|
-| **Licencias — Mercado Pago** | Igual que antes + **`public-config`** ahora expone **`mercadoPagoTokenPresent`** (diagnóstico) además de **`mercadoPagoConfigured`** (token y precio mensual mayor que cero). **`scripts/verify-billing-mp.ps1`** y sección amplia en **`docs/billing-mercadopago.md`** (URLs prod, checklist, smoke tests, troubleshooting). |
+| **Licencias — Mercado Pago** | **`planPrices`**: Básica / Intermedia / Premium en `platform/billing` y panel **/admin**. Checkout y preapproval envían `plan` y el webhook actualiza **`license.plan`**. Util compartido **`functions/utils/planTiers.js`**. Ver **`docs/billing-mercadopago.md`**. |
 | **Deploy + doc + revisión funcional** | Se ejecutó **`npm run build`**: compilación OK (solo ESLint/source map/Browserslist como antes). Doc ampliado en **`docs/cambios-pos-verificacion-admin-2026.md`** (§9 balanza EAN13, §10 offline/cola, §11 checklist deploy). **`.gitignore`**: carpeta **`backups/`** ignorada. Push a **`origin/main`** y **`firebase deploy --only hosting,functions`** (con timeout de discovery ampliado si hace falta). |
 | **POS móvil — balanza EAN13** | En `MobilePuntoVenta.js`: etiquetas peso variable prefijo 20–29, cantidad desde gramos, líneas separadas con `producto_id`/`codigo_balanza`. Commit **`88684fb`**. |
 
