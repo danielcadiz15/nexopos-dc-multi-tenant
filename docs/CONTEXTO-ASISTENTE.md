@@ -72,11 +72,11 @@ Se verificó `npm run emulators:functions-only` — emulador Functions en **5001
 
 ### Último deploy y git (operación humana / asistente)
 
-- Ver **primer commit que aparezca** tras esta sesión con mensaje tipo *deploy / docs 2026-05-08* — convive con **`88684fb`** (balanza POS) ya en `origin/main`.
-- Comando estándar: **`npm run build`** → **`firebase deploy --only hosting,functions`** (si CLI da timeout en discovery de Functions: `FUNCTIONS_DISCOVERY_TIMEOUT=60` o equivalente PowerShell antes del deploy).
-- Sitio: [nexopos-dc.web.app](https://nexopos-dc.web.app).
+- **Git (2026-05-08)**: **`6488bc1`** (docs + checklist deploy + `.gitignore` backups) tras **`88684fb`** (balanza POS móvil), ambos en `origin/main`.
+- **Hosting**: último **`firebase deploy --only hosting,functions`**: nuevo bundle en [nexopos-dc.web.app](https://nexopos-dc.web.app); **Functions** sin cambios en código (CLI reportó `Skipped`).
+- Estándar: **`npm run build`** → **`firebase deploy --only hosting,functions`**; si falla discovery: `$env:FUNCTIONS_DISCOVERY_TIMEOUT='120'` (PowerShell) antes del comando.
 
-*(Despliegues Wizard/config API anteriores: commits `9413f31`, `a1a6707` en el mismo repo.)*
+*(Despliegues Wizard/config API más antiguos: `9413f31`, `a1a6707`.)*
 
 ### Terminal 1 — emuladores (Auth + Firestore + Functions)
 
