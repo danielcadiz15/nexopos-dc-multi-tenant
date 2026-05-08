@@ -9,6 +9,7 @@ Este archivo es **puente entre sesiones** (vos, otro desarrollador o el asistent
 
 | Tema | Qué se hizo |
 |------|----------------|
+| **Licencias — Mercado Pago** | API `/api/billing/mercadopago/*`: preferencias Checkout (1 mes), **preapproval** mensual, **webhook** que extiende `paidUntil` +1 mes (idempotente). Panel admin: precio **`platform/billing.monthlyPriceARS`**. Cliente: **Configuración → Licencia** (botones MP + toasts por `?mp=`). Detalle operativo en **`docs/billing-mercadopago.md`**. **Requiere** `MERCADOPAGO_ACCESS_TOKEN` (+ opcional env `PUBLIC_APP_URL`, `PUBLIC_API_BASE` / webhook fijo). |
 | **Deploy + doc + revisión funcional** | Se ejecutó **`npm run build`**: compilación OK (solo ESLint/source map/Browserslist como antes). Doc ampliado en **`docs/cambios-pos-verificacion-admin-2026.md`** (§9 balanza EAN13, §10 offline/cola, §11 checklist deploy). **`.gitignore`**: carpeta **`backups/`** ignorada. Push a **`origin/main`** y **`firebase deploy --only hosting,functions`** (con timeout de discovery ampliado si hace falta). |
 | **POS móvil — balanza EAN13** | En `MobilePuntoVenta.js`: etiquetas peso variable prefijo 20–29, cantidad desde gramos, líneas separadas con `producto_id`/`codigo_balanza`. Commit **`88684fb`**. |
 
@@ -133,6 +134,7 @@ Hosting: `https://nexopos-dc.web.app`.
 ## Documentación relacionada en el repo
 
 - `docs/cambios-pos-verificacion-admin-2026.md` — historial técnico: POS tablet apaisado, admin vs MobileApp, delete empresa + Auth, verificación obligatoria, etc.
+- `docs/billing-mercadopago.md` — **abono mensual de licencias**: Checkout Pro + preapproval (recurrente), webhook, variables de entorno, precio `platform/billing`.
 
 ---
 

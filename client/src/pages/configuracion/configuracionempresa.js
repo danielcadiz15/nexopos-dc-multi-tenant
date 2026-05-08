@@ -1,7 +1,7 @@
 // src/pages/configuracion/ConfiguracionEmpresa.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 // Servicios
 import configuracionService from '../../services/configuracion.service';
@@ -14,6 +14,11 @@ import { isSuperAdminEmail } from '../../config/superAdmin';
 import { db, auth } from '../../firebase/config';
 import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import {
+  getBillingPublicConfig,
+  createLicenseMercadoPagoPreference,
+  createLicenseMercadoPagoPreapproval
+} from '../../services/billing.service';
 
 // Componentes
 import Card from '../../components/common/Card';
@@ -51,6 +56,7 @@ function Modal({ open, title, children, onClose }){
 const ConfiguracionEmpresa = () => {
   const { orgId, currentUser, refreshAuthSession } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const getCompanyId = useCallback(async () => {
     if (orgId) return orgId;
@@ -124,6 +130,65 @@ const ConfiguracionEmpresa = () => {
   const [savingLic, setSavingLic] = useState(false);
   const [lic, setLic] = useState({ paidUntil: '', blocked: false, reason: '', plan: 'basic', pagoBilleteraUrl: '' });
   const [licDaysLeft, setLicDaysLeft] = useState(null);
+  const [billingMp, setBillingMp] = useState(null);
+  const [billingMpLoading, setBillingMpLoading] = useState(false);
+
+  useEffect(() => {
+    if (!showLic) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await getBillingPublicConfig();
+        if (!cancelled && data?.success) setBillingMp(data.data);
+      } catch {
+        if (!cancelled) setBillingMp(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showLic]);
+
+  const abrirPagoMercadoPagoMes = async () => {
+    setBillingMpLoading(true);
+    try {
+      const { data, status } = await createLicenseMercadoPagoPreference();
+      const url = data?.data?.init_point || data?.data?.sandbox_init_point;
+      if (status === 200 && data?.success && url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        toast.info('Completá el pago en Mercado Pago. Al aprobarse, sumamos 1 mes a «Válida hasta».', {
+          autoClose: 8000
+        });
+      } else {
+        toast.error(data?.message || data?.detail?.message || 'No se pudo iniciar el pago');
+      }
+    } catch (e) {
+      toast.error(e?.message || 'Error al conectar con el servidor de pagos');
+    } finally {
+      setBillingMpLoading(false);
+    }
+  };
+
+  const abrirSuscripcionMercadoPago = async () => {
+    setBillingMpLoading(true);
+    try {
+      const { data, status } = await createLicenseMercadoPagoPreapproval();
+      const url = data?.data?.init_point || data?.data?.sandbox_init_point;
+      if (status === 200 && data?.success && url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        toast.info(
+          'Autorizá el débito en Mercado Pago. Cada cobro mensual aprobado extiende la licencia un mes.',
+          { autoClose: 9000 }
+        );
+      } else {
+        toast.error(data?.message || data?.detail?.message || 'No se pudo crear la suscripción');
+      }
+    } catch (e) {
+      toast.error(e?.message || 'Error al crear la suscripción');
+    } finally {
+      setBillingMpLoading(false);
+    }
+  };
 
   const cargarLicencia = useCallback(async ()=>{
     try{
@@ -146,6 +211,34 @@ const ConfiguracionEmpresa = () => {
       } else { setLicDaysLeft(null); }
     }catch(e){ console.warn('No se pudo cargar licencia:', e.message); }
   },[getCompanyId]);
+
+  /** Retorno Checkout Pro / suscripción MP (después de cargarLicencia) */
+  useEffect(() => {
+    const q = new URLSearchParams(location.search || '');
+    const mp = q.get('mp');
+    if (!mp) return;
+
+    if (mp === 'approved') {
+      toast.success(
+        'Mercado Pago aprobó el pago. Tu licencia se extiende automáticamente en unos segundos — si no ves la nueva fecha, recargá la página.',
+        { autoClose: 8000 }
+      );
+      cargarLicencia();
+    } else if (mp === 'failure') {
+      toast.error('El pago no se completó. Podés reintentar desde el botón de pago en Licencia.');
+    } else if (mp === 'pending') {
+      toast.warning(
+        'Pago pendiente. Cuando Mercado Pago lo acredite, sumamos un mes a la licencia (recibís aviso por la app).',
+        { autoClose: 8000 }
+      );
+    } else if (mp === 'sub_return') {
+      toast.info(
+        'Si completaste la suscripción en Mercado Pago, el débito mensual renovará la licencia cada vez que se apruebe un cobro.',
+        { autoClose: 9000 }
+      );
+    }
+    navigate({ pathname: location.pathname, search: '' }, { replace: true });
+  }, [location.search, location.pathname, navigate, cargarLicencia]);
 
   const guardarLicencia = async ()=>{
     try{
@@ -1432,8 +1525,47 @@ const ConfiguracionEmpresa = () => {
             <label className="block text-sm text-gray-700 mb-1">Motivo</label>
             <input className="input" placeholder="Motivo del bloqueo o nota" value={lic.reason||''} onChange={e=> setLic(prev=> ({ ...prev, reason: e.target.value }))} />
           </div>
+          <div className="col-span-2 rounded-lg border border-indigo-100 bg-indigo-50/60 p-4">
+            <p className="text-sm font-semibold text-indigo-900">Abono automático con Mercado Pago</p>
+            <p className="mt-1 text-xs text-indigo-800/90">
+              Cada pago aprobado suma <strong>un mes</strong> a «Válida hasta». El cobro recurrente usa tu email de
+              sesión en Mercado Pago.
+            </p>
+            {billingMp?.mercadoPagoConfigured ? (
+              <p className="mt-2 text-sm text-gray-800">
+                Precio configurado:{' '}
+                <strong>
+                  ${Number(billingMp.monthlyPriceARS || 0).toLocaleString('es-AR')} ARS
+                </strong>{' '}
+                / mes
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-amber-800">
+                Aún no está activo el cobro online: el administrador debe cargar el Access Token en el servidor y el
+                precio mensual (panel admin o variable de entorno).
+              </p>
+            )}
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <button
+                type="button"
+                disabled={billingMpLoading || !billingMp?.mercadoPagoConfigured}
+                onClick={abrirPagoMercadoPagoMes}
+                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {billingMpLoading ? 'Abriendo…' : 'Pagar 1 mes (Checkout)'}
+              </button>
+              <button
+                type="button"
+                disabled={billingMpLoading || !billingMp?.mercadoPagoConfigured}
+                onClick={abrirSuscripcionMercadoPago}
+                className="rounded-md border border-indigo-600 px-4 py-2 text-sm font-semibold text-indigo-700 disabled:opacity-50"
+              >
+                {billingMpLoading ? 'Abriendo…' : 'Suscripción mensual automática'}
+              </button>
+            </div>
+          </div>
           <div className="col-span-2">
-            <label className="block text-sm text-gray-700 mb-1">Enlace de pago (billetera / Mercado Pago)</label>
+            <label className="block text-sm text-gray-700 mb-1">Enlace de pago manual (opcional)</label>
             <input
               className="input"
               type="url"
@@ -1442,7 +1574,7 @@ const ConfiguracionEmpresa = () => {
               onChange={(e) => setLic((prev) => ({ ...prev, pagoBilleteraUrl: e.target.value }))}
             />
             <p className="mt-1 text-xs text-gray-500">
-              Lo verán los usuarios cuando la licencia esté vencida o en período de gracia (24 h).
+              Link alternativo si preferís cobrar fuera del flujo integrado; lo verán usuarios en gracia o bloqueo.
             </p>
           </div>
         </div>

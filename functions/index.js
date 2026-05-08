@@ -50,6 +50,7 @@ const combustibleRoutes = require('./routes/combustible.routes');
 const serviciosVehiculosRoutes = require('./routes/servicios.vehiculos.routes');
 // Rutas de Caja
 const cajaRoutes = require('./routes/caja.routes');
+const billingMercadoPagoRoutes = require('./routes/billing-mercadopago.routes');
 
 // Rutas de Control de Stock
 const controlStockRoutes = require('./routes/control-stock.routes');
@@ -764,7 +765,45 @@ exports.api = functions.https.onRequest(async (req, res) => {
           }
           return res.json({ success:true, data: mods });
         }
+
+        // GET/PUT /admin/platform/billing — precio público de licencia mensual (Mercado Pago)
+        if (path === '/admin/platform/billing' && req.method === 'GET') {
+          const snap = await db.collection('platform').doc('billing').get();
+          return res.json({
+            success: true,
+            data: snap.exists ? snap.data() : { monthlyPriceARS: null }
+          });
+        }
+        if (path === '/admin/platform/billing' && req.method === 'PUT') {
+          const body = req.body || {};
+          const monthlyPriceARS =
+            body.monthlyPriceARS != null ? Number(body.monthlyPriceARS) : NaN;
+          if (Number.isNaN(monthlyPriceARS) || monthlyPriceARS < 0) {
+            return res.status(400).json({
+              success: false,
+              message: 'monthlyPriceARS inválido'
+            });
+          }
+          await db.collection('platform').doc('billing').set(
+            {
+              monthlyPriceARS,
+              updatedAt: new Date().toISOString()
+            },
+            { merge: true }
+          );
+          return res.json({ success: true });
+        }
       }
+
+      // 💳 Facturación licencias — Mercado Pago (webhook sin licencia; crear preferencia sin 402)
+      if (!responseEnviada && path.startsWith('/billing')) {
+        const billingHandled = await billingMercadoPagoRoutes(req, res, path);
+        if (billingHandled) {
+          responseEnviada = true;
+          return;
+        }
+      }
+
       // ✅ CONFIGURACIÓN EMPRESARIAL — requiere contexto multi-tenant (req.companyId vía JWT/usuariosOrg)
       if (!responseEnviada && path.startsWith('/configuracion')) {
         await authenticateUser(req, res, () => {});

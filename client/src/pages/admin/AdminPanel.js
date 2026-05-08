@@ -10,6 +10,37 @@ const AdminPanel = () => {
   const [editLic, setEditLic] = useState(null); // { id, plan, paidUntil, blocked, reason }
   const [editMods, setEditMods] = useState(null); // { id, modules }
   const [saving, setSaving] = useState(false);
+  const [precioLicenciaMensual, setPrecioLicenciaMensual] = useState('');
+  const [savingPrecio, setSavingPrecio] = useState(false);
+
+  const cargarPrecioPlataforma = async () => {
+    try {
+      const { data, status } = await api.get('/platform/billing');
+      if (status === 200 && data?.success && data?.data?.monthlyPriceARS != null) {
+        setPrecioLicenciaMensual(String(data.data.monthlyPriceARS));
+      }
+    } catch {
+      /* ignorar */
+    }
+  };
+
+  const guardarPrecioPlataforma = async () => {
+    try {
+      const n = Number(precioLicenciaMensual);
+      if (Number.isNaN(n) || n < 0) {
+        toast.error('Precio inválido');
+        return;
+      }
+      setSavingPrecio(true);
+      const { status } = await api.put('/platform/billing', { monthlyPriceARS: n });
+      if (status === 200) toast.success('Precio mensual NexoPOS guardado');
+      else toast.error('No se pudo guardar');
+    } catch {
+      toast.error('Error al guardar precio');
+    } finally {
+      setSavingPrecio(false);
+    }
+  };
 
   const cargar = async () => {
     try {
@@ -29,7 +60,10 @@ const AdminPanel = () => {
     }
   };
 
-  useEffect(()=>{ cargar(); },[]);
+  useEffect(() => {
+    cargar();
+    cargarPrecioPlataforma();
+  }, []);
 
   const guardarLicencia = async () => {
     try {
@@ -92,6 +126,37 @@ const AdminPanel = () => {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Panel de Administración</h1>
         <button className="px-3 py-2 rounded bg-gray-200" onClick={cargar}>Refrescar</button>
+      </div>
+
+      <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
+        <h2 className="text-lg font-semibold text-gray-800">Licencias — precio Mercado Pago (ARS / mes)</h2>
+        <p className="text-sm text-gray-600 mt-1">
+          Lo usan Checkout y la suscripción recurrente. Debés configurar además{' '}
+          <code className="bg-gray-100 px-1 rounded">MERCADOPAGO_ACCESS_TOKEN</code> en Cloud Functions y la URL del
+          webhook en el panel de Mercado Pago (ver <code className="bg-gray-100 px-1 rounded">docs/billing-mercadopago.md</code>).
+        </p>
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Precio mensual</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="border rounded px-3 py-2 w-40"
+              value={precioLicenciaMensual}
+              onChange={(e) => setPrecioLicenciaMensual(e.target.value)}
+              placeholder="ej. 15000"
+            />
+          </div>
+          <button
+            type="button"
+            disabled={savingPrecio}
+            className="px-4 py-2 rounded bg-green-600 text-white disabled:opacity-50"
+            onClick={guardarPrecioPlataforma}
+          >
+            {savingPrecio ? 'Guardando…' : 'Guardar precio'}
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto bg-white rounded shadow">
