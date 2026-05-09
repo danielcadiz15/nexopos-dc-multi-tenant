@@ -312,8 +312,8 @@ async function checkLicense(req, res) {
         return {
           ok: false,
           reason: isUnpaid
-            ? 'No hay pago registrado: tenés 24 horas de cortesía para regularizar. Hasta entonces no podés registrar ventas nuevas. Usá «Pagar» en la barra de licencia o en Configuración → Licencia.'
-            : 'Licencia vencida: estás en período de gracia (24 h). No podés registrar ventas hasta regularizar el pago.',
+            ? 'No hay un abono registrado: tenés 24 horas de cortesía. No podés registrar ventas nuevas hasta pagar. Pagá con Mercado Pago desde la barra superior.'
+            : 'La licencia está vencida: estás en período de gracia (24 h). No podés registrar ventas hasta pagar con Mercado Pago (barra superior).',
           code: isUnpaid ? 'LICENSE_NO_PAYMENT_GRACE' : 'LICENSE_GRACE_NO_FACTURACION',
           graceEndsAt: state.graceEndsAt,
           pagoBilleteraUrl: pagoUrl
@@ -330,8 +330,8 @@ async function checkLicense(req, res) {
     return {
       ok: false,
       reason: isUnpaidExpired
-        ? 'No hay pago registrado: superaste las 24 horas de cortesía. Regularizá el pago desde la app (barra superior o Configuración → Licencia) para seguir usando el sistema.'
-        : 'Licencia vencida: superaste las 24 horas de gracia. Regularizá el pago para seguir usando el sistema.',
+        ? 'No hay abono registrado y finalizó la cortesía de 24 h. Completá el pago con Mercado Pago desde la barra superior para volver a operar con normalidad.'
+        : 'La licencia venció y superaste el período de gracia. Completá el pago desde la barra superior para seguir usando el sistema.',
       code: 'LICENSE_EXPIRED',
       graceEndsAt: state.graceEndsAt,
       pagoBilleteraUrl: pagoUrl
