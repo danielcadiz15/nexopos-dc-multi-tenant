@@ -285,7 +285,12 @@ async function ensureAuthCompany(req, res) {
   });
 }
 
-/** Datos del comprador para Checkout Pro (mejora aprobación y evita formularios incompletos). */
+/**
+ * Datos del comprador para Checkout Pro.
+ * No inventamos apellido «marcador» (p. ej. NexoPOS): en MLA eso puede dejar el flujo de tarjeta
+ * con validaciones raras o el botón Pagar inactivo hasta corregir datos. Si no hay nombre real,
+ * enviamos solo email y MP pide titular en el checkout.
+ */
 function buildCheckoutPayer(req) {
   const u = req.user || {};
   const email = String(u.email || '').trim();
@@ -293,15 +298,31 @@ function buildCheckoutPayer(req) {
   if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     payer.email = email;
   }
-  const rawName = String(u.nombre || u.name || '').trim();
-  if (rawName) {
-    const parts = rawName.split(/\s+/).filter(Boolean);
-    payer.name = parts[0] || 'Cliente';
-    payer.surname = parts.length > 1 ? parts.slice(1).join(' ') : 'NexoPOS';
-  } else if (payer.email) {
-    payer.name = 'Cliente';
-    payer.surname = 'NexoPOS';
+
+  const nombre = String(u.nombre || '').trim();
+  const apellido = String(u.apellido || '').trim();
+  if (nombre && apellido) {
+    payer.name = nombre;
+    payer.surname = apellido;
+  } else {
+    const rawName = String(u.nombre || u.name || '').trim();
+    if (rawName) {
+      const parts = rawName.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) {
+        payer.name = parts[0];
+        payer.surname = parts.slice(1).join(' ');
+      }
+      // Un solo token (ej. solo nombre en Auth): no enviamos name sin surname; MP lo completa en checkout.
+    }
   }
+
+  const docRaw = String(u.dni || u.dni_cuit || u.documento || u.cuit || '').replace(/\D/g, '');
+  if (docRaw.length === 11) {
+    payer.identification = { type: 'CUIT', number: docRaw };
+  } else if (docRaw.length >= 7 && docRaw.length <= 8) {
+    payer.identification = { type: 'DNI', number: docRaw };
+  }
+
   return Object.keys(payer).length ? payer : undefined;
 }
 
@@ -390,12 +411,7 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
           pending: `${appUrl}/configuracion/empresa?mp=pending`
         },
         notification_url: notificationUrl,
-        statement_descriptor: 'NEXOPOS',
-        /** Cuotas por defecto 1; máximo 18 para tarjeta (AR). */
-        payment_methods: {
-          installments: 18,
-          default_installments: 1
-        }
+        statement_descriptor: 'NEXOPOS'
       };
       if (payerObj) preferenceBody.payer = payerObj;
 

@@ -149,6 +149,18 @@ async function authenticateUser(req, res, next) {
             if (Array.isArray(companyUser.sucursales)) {
               userData.sucursales = companyUser.sucursales;
             }
+            // Nombre / documento para integraciones (p. ej. pagador en Mercado Pago Checkout)
+            if (companyUser.nombre != null && String(companyUser.nombre).trim()) {
+              userData.nombre = String(companyUser.nombre).trim();
+            }
+            if (companyUser.apellido != null && String(companyUser.apellido).trim()) {
+              userData.apellido = String(companyUser.apellido).trim();
+            }
+            for (const k of ['dni', 'dni_cuit', 'documento', 'cuit']) {
+              if (companyUser[k] != null && String(companyUser[k]).trim()) {
+                userData[k] = String(companyUser[k]).trim();
+              }
+            }
           }
         }
       } catch (permError) {

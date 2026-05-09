@@ -167,6 +167,7 @@ El webhook responde **200** y cuerpo `OK` incluso sin `payment_id` (MP puede hac
 ## Resolución de problemas
 
 - **Botones de licencia deshabilitados**: `mercadoPagoConfigured` es `false` → subí precio en `/admin` o variable de entorno; verificá `mercadoPagoTokenPresent`.
+- **En la web de Mercado Pago el botón «Pagar» sigue gris**: casi siempre es **validación del medio elegido** (tarjeta: número, vencimiento, CVV, **titular**, **DNI**, **cuotas**; dinero en cuenta: **iniciar sesión** en MP). Además, la preferencia **no debe mandar datos de pagador inventados** (apellido genérico o nombre sin apellido): el backend arma `payer` solo con email y, si existen en `companies/.../usuarios`, **nombre + apellido** y DNI/CUIT opcional; el resto lo completa el comprador en MP.
 - **Webhook no extiende licencia**: confirmá URL en MP, notificaciones `payment`, y en logs de Cloud Run búsquedas `[MP]` / `[MP webhook]`. El pago debe quedar `approved` y traer `org_id` en metadata o `external_reference` con el `orgId`.
 - **Cambié el token**: nueva versión del secreto + redeploy de `api`.
 
