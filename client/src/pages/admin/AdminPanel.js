@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import ApiService from '../../services/api.service';
 import { toast } from 'react-toastify';
 import { normalizeLicensePlan, PLAN_LABELS_ES } from '../../utils/planTiers';
+import MercadoPagoMark from '../../components/common/MercadoPagoMark';
 
 const api = new ApiService('/admin');
 
@@ -142,12 +143,17 @@ const AdminPanel = () => {
       </div>
 
       <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
-        <h2 className="text-lg font-semibold text-gray-800">Licencias — precios por plan (ARS / mes)</h2>
+        <h2 className="text-lg font-semibold text-gray-800 flex flex-wrap items-center gap-2">
+          <MercadoPagoMark className="h-7 w-auto" />
+          Precios mensuales por plan (ARS)
+        </h2>
         <p className="text-sm text-gray-600 mt-1">
-          Planes <strong>Básica</strong>, <strong>Intermedia</strong> y <strong>Premium</strong>. Checkout y suscripción
-          cobran según el plan de la empresa (o el que elija en Configuración → Licencia). También:{' '}
-          <code className="bg-gray-100 px-1 rounded">MERCADOPAGO_ACCESS_TOKEN</code> y webhook MP (
-          <code className="bg-gray-100 px-1 rounded">docs/billing-mercadopago.md</code>).
+          Planes <strong>Básica</strong>, <strong>Intermedia</strong>, <strong>Premium</strong>. El cobro vía Checkout
+          toma el plan de cada empresa en el momento del pago. Secretos backend y webhook:{' '}
+          <code className="bg-gray-100 px-1 rounded">MERCADOPAGO_ACCESS_TOKEN</code>{' '}
+          <span className="whitespace-nowrap">
+            (<code className="bg-gray-100 px-1 rounded">docs/billing-mercadopago.md</code>).
+          </span>
         </p>
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[

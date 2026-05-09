@@ -14,6 +14,7 @@ import {
   getBillingPublicConfig,
   createLicenseMercadoPagoPreference
 } from '../../services/billing.service';
+import MercadoPagoMark from '../common/MercadoPagoMark';
 
 /**
  * Barra fija de licencia: plan, vigencia / cortesía sin pago, y pago Mercado Pago sin salir de la app.
@@ -110,7 +111,9 @@ const LicenseBanner = ({ compact }) => {
     const plan = normalizeLicensePlan(lic?.plan);
     const price = Number(billingMp?.planPrices?.[plan] ?? billingMp?.monthlyPriceARS ?? 0);
     if (!billingMp?.mercadoPagoTokenPresent || price <= 0) {
-      toast.warning('El pago online no está disponible. Pedí al administrador que configure precios y Mercado Pago.');
+      toast.warning(
+        'El pago con Mercado Pago no está disponible en este momento. Probá más tarde o usá el enlace alternativo si aparece.'
+      );
       return;
     }
     setPayLoading(true);
@@ -180,7 +183,7 @@ const LicenseBanner = ({ compact }) => {
   } else if (ui?.phase === 'expired') {
     statusLine = `Licencia vencida: superaste el período de gracia (${formatGraceCountdown(ui.graceEndsAt)} ya finalizó). Regularizá el pago.`;
   } else if (ui?.phase === 'blocked') {
-    statusLine = lic?.reason || 'Licencia bloqueada por el administrador.';
+    statusLine = lic?.reason || 'Acceso restringido por licencia. Contactá a quien administra la cuenta de tu negocio.';
   }
 
   const textSize = compact ? 'text-xs' : 'text-sm';
@@ -216,9 +219,10 @@ const LicenseBanner = ({ compact }) => {
                 type="button"
                 disabled={payLoading}
                 onClick={abrirPagoMp}
-                className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 sm:text-sm"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#009ee3] px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#008dcf] disabled:opacity-50 sm:text-sm"
               >
-                {payLoading ? 'Abriendo…' : `Pagar con Mercado Pago (${arsPlan.toLocaleString('es-AR')} ARS)`}
+                <MercadoPagoMark className="h-5 w-auto shrink-0 opacity-95" />
+                {payLoading ? 'Abriendo…' : `Renovar · ${arsPlan.toLocaleString('es-AR')} ARS`}
               </button>
             ) : null}
             <button

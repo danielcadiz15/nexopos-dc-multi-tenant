@@ -14,12 +14,9 @@ import { isSuperAdminEmail } from '../../config/superAdmin';
 import { db, auth } from '../../firebase/config';
 import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import {
-  getBillingPublicConfig,
-  createLicenseMercadoPagoPreference,
-  createLicenseMercadoPagoPreapproval
-} from '../../services/billing.service';
+import { getBillingPublicConfig, createLicenseMercadoPagoPreference } from '../../services/billing.service';
 import { normalizeLicensePlan, PLAN_LABELS_ES } from '../../utils/planTiers';
+import MercadoPagoMark from '../../components/common/MercadoPagoMark';
 
 // Componentes
 import Card from '../../components/common/Card';
@@ -159,37 +156,15 @@ const ConfiguracionEmpresa = () => {
       const url = data?.data?.init_point || data?.data?.sandbox_init_point;
       if (status === 200 && data?.success && url) {
         window.open(url, '_blank', 'noopener,noreferrer');
-        toast.info('Completá el pago en Mercado Pago. Al aprobarse, sumamos 1 mes a «Válida hasta».', {
-          autoClose: 8000
-        });
+        toast.info(
+          'Completá el pago en Mercado Pago. Al acreditarse, se habilita automáticamente un mes más de uso.',
+          { autoClose: 8000 }
+        );
       } else {
         toast.error(data?.message || data?.detail?.message || 'No se pudo iniciar el pago');
       }
     } catch (e) {
       toast.error(e?.message || 'Error al conectar con el servidor de pagos');
-    } finally {
-      setBillingMpLoading(false);
-    }
-  };
-
-  const abrirSuscripcionMercadoPago = async () => {
-    setBillingMpLoading(true);
-    try {
-      const { data, status } = await createLicenseMercadoPagoPreapproval({
-        plan: normalizeLicensePlan(lic.plan)
-      });
-      const url = data?.data?.init_point || data?.data?.sandbox_init_point;
-      if (status === 200 && data?.success && url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-        toast.info(
-          'Autorizá el débito en Mercado Pago. Cada cobro mensual aprobado extiende la licencia un mes.',
-          { autoClose: 9000 }
-        );
-      } else {
-        toast.error(data?.message || data?.detail?.message || 'No se pudo crear la suscripción');
-      }
-    } catch (e) {
-      toast.error(e?.message || 'Error al crear la suscripción');
     } finally {
       setBillingMpLoading(false);
     }
@@ -238,10 +213,9 @@ const ConfiguracionEmpresa = () => {
         { autoClose: 8000 }
       );
     } else if (mp === 'sub_return') {
-      toast.info(
-        'Si completaste la suscripción en Mercado Pago, el débito mensual renovará la licencia cada vez que se apruebe un cobro.',
-        { autoClose: 9000 }
-      );
+      toast.info('Volviste desde Mercado Pago. Si cerraste el pago, esperá la actualización automática de la vigencia.', {
+        autoClose: 7000
+      });
     }
     navigate({ pathname: location.pathname, search: '' }, { replace: true });
   }, [location.search, location.pathname, navigate, cargarLicencia]);
@@ -255,6 +229,10 @@ const ConfiguracionEmpresa = () => {
 
   const guardarLicencia = async ()=>{
     try{
+      if (!isSuperAdminEmail(currentUser?.email)) {
+        toast.error('No tenés permiso para guardar estos datos. La vigencia se actualiza al completar el pago en Mercado Pago.');
+        return;
+      }
       const cid = await getCompanyId();
       if(!cid) { toast.error('OrgId no disponible'); return; }
       setSavingLic(true);
@@ -1516,34 +1494,111 @@ const ConfiguracionEmpresa = () => {
       </Modal>
 
       {/* Modal Licencia */}
-      <Modal open={showLic} title="Licencia" onClose={()=> setShowLic(false)}>
+      <Modal
+        open={showLic}
+        title={
+          <span className="flex items-center gap-2">
+            <MercadoPagoMark className="h-6 w-auto" />
+            Licencia y abono
+          </span>
+        }
+        onClose={()=> setShowLic(false)}
+      >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-gray-700 mb-1">Plan</label>
-            <select className="input" value={lic.plan} onChange={e=> setLic(prev=> ({ ...prev, plan: e.target.value }))}>
-              <option value="basic">{PLAN_LABELS_ES.basic}</option>
-              <option value="intermediate">{PLAN_LABELS_ES.intermediate}</option>
-              <option value="premium">{PLAN_LABELS_ES.premium}</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-700 mb-1">Válida hasta</label>
-            <input type="date" className="input" value={lic.paidUntil ? lic.paidUntil.substring(0,10): ''} onChange={e=> setLic(prev=> ({ ...prev, paidUntil: e.target.value ? new Date(e.target.value).toISOString(): '' }))} />
-          </div>
-          <div className="col-span-2 flex items-center gap-2">
-            <input type="checkbox" checked={lic.blocked} onChange={e=> setLic(prev=> ({ ...prev, blocked: e.target.checked }))} />
-            <span>Bloquear empresa</span>
-          </div>
-          <div className="col-span-2">
-            <label className="block text-sm text-gray-700 mb-1">Motivo</label>
-            <input className="input" placeholder="Motivo del bloqueo o nota" value={lic.reason||''} onChange={e=> setLic(prev=> ({ ...prev, reason: e.target.value }))} />
-          </div>
+          {isSuperAdminEmail(currentUser?.email) ? (
+            <>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Plan</label>
+                <select
+                  className="input"
+                  value={lic.plan}
+                  onChange={(e) => setLic((prev) => ({ ...prev, plan: e.target.value }))}
+                >
+                  <option value="basic">{PLAN_LABELS_ES.basic}</option>
+                  <option value="intermediate">{PLAN_LABELS_ES.intermediate}</option>
+                  <option value="premium">{PLAN_LABELS_ES.premium}</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Válida hasta</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={lic.paidUntil ? lic.paidUntil.substring(0, 10) : ''}
+                  onChange={(e) =>
+                    setLic((prev) => ({
+                      ...prev,
+                      paidUntil: e.target.value ? new Date(e.target.value).toISOString() : ''
+                    }))
+                  }
+                />
+              </div>
+              <div className="col-span-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={lic.blocked}
+                  onChange={(e) => setLic((prev) => ({ ...prev, blocked: e.target.checked }))}
+                />
+                <span>Bloquear empresa</span>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm text-gray-700 mb-1">Motivo</label>
+                <input
+                  className="input"
+                  placeholder="Motivo del bloqueo o nota"
+                  value={lic.reason || ''}
+                  onChange={(e) => setLic((prev) => ({ ...prev, reason: e.target.value }))}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm text-gray-700 mb-1">Enlace de pago manual (opcional)</label>
+                <input
+                  className="input"
+                  type="url"
+                  placeholder="https://..."
+                  value={lic.pagoBilleteraUrl || ''}
+                  onChange={(e) => setLic((prev) => ({ ...prev, pagoBilleteraUrl: e.target.value }))}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Link opcional cuando el cobro MP no está activo en la empresa.
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Plan contratado</label>
+                <div className="input bg-gray-50 text-gray-800">
+                  {PLAN_LABELS_ES[normalizeLicensePlan(lic.plan)]}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Vigencia</label>
+                <div className="input bg-gray-50 text-gray-800 leading-relaxed">
+                  {lic.paidUntil
+                    ? new Date(lic.paidUntil).toLocaleDateString('es-AR', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric'
+                      })
+                    : 'Aún sin abono acreditado'}
+                </div>
+              </div>
+              <div className="col-span-2 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                La vigencia <strong>no se elige manualmente</strong>: al acreditarse un pago en{' '}
+                <span className="inline-flex align-middle mx-0.5">
+                  <MercadoPagoMark className="h-4 w-auto" />
+                </span>{' '}
+                Mercado Pago, el sistema suma automáticamente <strong>un mes</strong> de uso desde la fecha en que MP
+                confirma el cobro.
+              </div>
+            </>
+          )}
           <div className="col-span-2 rounded-lg border border-indigo-100 bg-indigo-50/60 p-4">
-            <p className="text-sm font-semibold text-indigo-900">Abono automático con Mercado Pago</p>
-            <p className="mt-1 text-xs text-indigo-800/90">
-              Cada pago aprobado suma <strong>un mes</strong> a «Válida hasta». El cobro recurrente usa tu email de
-              sesión en Mercado Pago.
-            </p>
+            <div className="flex items-center gap-2">
+              <MercadoPagoMark className="h-6 w-auto" />
+              <p className="text-sm font-semibold text-indigo-900">Renovar abono por Mercado Pago</p>
+            </div>
             {(() => {
               const planKey = normalizeLicensePlan(lic.plan);
               const arsPlan = Number(billingMp?.planPrices?.[planKey] ?? billingMp?.monthlyPriceARS ?? 0);
@@ -1554,75 +1609,67 @@ const ConfiguracionEmpresa = () => {
                   {billingMp?.mercadoPagoConfigured ? (
                     <div className="mt-2 space-y-1 text-sm text-gray-800">
                       <p>
-                        Plan en el desplegable: <strong>{PLAN_LABELS_ES[planKey]}</strong> —{' '}
-                        <strong>${arsPlan.toLocaleString('es-AR')} ARS</strong> / mes
+                        Renovación mensual (<strong>{PLAN_LABELS_ES[planKey]}</strong>):{' '}
+                        <strong>${arsPlan.toLocaleString('es-AR')} ARS</strong>{' '}
+                        <span className="text-gray-600">por periodo cobrado y acreditado</span>.
                       </p>
-                      <ul className="text-xs text-gray-600 list-disc list-inside">
-                        <li>
-                          {PLAN_LABELS_ES.basic}:{' '}
-                          ${Number(billingMp?.planPrices?.basic ?? 0).toLocaleString('es-AR')} ARS
-                        </li>
-                        <li>
-                          {PLAN_LABELS_ES.intermediate}:{' '}
-                          ${Number(billingMp?.planPrices?.intermediate ?? 0).toLocaleString('es-AR')} ARS
-                        </li>
-                        <li>
-                          {PLAN_LABELS_ES.premium}: $
-                          {Number(billingMp?.planPrices?.premium ?? 0).toLocaleString('es-AR')} ARS
-                        </li>
-                      </ul>
                       {!puedeEstePlan && tokenOk ? (
                         <p className="text-xs text-amber-800">
-                          Este plan no tiene precio mayor a cero. Elegí otro plan o pedí al administrador que cargue
-                          precios en /admin.
+                          Tu plan no tiene un valor de cobro disponible por ahora.
                         </p>
+                      ) : null}
+                      {isSuperAdminEmail(currentUser?.email) ? (
+                        <ul className="text-xs text-gray-600 list-disc list-inside pt-2 border-t border-indigo-100">
+                          <li>
+                            Básica: ${Number(billingMp?.planPrices?.basic ?? 0).toLocaleString('es-AR')} ARS
+                          </li>
+                          <li>
+                            Intermedia: ${Number(billingMp?.planPrices?.intermediate ?? 0).toLocaleString('es-AR')}{' '}
+                            ARS
+                          </li>
+                          <li>
+                            Premium: ${Number(billingMp?.planPrices?.premium ?? 0).toLocaleString('es-AR')} ARS
+                          </li>
+                        </ul>
                       ) : null}
                     </div>
                   ) : (
                     <p className="mt-2 text-xs text-amber-800">
-                      Aún no está activo el cobro online: el administrador debe cargar el Access Token en el servidor y
-                      al menos un precio por plan (panel admin o variable de entorno).
+                      Por el momento los pagos con Mercado Pago no están habilitados. Si ya abonás por otro canal, esperá la actualización automática cuando acredite tu pago en el sistema.
                     </p>
                   )}
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       disabled={billingMpLoading || !puedeEstePlan}
                       onClick={abrirPagoMercadoPagoMes}
-                      className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-md bg-[#009ee3] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 hover:bg-[#008dcf]"
                     >
-                      {billingMpLoading ? 'Abriendo…' : 'Pagar 1 mes (Checkout)'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={billingMpLoading || !puedeEstePlan}
-                      onClick={abrirSuscripcionMercadoPago}
-                      className="rounded-md border border-indigo-600 px-4 py-2 text-sm font-semibold text-indigo-700 disabled:opacity-50"
-                    >
-                      {billingMpLoading ? 'Abriendo…' : 'Suscripción mensual automática'}
+                      <MercadoPagoMark className="h-5 w-auto" />
+                      {billingMpLoading
+                        ? 'Abriendo…'
+                        : puedeEstePlan
+                          ? `Renovar (${arsPlan.toLocaleString('es-AR')} ARS)`
+                          : 'Abrir cobro Mercado Pago'}
                     </button>
                   </div>
                 </>
               );
             })()}
           </div>
-          <div className="col-span-2">
-            <label className="block text-sm text-gray-700 mb-1">Enlace de pago manual (opcional)</label>
-            <input
-              className="input"
-              type="url"
-              placeholder="https://..."
-              value={lic.pagoBilleteraUrl || ''}
-              onChange={(e) => setLic((prev) => ({ ...prev, pagoBilleteraUrl: e.target.value }))}
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              Link alternativo si preferís cobrar fuera del flujo integrado; lo verán usuarios en gracia o bloqueo.
-            </p>
-          </div>
         </div>
         <div className="mt-4 flex justify-end gap-3">
           <button className="px-3 py-2 border rounded" onClick={()=> setShowLic(false)}>Cerrar</button>
-          <button className="px-3 py-2 rounded text-white bg-indigo-600 disabled:opacity-60" disabled={savingLic} onClick={guardarLicencia}>{savingLic? 'Guardando...' : 'Guardar'}</button>
+          {isSuperAdminEmail(currentUser?.email) ? (
+            <button
+              type="button"
+              className="px-3 py-2 rounded text-white bg-indigo-600 disabled:opacity-60"
+              disabled={savingLic}
+              onClick={guardarLicencia}
+            >
+              {savingLic ? 'Guardando...' : 'Guardar cambios'}
+            </button>
+          ) : null}
         </div>
       </Modal>
     </div>
