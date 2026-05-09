@@ -1,6 +1,10 @@
 # Actualiza el secreto MERCADOPAGO_ACCESS_TOKEN en Firebase (Google Secret Manager).
 # No subas el token al repo. Usá UNA de estas formas:
 #
+# Si aparece "la ejecución de scripts está deshabilitada":
+#    powershell -ExecutionPolicy Bypass -File .\scripts\mercadopago-secret.ps1
+#    O: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+#
 # 1) Variable de sesión (PowerShell):
 #    $env:MERCADOPAGO_ACCESS_TOKEN = "APP_USR-xxxxx"
 #    .\scripts\mercadopago-secret.ps1
