@@ -11,13 +11,14 @@
 
 import axios from 'axios';
 import ApiService from './api.service';
+import { getCloudApiBaseUrl } from '../config/cloudApi';
 
 /**
- * Instancia de axios para autenticación
+ * Instancia de axios para autenticación (perfil, password legacy).
+ * Debe usar el mismo host que ApiService; nunca localhost en producción.
  */
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 const api = axios.create({
-  baseURL: `${API_URL}/api/auth`,
+  baseURL: `${getCloudApiBaseUrl()}/auth`,
   // ...
 });
 

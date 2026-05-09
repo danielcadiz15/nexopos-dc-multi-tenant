@@ -46,8 +46,13 @@ Definilas **antes** del build si las necesitás en producción (Create React App
 | Variable | Uso |
 |----------|-----|
 | `REACT_APP_MERCADOPAGO_SANDBOX` | Si es `true`, el checkout prioriza `sandbox_init_point` cuando exista (pruebas con credenciales de prueba de MP). |
+| `REACT_APP_FIREBASE_FUNCTIONS_URL` / `REACT_APP_API_URL` | Opcional: override del API. Si **no** están definidas en el build de **producción**, el cliente usa la URL de Cloud Run por defecto (`api-…run.app`), no `localhost`. **No** compilar el hosting de producción con `.env.local` que apunte a emuladores o a `localhost` si otros usuarios van a usar `*.web.app`. |
 
 El resto de la configuración de billing (precios, token en servidor) no va en el build del cliente; ver [billing-mercadopago.md](./billing-mercadopago.md).
+
+### Firebase Auth: dominios autorizados
+
+Si el login falla **solo** desde ciertos dominios (p. ej. custom domain o URL distinta a `nexopos-dc.web.app`), en [Firebase Console](https://console.firebase.google.com) → **Authentication** → **Settings** → **Authorized domains** agregá el host exacto del front (sin path).
 
 ## Desplegar todo
 

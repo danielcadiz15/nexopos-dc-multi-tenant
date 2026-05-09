@@ -1,5 +1,6 @@
 // src/services/api.service.js - REEMPLAZAR COMPLETO
 import { auth } from '../firebase/config';
+import { getCloudApiBaseUrl } from '../config/cloudApi';
 
 function emitLicense402(body) {
   const msg = body?.message || 'Licencia inválida';
@@ -19,24 +20,7 @@ function emitLicense402(body) {
 
 class ApiService {
   constructor(basePath = '') {
-    // Forzar el uso del proyecto correcto en minúsculas
-    const projectId = 'nexopos-dc';
-    const rootEnv = process.env.REACT_APP_FIREBASE_FUNCTIONS_URL || process.env.REACT_APP_API_URL;
-    // Preferir URL 2ª gen (Cloud Run) desplegada
-    const defaultRoot = 'https://api-5q2i5764zq-uc.a.run.app';
-    let root = defaultRoot;
-    try {
-      if (rootEnv && typeof rootEnv === 'string') {
-        root = rootEnv;
-      }
-      // Cortafuego: nunca permitir endpoints antiguos
-      if (/gestionsimple|cloudfunctions\.net/i.test(root)) {
-        root = defaultRoot;
-      }
-    } catch {}
-    // Asegurar prefijo /api para Cloud Run (Functions v2)
-    const needsApiPrefix = !/\/api(\/|$)/i.test(root);
-    this.baseURL = needsApiPrefix ? `${root}/api` : root;
+    this.baseURL = getCloudApiBaseUrl();
     try { console.log('🌐 [API] baseURL:', this.baseURL); } catch {}
     this.basePath = basePath; // ej: '/productos'
   }

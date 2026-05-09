@@ -11,6 +11,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { getCloudApiBaseUrl } from '../../config/cloudApi';
 
 // Servicios
 import recetasService from '../../services/recetas.service';
@@ -71,7 +72,7 @@ const RecetaDetalle = () => {
    */
   const obtenerMateriasPrimasUnificadas = async () => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || ''}/api/materias-primas-unificadas`);
+      const response = await fetch(`${getCloudApiBaseUrl()}/materias-primas-unificadas`);
       const data = await response.json();
       
       if (data.success) {
@@ -216,7 +217,7 @@ const RecetaDetalle = () => {
         // Obtener sucursal actual (se podría obtener del contexto)
         const sucursalId = 'sucursal-principal'; // TODO: Obtener de contexto real
         
-        const response = await fetch(`${process.env.REACT_APP_API_URL || ''}/api/produccion-unificada`, {
+        const response = await fetch(`${getCloudApiBaseUrl()}/produccion-unificada`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
