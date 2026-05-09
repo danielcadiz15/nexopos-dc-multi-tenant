@@ -89,6 +89,6 @@ O manualmente: `GET …/api/billing/mercadopago/public-config` y comprobar que e
 
 | Fecha | Notas |
 |-------|--------|
-| 2026-05-08 | Despliegue completo tras mejoras de Checkout MP (pagador, cuotas, redirección en misma ventana, docs). Comando: `firebase deploy --project nexopos-dc`. |
+| 2026-05-08 | Despliegue completo (`firebase deploy --project nexopos-dc`): Hosting `https://nexopos-dc.web.app`, Functions 2ª gen (`api`, `createTenant`, `joinTenant`, `setActiveTenant`, `apiSetupAdmin`, `bootstrapAdmin`), reglas Storage, reglas e índices Firestore. Incluye mejoras de Checkout MP (pagador, cuotas, redirección en misma ventana) y esta guía. |
 
 *(Actualizá esta tabla cuando hagas releases relevantes.)*
