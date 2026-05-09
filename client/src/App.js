@@ -108,29 +108,11 @@ import ConfiguracionEmpresa from './pages/configuracion/configuracionempresa';
 // Módulo de Proveedores
 import Proveedores from './pages/proveedores/Proveedores';
 import ProveedorForm from './pages/proveedores/ProveedorForm';
-import useIsMobile from './hooks/useIsMobile';
-import MobileApp from './components/mobile/MobileApp';
 import MobilePuntoVenta from './components/mobile/MobilePuntoVenta';
 import AdminPanel from './pages/admin/AdminPanel';
 import SuperAdminRoute from './components/common/SuperAdminRoute';
 import LicenseBanner from './components/layout/LicenseBanner';
 import { useViewportHeight } from './hooks/useViewportHeight';
-
-/**
- * Cajeros/empleados: en pantalla chica usa MobileApp (POV reducido).
- * Administradores/gerentes: siempre rutas Layout con todos los módulos (nexopos web completo).
- */
-const usuarioDebeVerSistemaWebCompleto = (u) => {
-  if (!u) return false;
-  const rol = String(u.rol || u.role || '').toLowerCase().trim();
-  const rolIdNorm = String(u.rolId ?? '').toLowerCase();
-  return (
-    u.isAdmin === true ||
-    rolIdNorm === 'admin' ||
-    rolIdNorm === 'gerente' ||
-    ['administrador', 'admin', 'gerente'].includes(rol)
-  );
-};
 
 const CajeroApp = () => (
   <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-gray-50 px-2 pt-1 pb-1 sm:px-3">
@@ -146,9 +128,7 @@ const CajeroApp = () => (
 const AppContent = () => {
   useViewportHeight();
   const auth = useAuth() || {};
-  const { currentUser: user, loading } = auth;
-  const isMobile = useIsMobile();
-  const vistaMovilReducida = isMobile && user && !usuarioDebeVerSistemaWebCompleto(user);
+  const { loading } = auth;
 
   if (loading) {
     return (
@@ -174,13 +154,8 @@ const AppContent = () => {
         <Route path="/verificar-email" element={<ProtectedRoute><VerificarEmailEmpresa /></ProtectedRoute>} />
         <Route path="/configuracion/empresa" element={<ProtectedRoute><ConfiguracionEmpresa /></ProtectedRoute>} />
         <Route path="/cajero" element={<ProtectedRoute><CajeroApp /></ProtectedRoute>} />
-        
-        {/* Vista móvil (solo cuenta operativa; administración va al Layout completo) */}
-        {vistaMovilReducida ? (
-          <Route path="/*" element={<MobileApp />} />
-        ) : (
-          /* Rutas protegidas para desktop */
-          <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+
+        <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/admin" element={<SuperAdminRoute><AdminPanel /></SuperAdminRoute>} />
             
@@ -278,9 +253,8 @@ const AppContent = () => {
 			
 			{/* Nota: la ruta /configuracion/empresa se declara fuera del Layout */}
 			
-          </Route>
-        )}
-        
+        </Route>
+
         {/* Ruta 404 para páginas no encontradas */}
         <Route path="*" element={<NotFound />} />
       </Routes>
