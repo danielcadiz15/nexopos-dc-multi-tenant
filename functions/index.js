@@ -267,19 +267,34 @@ async function loadLicenseDoc(companyId) {
 }
 
 /**
- * Licencia: activa / gracia 24h (sin facturación) / bloqueo total.
+ * Licencia: activa / gracia 24h post-vencimiento / sin pago (24 h cortesía) / bloqueo total.
  */
 async function checkLicense(req, res) {
   try {
     const companyId = req.companyId || req.user?.companyId || null;
     if (!companyId) return { ok: true };
-    const lic = await loadLicenseDoc(companyId);
+    const userEmail = (req.user && req.user.email) || '';
+    if (userEmail && isSuperAdminEmail(userEmail)) {
+      return { ok: true };
+    }
+
+    let lic = await loadLicenseDoc(companyId);
+    let state = evaluateLicenseState(lic);
+
+    if (state.phase === 'unpaid_needs_anchor') {
+      const ts = new Date().toISOString();
+      const seed = { unpaidGraceStartedAt: ts, updatedAt: ts };
+      await db.collection('companies').doc(companyId).collection('config').doc('license').set(seed, { merge: true });
+      await db.collection('licenses').doc(companyId).set(seed, { merge: true });
+      lic = await loadLicenseDoc(companyId);
+      state = evaluateLicenseState(lic);
+    }
+
     const path = (req.path || '').replace('/api', '') || '/';
     const method = req.method || 'GET';
-    const state = evaluateLicenseState(lic);
     const pagoUrl = lic.pagoBilleteraUrl || lic.pago_billetera_url || null;
 
-    if (state.phase === 'none' || state.phase === 'active') {
+    if (state.phase === 'active') {
       return { ok: true };
     }
     if (state.phase === 'blocked') {
@@ -291,23 +306,32 @@ async function checkLicense(req, res) {
         pagoBilleteraUrl: pagoUrl
       };
     }
-    if (state.phase === 'grace') {
+    if (state.phase === 'grace' || state.phase === 'unpaid_grace') {
       if (isFacturacionRequest(method, path)) {
+        const isUnpaid = state.phase === 'unpaid_grace';
         return {
           ok: false,
-          reason:
-            'Licencia vencida: estás en período de gracia (24 h). No podés registrar ventas hasta regularizar el pago.',
-          code: 'LICENSE_GRACE_NO_FACTURACION',
+          reason: isUnpaid
+            ? 'No hay pago registrado: tenés 24 horas de cortesía para regularizar. Hasta entonces no podés registrar ventas nuevas. Usá «Pagar» en la barra de licencia o en Configuración → Licencia.'
+            : 'Licencia vencida: estás en período de gracia (24 h). No podés registrar ventas hasta regularizar el pago.',
+          code: isUnpaid ? 'LICENSE_NO_PAYMENT_GRACE' : 'LICENSE_GRACE_NO_FACTURACION',
           graceEndsAt: state.graceEndsAt,
           pagoBilleteraUrl: pagoUrl
         };
       }
-      return { ok: true, grace: true, graceEndsAt: state.graceEndsAt, phase: 'grace' };
+      return {
+        ok: true,
+        grace: true,
+        graceEndsAt: state.graceEndsAt,
+        phase: state.phase
+      };
     }
+    const isUnpaidExpired = state.phase === 'unpaid_expired';
     return {
       ok: false,
-      reason:
-        'Licencia vencida: superaste las 24 horas de gracia. Regularizá el pago para seguir usando el sistema.',
+      reason: isUnpaidExpired
+        ? 'No hay pago registrado: superaste las 24 horas de cortesía. Regularizá el pago desde la app (barra superior o Configuración → Licencia) para seguir usando el sistema.'
+        : 'Licencia vencida: superaste las 24 horas de gracia. Regularizá el pago para seguir usando el sistema.',
       code: 'LICENSE_EXPIRED',
       graceEndsAt: state.graceEndsAt,
       pagoBilleteraUrl: pagoUrl
@@ -749,6 +773,9 @@ async function nexoposMainApi(req, res) {
             payload.plan = normalizeLicensePlanId(payload.plan);
           }
           payload.updatedAt = new Date().toISOString();
+          if (payload.paidUntil != null && String(payload.paidUntil).trim() !== '') {
+            payload.unpaidGraceStartedAt = admin.firestore.FieldValue.delete();
+          }
           await db.collection('licenses').doc(companyId).set(payload, { merge: true });
           await db.collection('companies').doc(companyId).collection('config').doc('license').set(payload, { merge: true });
           return res.json({ success:true });

@@ -10,6 +10,8 @@ import configuracionService from '../../services/configuracion.service';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import SucursalSelector from '../common/SucursalSelector';
+import { evaluateLicenseUiState, formatGraceCountdown, daysUntilPaidUntil } from '../../utils/licenseUi';
+import { normalizeLicensePlan, PLAN_LABELS_ES } from '../../utils/planTiers';
 
 import { 
   FaBars, FaTimes, FaUser, FaSignOutAlt, FaStore,
@@ -25,6 +27,7 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
   const [cargandoConfig, setCargandoConfig] = useState(true);
   const [tenantName, setTenantName] = useState('');
   const [licDaysLeft, setLicDaysLeft] = useState(null);
+  const [licChip, setLicChip] = useState(null);
   const [blockedMsg, setBlockedMsg] = useState(null);
 
   // Cargar configuración de empresa
@@ -59,23 +62,49 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
     leerTenant();
   }, [orgId]);
 
-  // Leer licencia para días restantes
+  // Licencia: días / cortesía sin pago (misma lógica que la barra principal)
   useEffect(() => {
     const cargarLicencia = async () => {
       try {
-        if (!orgId) { setLicDaysLeft(null); return; }
-        const ref = doc(db, `companies/${orgId}/config/license`);
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-          const lic = snap.data() || {};
-          if (lic.paidUntil) {
-            const diff = Math.ceil((new Date(lic.paidUntil).getTime() - Date.now())/(1000*60*60*24));
-            setLicDaysLeft(Number.isFinite(diff) ? diff : null);
-            return;
-          }
+        if (!orgId) {
+          setLicDaysLeft(null);
+          setLicChip(null);
+          return;
+        }
+        let lic = null;
+        const r1 = await getDoc(doc(db, `companies/${orgId}/config/license`));
+        if (r1.exists()) lic = r1.data();
+        if (!lic) {
+          const r2 = await getDoc(doc(db, 'licenses', orgId));
+          if (r2.exists()) lic = r2.data();
+        }
+        const ui = evaluateLicenseUiState(lic || {});
+        const planLabel = PLAN_LABELS_ES[normalizeLicensePlan(lic?.plan)] || 'Básica';
+
+        if (ui.phase === 'active' && ui.paidUntilMs) {
+          const diff = daysUntilPaidUntil(ui.paidUntilMs);
+          setLicDaysLeft(diff != null && Number.isFinite(diff) ? diff : null);
+          setLicChip(
+            diff != null && diff >= 0
+              ? `${planLabel} · ${diff} ${diff === 1 ? 'día' : 'días'}`
+              : `${planLabel}`
+          );
+          return;
         }
         setLicDaysLeft(null);
-      } catch { setLicDaysLeft(null); }
+        if (ui.phase === 'unpaid_grace' || ui.phase === 'grace') {
+          setLicChip(`${planLabel} · gracia ${formatGraceCountdown(ui.graceEndsAt)}`);
+        } else if (ui.phase === 'unpaid_needs_anchor') {
+          setLicChip(`${planLabel} · sin pago (activando cortesía…)`);
+        } else if (ui.phase === 'unpaid_expired' || ui.phase === 'expired' || ui.phase === 'blocked') {
+          setLicChip(`${planLabel} · requiere pago`);
+        } else {
+          setLicChip(`${planLabel}`);
+        }
+      } catch {
+        setLicDaysLeft(null);
+        setLicChip(null);
+      }
     };
     cargarLicencia();
   }, [orgId]);
@@ -111,6 +140,7 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
                        'Sistema de Gestión';
 
   const showDemo = licDaysLeft !== null && licDaysLeft >= 0;
+  const showLicChip = Boolean(orgId && licChip);
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
       <div className="px-2 sm:px-4 lg:px-8">
@@ -152,10 +182,18 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
 
           {/* Información de usuario y sucursal */}
 			<div className="flex items-center space-x-4">
-			  {showDemo && (
-				<div className="hidden sm:block text-xs text-yellow-800 bg-yellow-100 border border-yellow-300 px-2 py-1 rounded">
-				  Demo: {licDaysLeft} {licDaysLeft === 1 ? 'día' : 'días'} restantes
-				</div>
+			  {showLicChip && (
+				<Link
+				  to="/configuracion/empresa?licencia=1"
+				  className={`hidden sm:inline-flex text-xs px-2 py-1 rounded border max-w-[220px] truncate ${
+				    showDemo
+				      ? 'text-yellow-900 bg-yellow-100 border-yellow-300 hover:bg-yellow-200'
+				      : 'text-indigo-900 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+				  }`}
+				  title="Ver licencia y pagar"
+				>
+				  Licencia: {licChip}
+				</Link>
 			  )}
               {blockedMsg && (
                 <div className="hidden sm:block text-xs text-red-800 bg-red-100 border border-red-300 px-2 py-1 rounded">

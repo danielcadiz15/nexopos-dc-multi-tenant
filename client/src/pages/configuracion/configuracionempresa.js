@@ -246,6 +246,13 @@ const ConfiguracionEmpresa = () => {
     navigate({ pathname: location.pathname, search: '' }, { replace: true });
   }, [location.search, location.pathname, navigate, cargarLicencia]);
 
+  useEffect(() => {
+    const q = new URLSearchParams(location.search || '');
+    if (q.get('licencia') !== '1') return;
+    setShowLic(true);
+    navigate({ pathname: location.pathname, search: '' }, { replace: true });
+  }, [location.search, location.pathname, navigate]);
+
   const guardarLicencia = async ()=>{
     try{
       const cid = await getCompanyId();

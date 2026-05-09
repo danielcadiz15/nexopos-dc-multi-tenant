@@ -212,6 +212,8 @@ async function extendLicenseByOneMonth(orgId, paymentId, sourceLabel, planToAppl
       payload.plan = normalizePlan(planToApply);
     }
 
+    payload.unpaidGraceStartedAt = admin.firestore.FieldValue.delete();
+
     t.set(txnRef, {
       orgId: id,
       paymentId: String(paymentId),

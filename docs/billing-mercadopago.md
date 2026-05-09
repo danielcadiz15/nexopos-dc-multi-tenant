@@ -78,6 +78,17 @@ Recomendado suscribir notificaciones de **Pagos** (`payment`). El handler acepta
 2. Se abre Mercado Pago en nueva pestaña; al volver, la app muestra toasts según `?mp=` en la URL.
 3. La extensión de licencia ocurre cuando MP notifica y el pago figura **approved** (puede demorar segundos).
 
+## Licencia sin `paidUntil` (sin pago registrado)
+
+Si la empresa **no tiene** fecha `paidUntil` válida en `companies/.../config/license` (o `licenses/...`):
+
+1. En el **primer** `checkLicense` que ejecute la API, se guarda `unpaidGraceStartedAt` (Firestore) y arrancan **24 h de cortesía**.
+2. Durante esas 24 h el usuario puede usar el sistema **salvo registrar ventas nuevas** (misma regla que la gracia post-vencimiento).
+3. Pasadas las 24 h sin pago, las rutas protegidas responden **402** con mensaje claro; el usuario puede **pagar desde la barra de licencia** o **Configuración → Licencia** (las rutas `/billing/mercadopago/*` no exigen licencia paga).
+4. Un pago aprobado por MP **borra** `unpaidGraceStartedAt` y define `paidUntil`.
+
+La barra superior de la app muestra siempre **plan**, **estado / días o cuenta regresiva** y el botón **Pagar con Mercado Pago** cuando corresponde.
+
 ## Seguridad
 
 - No se confía en el cuerpo del webhook a ciegas: se **relee el pago** con `GET /v1/payments/:id` usando el access token.

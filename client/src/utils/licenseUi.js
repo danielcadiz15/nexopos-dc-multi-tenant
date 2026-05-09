@@ -1,4 +1,4 @@
-/** Debe coincidir con functions/licenseHelpers.js (24 h post-vencimiento). */
+/** Debe coincidir con functions/licenseHelpers.js (24 h gracia). */
 export const LICENSE_GRACE_MS = 24 * 60 * 60 * 1000;
 
 function paidUntilToMs(raw) {
@@ -20,29 +20,55 @@ function paidUntilToMs(raw) {
 }
 
 /**
- * @returns {{ phase: 'none'|'active'|'grace'|'expired'|'blocked', graceEndsAt?: number, paidUntilMs?: number, pagoUrl?: string|null }}
+ * @returns {{
+ *   phase: 'active'|'grace'|'expired'|'blocked'|'unpaid_needs_anchor'|'unpaid_grace'|'unpaid_expired',
+ *   graceEndsAt?: number,
+ *   paidUntilMs?: number,
+ *   pagoUrl?: string|null,
+ *   unpaidGraceStartedAtMs?: number
+ * }}
  */
 export function evaluateLicenseUiState(lic) {
   if (!lic || typeof lic !== 'object') {
-    return { phase: 'none' };
+    return { phase: 'unpaid_needs_anchor', pagoUrl: null };
   }
   const pagoUrl = lic.pagoBilleteraUrl || lic.pago_billetera_url || null;
   if (lic.blocked === true) {
     return { phase: 'blocked', pagoUrl };
   }
   const until = paidUntilToMs(lic.paidUntil);
-  if (until == null) {
-    return { phase: 'none', pagoUrl };
+  if (until != null) {
+    const now = Date.now();
+    if (now <= until) {
+      return { phase: 'active', paidUntilMs: until, pagoUrl };
+    }
+    const graceEnd = until + LICENSE_GRACE_MS;
+    if (now <= graceEnd) {
+      return { phase: 'grace', graceEndsAt: graceEnd, paidUntilMs: until, pagoUrl };
+    }
+    return { phase: 'expired', graceEndsAt: graceEnd, paidUntilMs: until, pagoUrl };
   }
+
+  const anchor = paidUntilToMs(lic.unpaidGraceStartedAt);
+  if (anchor == null) {
+    return { phase: 'unpaid_needs_anchor', pagoUrl };
+  }
+  const graceEndUnpaid = anchor + LICENSE_GRACE_MS;
   const now = Date.now();
-  if (now <= until) {
-    return { phase: 'active', paidUntilMs: until, pagoUrl };
+  if (now <= graceEndUnpaid) {
+    return {
+      phase: 'unpaid_grace',
+      graceEndsAt: graceEndUnpaid,
+      unpaidGraceStartedAtMs: anchor,
+      pagoUrl
+    };
   }
-  const graceEnd = until + LICENSE_GRACE_MS;
-  if (now <= graceEnd) {
-    return { phase: 'grace', graceEndsAt: graceEnd, paidUntilMs: until, pagoUrl };
-  }
-  return { phase: 'expired', graceEndsAt: graceEnd, paidUntilMs: until, pagoUrl };
+  return {
+    phase: 'unpaid_expired',
+    graceEndsAt: graceEndUnpaid,
+    unpaidGraceStartedAtMs: anchor,
+    pagoUrl
+  };
 }
 
 export function formatGraceCountdown(graceEndsAtMs) {
@@ -51,4 +77,10 @@ export function formatGraceCountdown(graceEndsAtMs) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   return `${h} h ${m} min`;
+}
+
+/** Días completos hasta paidUntil (puede ser negativo si ya venció). */
+export function daysUntilPaidUntil(paidUntilMs) {
+  if (paidUntilMs == null) return null;
+  return Math.ceil((paidUntilMs - Date.now()) / (24 * 60 * 60 * 1000));
 }
