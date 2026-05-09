@@ -15,6 +15,7 @@ import {
   createLicenseMercadoPagoPreference
 } from '../../services/billing.service';
 import MercadoPagoMark from '../common/MercadoPagoMark';
+import { getMercadoPagoCheckoutUrl, goToMercadoPagoCheckout } from '../../utils/mercadopagoCheckout';
 
 /**
  * Barra fija de licencia: plan, vigencia / cortesía sin pago, y pago Mercado Pago sin salir de la app.
@@ -119,12 +120,12 @@ const LicenseBanner = ({ compact }) => {
     setPayLoading(true);
     try {
       const { data, status } = await createLicenseMercadoPagoPreference({ plan });
-      const url = data?.data?.init_point || data?.data?.sandbox_init_point;
+      const url = getMercadoPagoCheckoutUrl(data);
       if (status === 200 && data?.success && url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-        toast.info('Completá el pago en Mercado Pago. Al aprobarse, tu licencia se actualiza sola.', {
-          autoClose: 8000
+        toast.info('Te llevamos a Mercado Pago en esta misma ventana. Completá el pago; al volver se actualiza la vigencia.', {
+          autoClose: 5000
         });
+        goToMercadoPagoCheckout(url);
       } else {
         toast.error(data?.message || data?.detail?.message || 'No se pudo iniciar el pago');
       }

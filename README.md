@@ -6,12 +6,16 @@ NexoPOS DC es un sistema de punto de venta multi-tenant desarrollado con React y
 
 ## 🏗️ Arquitectura
 
-- **Frontend**: React 18 + Vite
+- **Frontend**: React 18 (Create React App en `client/`)
 - **Backend**: Firebase Functions (Node.js)
 - **Base de Datos**: Firestore
 - **Autenticación**: Firebase Auth
 - **Hosting**: Firebase Hosting
 - **Proyecto**: `nexopos-dc`
+
+## Despliegue a producción
+
+Guía paso a paso (build, `firebase deploy`, parciales y verificación): **[docs/DESPLIEGUE.md](docs/DESPLIEGUE.md)**.
 
 ## 🚀 Características
 

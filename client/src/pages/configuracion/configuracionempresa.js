@@ -17,6 +17,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getBillingPublicConfig, createLicenseMercadoPagoPreference } from '../../services/billing.service';
 import { normalizeLicensePlan, PLAN_LABELS_ES } from '../../utils/planTiers';
 import MercadoPagoMark from '../../components/common/MercadoPagoMark';
+import { getMercadoPagoCheckoutUrl, goToMercadoPagoCheckout } from '../../utils/mercadopagoCheckout';
 
 // Componentes
 import Card from '../../components/common/Card';
@@ -153,13 +154,13 @@ const ConfiguracionEmpresa = () => {
       const { data, status } = await createLicenseMercadoPagoPreference({
         plan: normalizeLicensePlan(lic.plan)
       });
-      const url = data?.data?.init_point || data?.data?.sandbox_init_point;
+      const url = getMercadoPagoCheckoutUrl(data);
       if (status === 200 && data?.success && url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
         toast.info(
-          'Completá el pago en Mercado Pago. Al acreditarse, se habilita automáticamente un mes más de uso.',
-          { autoClose: 8000 }
+          'Te llevamos a Mercado Pago en esta misma ventana. Con tarjeta: elegí cuotas y completá titular y DNI. Al volver, la vigencia se actualiza sola.',
+          { autoClose: 7000 }
         );
+        goToMercadoPagoCheckout(url);
       } else {
         toast.error(data?.message || data?.detail?.message || 'No se pudo iniciar el pago');
       }

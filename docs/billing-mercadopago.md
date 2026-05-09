@@ -74,9 +74,12 @@ Recomendado suscribir notificaciones de **Pagos** (`payment`). El handler acepta
 
 ## Flujo cliente (UI)
 
-1. **Configuración empresa** → **Licencia** → *Pagar 1 mes* o *Suscripción mensual automática*.
-2. Se abre Mercado Pago en nueva pestaña; al volver, la app muestra toasts según `?mp=` en la URL.
-3. La extensión de licencia ocurre cuando MP notifica y el pago figura **approved** (puede demorar segundos).
+1. **Configuración empresa** → **Licencia** → *Renovar* con Mercado Pago.
+2. El checkout se abre en la **misma ventana** (mejor sesión MP y menos casos de botón «Pagar» deshabilitado por cookies entre pestañas). Con **tarjeta**, en Argentina suele hacer falta elegir **cuotas** y completar **titular y DNI** antes de que se habilite pagar.
+3. Al volver, la app muestra toasts según `?mp=` en la URL.
+4. La extensión de licencia ocurre cuando MP notifica y el pago figura **approved** (puede demorar segundos).
+
+Variable opcional en el build del cliente: `REACT_APP_MERCADOPAGO_SANDBOX=true` para priorizar `sandbox_init_point` cuando probás con credenciales de prueba.
 
 ## Licencia sin `paidUntil` (sin pago registrado)
 
@@ -126,6 +129,8 @@ La barra superior de la app muestra siempre **plan**, **estado / días o cuenta 
 Si en el futuro cambia el host de Cloud Run, actualizá el webhook en Mercado Pago y, si aplica, `PUBLIC_API_BASE` / `MERCADOPAGO_WEBHOOK_URL` en el entorno de la función.
 
 ## Checklist de puesta en marcha
+
+Para compilar y subir **Hosting + Functions + reglas**, seguí la guía **[Despliegue a Firebase](./DESPLIEGUE.md)**.
 
 1. **Secreto** `MERCADOPAGO_ACCESS_TOKEN` en Google Secret Manager (vía `scripts/mercadopago-secret.ps1` o consola Firebase).
 2. **Redeploy** de `functions:api` tras rotar el secreto (`firebase deploy --only functions:api --project nexopos-dc --force`).

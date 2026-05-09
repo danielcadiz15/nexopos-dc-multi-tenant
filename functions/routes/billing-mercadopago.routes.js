@@ -285,6 +285,26 @@ async function ensureAuthCompany(req, res) {
   });
 }
 
+/** Datos del comprador para Checkout Pro (mejora aprobación y evita formularios incompletos). */
+function buildCheckoutPayer(req) {
+  const u = req.user || {};
+  const email = String(u.email || '').trim();
+  const payer = {};
+  if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    payer.email = email;
+  }
+  const rawName = String(u.nombre || u.name || '').trim();
+  if (rawName) {
+    const parts = rawName.split(/\s+/).filter(Boolean);
+    payer.name = parts[0] || 'Cliente';
+    payer.surname = parts.length > 1 ? parts.slice(1).join(' ') : 'NexoPOS';
+  } else if (payer.email) {
+    payer.name = 'Cliente';
+    payer.surname = 'NexoPOS';
+  }
+  return Object.keys(payer).length ? payer : undefined;
+}
+
 module.exports = async function billingMercadoPagoRoutes(req, res, path) {
   if (path === '/billing/mercadopago/webhook') {
     if (req.method === 'POST' || req.method === 'GET') {
@@ -343,38 +363,45 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
 
       const appUrl = getPublicAppUrl();
       const notificationUrl = getWebhookUrl(req);
-      const payerEmail = req.user.email || '';
       const planLabel = PLAN_LABEL_ES[plan] || plan;
+      const unitPriceRounded = Math.round(Number(unitPrice) * 100) / 100;
+      const payerObj = buildCheckoutPayer(req);
+
+      const preferenceBody = {
+        items: [
+          {
+            id: `nexopos_license_1m_${plan}`,
+            title: `NexoPOS — Licencia 1 mes (${planLabel})`,
+            description: `Licencia software — plan ${planLabel}`,
+            quantity: 1,
+            unit_price: unitPriceRounded,
+            currency_id: cfg.currencyId
+          }
+        ],
+        external_reference: `org:${orgId}`,
+        metadata: {
+          org_id: orgId,
+          kind: 'license_month',
+          plan: String(plan)
+        },
+        back_urls: {
+          success: `${appUrl}/configuracion/empresa?mp=approved`,
+          failure: `${appUrl}/configuracion/empresa?mp=failure`,
+          pending: `${appUrl}/configuracion/empresa?mp=pending`
+        },
+        notification_url: notificationUrl,
+        statement_descriptor: 'NEXOPOS',
+        /** Cuotas por defecto 1; máximo 18 para tarjeta (AR). */
+        payment_methods: {
+          installments: 18,
+          default_installments: 1
+        }
+      };
+      if (payerObj) preferenceBody.payer = payerObj;
 
       const preference = await mpFetch('/checkout/preferences', {
         method: 'POST',
-        body: JSON.stringify({
-          items: [
-            {
-              id: `nexopos_license_1m_${plan}`,
-              title: `NexoPOS — Licencia 1 mes (${planLabel})`,
-              description: `Organización ${orgId} — plan ${planLabel}`,
-              quantity: 1,
-              unit_price: unitPrice,
-              currency_id: cfg.currencyId
-            }
-          ],
-          payer: payerEmail ? { email: payerEmail } : undefined,
-          external_reference: `org:${orgId}`,
-          metadata: {
-            org_id: orgId,
-            kind: 'license_month',
-            plan
-          },
-          back_urls: {
-            success: `${appUrl}/configuracion/empresa?mp=approved`,
-            failure: `${appUrl}/configuracion/empresa?mp=failure`,
-            pending: `${appUrl}/configuracion/empresa?mp=pending`
-          },
-          auto_return: 'approved',
-          notification_url: notificationUrl,
-          statement_descriptor: 'NEXOPOS LIC'
-        })
+        body: JSON.stringify(preferenceBody)
       });
 
       res.json({

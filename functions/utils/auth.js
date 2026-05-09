@@ -47,6 +47,7 @@ async function authenticateUser(req, res, next) {
       let userData = {
         uid: decodedToken.uid,
         email: decodedToken.email,
+        nombre: decodedToken.name || decodedToken.nombre || '',
         rol: 'usuario', // valor por defecto
         companyId
       };
