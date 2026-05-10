@@ -826,11 +826,9 @@ export function AuthProvider({ children }) {
     }
   }, [value]);
 
-  return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
-    </AuthContext.Provider>
-  );
+  // Siempre montar children: el loader vive en AppContent / ProtectedRoute.
+  // Antes `{!loading && children}` dejaba #root vacío en móvil mientras Firebase tardaba → pantalla blanca.
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

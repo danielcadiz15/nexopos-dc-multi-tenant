@@ -8,12 +8,14 @@ export function useViewportHeight() {
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
     const set = () => {
-      const h = typeof window.visualViewport !== 'undefined' && window.visualViewport.height
-        ? window.visualViewport.height
-        : window.innerHeight;
+      const ih = window.innerHeight || 600;
+      const vv = window.visualViewport;
+      const vvH = vv && typeof vv.height === 'number' ? vv.height : 0;
+      // En algunos Android visualViewport puede reportar 0 al inicio; no usar eso para --app-vh-unit.
+      const h = vvH > 40 ? vvH : ih;
 
       const w = window.innerWidth || 1024;
-      document.documentElement.style.setProperty('--app-vh-unit', `${h * 0.01}px`);
+      document.documentElement.style.setProperty('--app-vh-unit', `${Math.max(1, h) * 0.01}px`);
 
       // Escala tipográfica global: en pantallas bajas/angostas reduce fuentes para evitar overflow.
       const heightScale = clamp((h - 560) / (900 - 560), 0, 1); // 0..1
