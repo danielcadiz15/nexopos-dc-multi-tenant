@@ -1,43 +1,29 @@
 {
   "indexes": [
     {
-      "collectionGroup": "transferencias",
+      "collectionGroup": "clientes",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "sucursal_destino_id",
+          "fieldPath": "orgId",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "fecha_solicitud",
-          "order": "DESCENDING"
+          "fieldPath": "nombre",
+          "order": "ASCENDING"
         }
       ]
     },
     {
-      "collectionGroup": "transferencias",
+      "collectionGroup": "movimientos_caja",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "sucursal_origen_id",
+          "fieldPath": "orgId",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "fecha_solicitud",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "transferencias",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "estado",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "fecha_solicitud",
+          "fieldPath": "fecha",
           "order": "DESCENDING"
         }
       ]
@@ -74,6 +60,108 @@
         },
         {
           "fieldPath": "activa",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "productos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "orgId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "activo",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "stock_sucursal",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "orgId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sucursal_id",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "transferencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha_solicitud",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "transferencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sucursal_destino_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha_solicitud",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "transferencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sucursal_origen_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha_solicitud",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "ventas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "orgId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "ventas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "orgId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sucursal_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaCreacion",
           "order": "ASCENDING"
         }
       ]
