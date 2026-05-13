@@ -21,6 +21,14 @@ import configuracionService from '../../services/configuracion.service';
 import Button from '../../components/common/Button';
 import PasswordInput from '../../components/common/PasswordInput';
 
+const normalizeExternalUrl = (raw) => {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^\/\//.test(value)) return `https:${value}`;
+  return `https://${value}`;
+};
+
 /**
  * Componente de página de inicio de sesión
  * @returns {JSX.Element} Componente Login
@@ -43,7 +51,7 @@ const Login = () => {
   const [cajaApkUrlServidor, setCajaApkUrlServidor] = useState('');
 
   const envCajaApkUrl = (process.env.REACT_APP_CAJA_APK_URL || '').trim();
-  const urlDescargaApk = (cajaApkUrlServidor || envCajaApkUrl).trim();
+  const urlDescargaApk = normalizeExternalUrl(cajaApkUrlServidor || envCajaApkUrl);
 
   useEffect(() => {
     let cancelado = false;

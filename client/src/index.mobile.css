@@ -1099,3 +1099,32 @@
     font-size: 10pt !important;
   }
 }
+
+/* === HOTFIX TABLETS WEBVIEW (scroll + layout shell) === */
+@media (max-width: 1024px) {
+  /*
+    Este bloque corrige conflictos de reglas legacy de este archivo
+    que fuerzan alturas fijas y terminan bloqueando scroll en tablets.
+  */
+  #root > div,
+  .nexo-viewport-root,
+  .nexo-route-outlet {
+    height: 100% !important;
+    max-height: none !important;
+  }
+
+  .nexo-viewport-root {
+    overflow: hidden !important;
+  }
+
+  .nexo-route-outlet {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  main {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+}
