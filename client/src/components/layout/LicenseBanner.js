@@ -200,25 +200,55 @@ const LicenseBanner = ({ compact }) => {
     apiBlock?.code === 'LICENSE_GRACE_NO_FACTURACION' || apiBlock?.code === 'LICENSE_NO_PAYMENT_GRACE';
   const apiHard =
     apiBlock?.code === 'LICENSE_EXPIRED' || apiBlock?.code === 'LICENSE_BLOCKED';
+  const isDemo = lic?.demo === true;
 
   let stripClass =
     'border-b border-indigo-200/80 bg-indigo-50/95 text-indigo-950 backdrop-blur-sm';
   if (ui?.phase === 'grace' || ui?.phase === 'unpaid_grace' || graceLike) {
     stripClass = 'border-b border-amber-300/80 bg-amber-50/95 text-amber-950 backdrop-blur-sm';
   }
-  if (ui?.phase === 'expired' || ui?.phase === 'unpaid_expired' || ui?.phase === 'blocked' || apiHard) {
+  if (
+    ui?.phase === 'expired' ||
+    ui?.phase === 'unpaid_expired' ||
+    ui?.phase === 'demo_expired' ||
+    ui?.phase === 'blocked' ||
+    apiHard
+  ) {
     stripClass = 'border-b border-red-300/80 bg-red-50/95 text-red-950 backdrop-blur-sm';
   }
 
   const daysLeft = ui?.paidUntilMs != null ? daysUntilPaidUntil(ui.paidUntilMs) : null;
+  const isImportantPhase =
+    ui?.phase === 'demo_expired' ||
+    ui?.phase === 'grace' ||
+    ui?.phase === 'expired' ||
+    ui?.phase === 'unpaid_needs_anchor' ||
+    ui?.phase === 'unpaid_grace' ||
+    ui?.phase === 'unpaid_expired' ||
+    ui?.phase === 'blocked';
+  const isNearDue =
+    (ui?.phase === 'active' || ui?.phase === 'demo_active') &&
+    daysLeft != null &&
+    daysLeft <= 7 &&
+    daysLeft >= 0;
+  const shouldShowBanner = compact || isDemo || inOnboarding || isImportantPhase || isNearDue || !!apiBlock;
+
+  if (!shouldShowBanner) return null;
 
   let statusLine = '';
-  if (ui?.phase === 'active' && ui.paidUntilMs) {
+  if ((ui?.phase === 'active' || ui?.phase === 'demo_active') && ui.paidUntilMs) {
     const d = daysLeft;
-    statusLine =
-      d != null && d >= 0
-        ? `Vigente hasta ${new Date(ui.paidUntilMs).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })} · ${d} ${d === 1 ? 'día' : 'días'} restantes`
-        : 'Licencia activa';
+    if (isDemo) {
+      statusLine =
+        d != null && d >= 0
+          ? `Demo activa hasta ${new Date(ui.paidUntilMs).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })} · ${d} ${d === 1 ? 'día' : 'días'} restantes`
+          : 'Demo activa';
+    } else {
+      statusLine =
+        d != null && d >= 0
+          ? `Vigente hasta ${new Date(ui.paidUntilMs).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })} · ${d} ${d === 1 ? 'día' : 'días'} restantes`
+          : 'Licencia activa';
+    }
     if (inOnboarding && lic?.billingModel === 'onboarding_v2') {
       statusLine +=
         ' · Período de instalación (versión completa): tras las cuotas fijas pasás al plan que elegiste al pagar.';
@@ -233,13 +263,16 @@ const LicenseBanner = ({ compact }) => {
   } else if (ui?.phase === 'unpaid_expired') {
     statusLine =
       'Sin pago registrado: superaste las 24 horas de cortesía. El sistema queda restringido hasta que pagues.';
-  } else if (ui?.phase === 'expired') {
-    statusLine = `Licencia vencida: superaste el período de gracia (${formatGraceCountdown(ui.graceEndsAt)} ya finalizó). Regularizá el pago.`;
+  } else if (ui?.phase === 'expired' || ui?.phase === 'demo_expired') {
+    statusLine = isDemo
+      ? 'Tu demo de 48 hs finalizó. Activá un plan para continuar usando NexoPOS sin interrupciones.'
+      : `Licencia vencida: superaste el período de gracia (${formatGraceCountdown(ui.graceEndsAt)} ya finalizó). Regularizá el pago.`;
   } else if (ui?.phase === 'blocked') {
     statusLine = lic?.reason || 'Acceso restringido por licencia. Contactá a quien administra la cuenta de tu negocio.';
   }
 
   const textSize = compact ? 'text-xs' : 'text-sm';
+  const compactPadding = compact ? 'px-2 py-2' : 'px-3 py-2.5';
 
   let mainMessage = statusLine;
   if (graceLike && apiBlock?.message) {
@@ -249,8 +282,8 @@ const LicenseBanner = ({ compact }) => {
   }
 
   return (
-    <div className="license-banner">
-      <div className={`px-3 py-2.5 ${stripClass}`}>
+    <div className="license-banner relative z-20">
+      <div className={`${compactPadding} ${stripClass}`}>
         <div
           className={`mx-auto flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${textSize}`}
         >
@@ -277,7 +310,7 @@ const LicenseBanner = ({ compact }) => {
                 <MercadoPagoMark className="h-5 w-auto shrink-0 opacity-95" />
                 {payLoading
                   ? 'Abriendo…'
-                  : `${inOnboarding ? 'Cuota instalación' : 'Renovar'} · ${arsNext.toLocaleString('es-AR')} ARS`}
+                  : `${inOnboarding ? 'Cuota instalación' : isDemo ? 'Activar plan' : 'Renovar'} · ${arsNext.toLocaleString('es-AR')} ARS`}
               </button>
             ) : null}
             {puedePagarMp && !inOnboarding ? (

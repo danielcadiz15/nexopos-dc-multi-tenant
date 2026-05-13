@@ -198,6 +198,40 @@ function bootstrapCodeHash(pepper, code) {
     .digest('hex');
 }
 
+function demoEmailHash(emailNorm) {
+  return crypto
+    .createHash('sha256')
+    .update('nexopos-demo-email\n', 'utf8')
+    .update(String(emailNorm || '').trim().toLowerCase(), 'utf8')
+    .digest('hex');
+}
+
+async function assertDemoAvailableForEmail(ownerEmailNorm) {
+  const emailNorm = normalizeOwnerEmail(ownerEmailNorm);
+  if (!emailNorm) {
+    throw new HttpsError('invalid-argument', 'No pudimos resolver el correo de tu cuenta.');
+  }
+  const ref = db.collection('demoUsedEmails').doc(demoEmailHash(emailNorm));
+  const snap = await ref.get();
+  if (snap.exists) {
+    throw new HttpsError(
+      'permission-denied',
+      'Este correo ya usó la demo de 48 hs. Si querés continuar, activá un plan pago.'
+    );
+  }
+}
+
+async function registerDemoUsage(ownerEmailNorm, orgId, uid) {
+  const emailNorm = normalizeOwnerEmail(ownerEmailNorm);
+  const ref = db.collection('demoUsedEmails').doc(demoEmailHash(emailNorm));
+  await ref.set({
+    emailNormalized: emailNorm,
+    orgId,
+    createdByUid: uid,
+    usedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
 async function assertTenantCreationCode(uid, codeInput, ownerEmailNorm) {
   const raw = (codeInput != null ? String(codeInput) : '').trim();
   if (!raw) {
@@ -296,9 +330,19 @@ exports.createTenant = onCall({ secrets: [tenantCreationAdminCode, tenantBootstr
       throw new HttpsError('unauthenticated', 'Debe iniciar sesión');
     }
     const uid = request.auth.uid;
-    const { nombre, slug, codigoAdministrador, adminLicenseCode, chosenPlan, plan } = request.data || {};
+    const {
+      nombre,
+      slug,
+      codigoAdministrador,
+      adminLicenseCode,
+      chosenPlan,
+      plan,
+      creationMode
+    } = request.data || {};
     const codeInput = codigoAdministrador ?? adminLicenseCode;
     const selectedPlan = normalizePlan(chosenPlan || plan || 'basic');
+    const mode = creationMode != null ? String(creationMode).trim().toLowerCase() : 'standard';
+    const isDemoMode = mode === 'demo';
 
     let ownerEmail = null;
     let authUser;
@@ -322,7 +366,11 @@ exports.createTenant = onCall({ secrets: [tenantCreationAdminCode, tenantBootstr
     }
 
     const ownerEmailNorm = normalizeOwnerEmail(ownerEmail);
-    await assertTenantCreationCode(uid, codeInput, ownerEmailNorm);
+    if (isDemoMode) {
+      await assertDemoAvailableForEmail(ownerEmailNorm);
+    } else {
+      await assertTenantCreationCode(uid, codeInput, ownerEmailNorm);
+    }
     
     // Si no se proporciona nombre, usar el dominio del email
     const nombreEmpresa = nombre || ownerEmail.split('@')[1].split('.')[0].toUpperCase();
@@ -433,27 +481,46 @@ exports.createTenant = onCall({ secrets: [tenantCreationAdminCode, tenantBootstr
       ownerEmail: ownerEmail
     }, { merge: true });
 
-    // Licencia nueva: sin vigencia hasta el primer cobro MP (cuotas de instalación modelo onboarding_v2)
+    // Licencia nueva: demo 48 hs o onboarding pago con kit inicial.
     try {
-      const licensePayload = {
-        billingModel: 'onboarding_v2',
-        onboardingInstallmentsPaid: 0,
-        chosenPlan: selectedPlan,
-        /** Durante las 2 cuotas de kit/instalación se entrega versión completa; desde el tercer pago se aplica chosenPlan. */
-        plan: 'premium',
-        kitInstallmentsTotal: 2,
-        kitInstallmentAmountARS: 250000,
-        blocked: false,
-        reason: '',
-        demo: false,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: uid
-      };
+      let licensePayload;
+      if (isDemoMode) {
+        const paidUntil = admin.firestore.Timestamp.fromDate(new Date(Date.now() + (48 * 60 * 60 * 1000)));
+        licensePayload = {
+          billingModel: 'demo_48h',
+          chosenPlan: selectedPlan,
+          plan: 'premium',
+          paidUntil,
+          blocked: false,
+          reason: '',
+          demo: true,
+          demoDurationHours: 48,
+          demoStartedAt: now,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: uid
+        };
+      } else {
+        licensePayload = {
+          billingModel: 'onboarding_v2',
+          onboardingInstallmentsPaid: 0,
+          chosenPlan: selectedPlan,
+          /** Durante las 2 cuotas de kit/instalación se entrega versión completa; desde el tercer pago se aplica chosenPlan. */
+          plan: 'premium',
+          kitInstallmentsTotal: 2,
+          kitInstallmentAmountARS: 250000,
+          blocked: false,
+          reason: '',
+          demo: false,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: uid
+        };
+      }
       await db.collection('companies').doc(orgRef.id).collection('config').doc('license').set(licensePayload, { merge: true });
       await db.collection('licenses').doc(orgRef.id).set(licensePayload, { merge: true });
     } catch (e) {
-      console.warn('No se pudo inicializar licencia de onboarding:', e.message);
+      console.warn('No se pudo inicializar licencia inicial:', e.message);
     }
 
     // Módulos: versión completa hasta que el primer cobro recurrente aplique el plan elegido en MP
@@ -499,7 +566,15 @@ exports.createTenant = onCall({ secrets: [tenantCreationAdminCode, tenantBootstr
       console.warn('No se pudo sembrar catálogo mínimo:', e.message);
     }
 
-    return { success: true, orgId: orgRef.id, sucursalId: sucRef.id };
+    if (isDemoMode) {
+      try {
+        await registerDemoUsage(ownerEmailNorm, orgRef.id, uid);
+      } catch (e) {
+        console.warn('No se pudo registrar uso de demo:', e.message);
+      }
+    }
+
+    return { success: true, orgId: orgRef.id, sucursalId: sucRef.id, mode: isDemoMode ? 'demo' : 'standard' };
   } catch (error) {
     if (error instanceof HttpsError) {
       throw error;

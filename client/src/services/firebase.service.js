@@ -226,13 +226,22 @@ export function tenantDoc(orgId, path, id) {
   return doc(db, `tenants/${orgId}/${path}/${id}`);
 }
 
-export async function createTenant(nombre, slug, codigoAdministrador, chosenPlan = 'basic') {
+export async function createTenant(
+  nombre,
+  slug,
+  codigoAdministrador,
+  chosenPlan = 'basic',
+  options = {}
+) {
   const callable = httpsCallable(functions, 'createTenant');
+  const creationModeRaw = options?.creationMode;
+  const creationMode = creationModeRaw != null ? String(creationModeRaw).trim().toLowerCase() : '';
   const res = await callable({
     nombre,
     slug,
     codigoAdministrador: codigoAdministrador != null ? String(codigoAdministrador) : '',
-    chosenPlan
+    chosenPlan,
+    creationMode: creationMode || undefined
   });
   return res.data;
 }

@@ -292,6 +292,16 @@ const Login = () => {
             <p className="mt-2 text-sm text-slate-600">
               ¿Querés abrir una nueva empresa? <Link to="/signup" className="text-indigo-600 font-semibold">Crear empresa</Link>
             </p>
+            <p className="mt-2 text-sm text-slate-600">
+              ¿Querés probar antes?{' '}
+              <Link
+                to="/signup"
+                state={{ signupMode: 'demo' }}
+                className="font-semibold text-emerald-600"
+              >
+                Probar demo gratis (48 hs)
+              </Link>
+            </p>
             <p className="mt-3 text-xs text-slate-500">
               Si sos cajero, tu administrador debe crearte o invitarte dentro de su empresa.
             </p>

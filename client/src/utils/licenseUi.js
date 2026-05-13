@@ -21,7 +21,7 @@ function paidUntilToMs(raw) {
 
 /**
  * @returns {{
- *   phase: 'active'|'grace'|'expired'|'blocked'|'unpaid_needs_anchor'|'unpaid_grace'|'unpaid_expired',
+ *   phase: 'active'|'demo_active'|'demo_expired'|'grace'|'expired'|'blocked'|'unpaid_needs_anchor'|'unpaid_grace'|'unpaid_expired',
  *   graceEndsAt?: number,
  *   paidUntilMs?: number,
  *   pagoUrl?: string|null,
@@ -39,6 +39,12 @@ export function evaluateLicenseUiState(lic) {
   const until = paidUntilToMs(lic.paidUntil);
   if (until != null) {
     const now = Date.now();
+    if (lic.demo === true) {
+      if (now <= until) {
+        return { phase: 'demo_active', paidUntilMs: until, pagoUrl };
+      }
+      return { phase: 'demo_expired', paidUntilMs: until, pagoUrl };
+    }
     if (now <= until) {
       return { phase: 'active', paidUntilMs: until, pagoUrl };
     }

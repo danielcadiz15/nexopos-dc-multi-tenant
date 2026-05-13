@@ -73,6 +73,27 @@ export function getModulePresetForPlan(rawPlan) {
 
 export const PLAN_IDS = ['basic', 'intermediate', 'premium'];
 
+export const PLAN_COMMERCIAL_META_ES = {
+  basic: {
+    includedUsers: 2,
+    includedBranches: 1,
+    extraUserArs: 12000,
+    extraBranchArs: 25000
+  },
+  intermediate: {
+    includedUsers: 6,
+    includedBranches: 3,
+    extraUserArs: 10000,
+    extraBranchArs: 22000
+  },
+  premium: {
+    includedUsers: 15,
+    includedBranches: 8,
+    extraUserArs: 9000,
+    extraBranchArs: 20000
+  }
+};
+
 /** Textos orientativos por plan (marketing / instructivo) */
 export const PLAN_DEEP_COPY_ES = {
   basic: {
@@ -84,7 +105,9 @@ export const PLAN_DEEP_COPY_ES = {
       'Clientes y ventas para facturar y consultar historial',
       'Menor superficie de menú: menos distracciones para el equipo'
     ],
-    highlight: 'Ideal para mostrador único o despensa que prioriza velocidad de cobro.'
+    highlight: 'Ideal para mostrador único o despensa que prioriza velocidad de cobro.',
+    commercial:
+      'Incluye hasta 2 usuarios y 1 sucursal; podés sumar usuarios/sucursales adicionales cuando tu operación crezca.'
   },
   intermediate: {
     tagline: 'Negocio completo sin industrial',
@@ -95,7 +118,9 @@ export const PLAN_DEEP_COPY_ES = {
       'Listas de precios y transferencias para multi-sucursal',
       'Reportes y caja alineados al volumen medio de operación'
     ],
-    highlight: 'Recomendada para distribuidoras y cadenas chicas que ya gestionan reposición y varios puntos.'
+    highlight: 'Recomendada para distribuidoras y cadenas chicas que ya gestionan reposición y varios puntos.',
+    commercial:
+      'Incluye hasta 6 usuarios y 3 sucursales con opción de ampliar por adicionales.'
   },
   premium: {
     tagline: 'Todo el sistema, sin techo',
@@ -106,7 +131,9 @@ export const PLAN_DEEP_COPY_ES = {
       'Auditoría y trazabilidad para equipos más grandes',
       'Promociones y flota cuando el modelo de negocio lo requiere'
     ],
-    highlight: 'Pensada para operaciones que industrializan, auditan o integran logística propia.'
+    highlight: 'Pensada para operaciones que industrializan, auditan o integran logística propia.',
+    commercial:
+      'Incluye hasta 15 usuarios y 8 sucursales; ideal para equipos grandes y multi-local.'
   }
 };
 

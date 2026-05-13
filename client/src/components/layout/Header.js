@@ -13,14 +13,11 @@ import SucursalSelector from '../common/SucursalSelector';
 import { evaluateLicenseUiState, formatGraceCountdown, daysUntilPaidUntil } from '../../utils/licenseUi';
 import { normalizeLicensePlan, PLAN_LABELS_ES } from '../../utils/planTiers';
 
-import { 
-  FaBars, FaTimes, FaUser, FaSignOutAlt, FaStore,
-  FaCog, FaBuilding
-} from 'react-icons/fa';
+import { FaBars, FaTimes, FaUser, FaSignOutAlt, FaCog } from 'react-icons/fa';
 import NexoPOSLogo from '../common/NexoPOSLogo';
 
 const Header = ({ toggleSidebar, isSidebarOpen }) => {
-  const { currentUser, logout, sucursalSeleccionada, orgId } = useAuth();
+  const { currentUser, logout, orgId } = useAuth();
   const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [empresaConfig, setEmpresaConfig] = useState(null);
@@ -81,12 +78,12 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
         const ui = evaluateLicenseUiState(lic || {});
         const planLabel = PLAN_LABELS_ES[normalizeLicensePlan(lic?.plan)] || 'Básica';
 
-        if (ui.phase === 'active' && ui.paidUntilMs) {
+        if ((ui.phase === 'active' || ui.phase === 'demo_active') && ui.paidUntilMs) {
           const diff = daysUntilPaidUntil(ui.paidUntilMs);
           setLicDaysLeft(diff != null && Number.isFinite(diff) ? diff : null);
           setLicChip(
             diff != null && diff >= 0
-              ? `${planLabel} · ${diff} ${diff === 1 ? 'día' : 'días'}`
+              ? `${lic?.demo ? 'Demo' : planLabel} · ${diff} ${diff === 1 ? 'día' : 'días'}`
               : `${planLabel}`
           );
           return;
@@ -94,6 +91,10 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
         setLicDaysLeft(null);
         if (ui.phase === 'unpaid_grace' || ui.phase === 'grace') {
           setLicChip(`${planLabel} · gracia ${formatGraceCountdown(ui.graceEndsAt)}`);
+        } else if (ui.phase === 'demo_expired') {
+          setLicChip('Demo finalizada · activar plan');
+        } else if (ui.phase === 'demo_active' && ui.paidUntilMs) {
+          setLicChip('Demo activa');
         } else if (ui.phase === 'unpaid_needs_anchor') {
           setLicChip(`${planLabel} · sin pago (activando cortesía…)`);
         } else if (ui.phase === 'unpaid_expired' || ui.phase === 'expired' || ui.phase === 'blocked') {
@@ -142,7 +143,7 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
   const showDemo = licDaysLeft !== null && licDaysLeft >= 0;
   const showLicChip = Boolean(orgId && licChip);
   return (
-    <header className="border-b border-slate-200/90 bg-white/85 shadow-sm shadow-slate-900/5 backdrop-blur-md">
+    <header className="relative z-40 border-b border-slate-200/90 bg-white/85 shadow-sm shadow-slate-900/5 backdrop-blur-md">
       <div className="px-2 sm:px-4 lg:px-8">
         <div className="flex h-14 items-center justify-between sm:h-16">
           {/* Botón de menú y logo/nombre */}
@@ -207,6 +208,7 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
             <div className="relative">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
+                aria-expanded={showUserMenu}
                 className="flex items-center rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:ring-offset-2"
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 text-sm font-semibold text-white shadow-md shadow-indigo-500/25">
@@ -219,7 +221,7 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
 
               {/* Dropdown del usuario */}
               {showUserMenu && (
-                <div className="absolute right-0 z-50 mt-2 w-52 origin-top-right overflow-hidden rounded-xl border border-slate-200/90 bg-white/95 py-1 shadow-elevated backdrop-blur-md ring-1 ring-slate-900/5">
+                <div className="user-menu-dropdown absolute right-0 z-[80] mt-2 w-52 origin-top-right overflow-hidden rounded-xl border border-slate-200/90 bg-white/95 py-1 shadow-elevated backdrop-blur-md ring-1 ring-slate-900/5">
                   <div className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
                     {currentUser?.email}
                   </div>

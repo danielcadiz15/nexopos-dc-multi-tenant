@@ -7,13 +7,19 @@ import { createTenant, setActiveTenant } from '../../services/firebase.service';
 import { useAuth } from '../../contexts/AuthContext';
 import { getEmailActionCodeSettings } from '../../utils/emailVerification';
 import Button from '../../components/common/Button';
-import { PLAN_IDS, PLAN_DEEP_COPY_ES, planLabel } from '../../utils/planDetails';
+import {
+  PLAN_IDS,
+  PLAN_DEEP_COPY_ES,
+  PLAN_COMMERCIAL_META_ES,
+  planLabel
+} from '../../utils/planDetails';
 
 const VerificarEmailEmpresa = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { completeCompanyAfterVerification, orgId, currentUser, refreshAuthSession } = useAuth();
   const empresaFromNav = location.state?.empresaNombre;
+  const modeFromNav = location.state?.signupMode;
   const [empresaNombre, setEmpresaNombre] = useState('');
   const [codigoAdministrador, setCodigoAdministrador] = useState('');
   const [chosenPlan, setChosenPlan] = useState(() => sessionStorage.getItem('pendingChosenPlan') || 'basic');
@@ -28,6 +34,12 @@ const VerificarEmailEmpresa = () => {
     () => !orgId || pendienteNombreEmpresa,
     [orgId, pendienteNombreEmpresa]
   );
+  const signupMode = useMemo(() => {
+    const fromSession = sessionStorage.getItem('pendingSignupMode') || '';
+    if (modeFromNav === 'demo' || fromSession === 'demo') return 'demo';
+    return 'standard';
+  }, [modeFromNav]);
+  const isDemoMode = signupMode === 'demo';
 
   useEffect(() => {
     if (empresaFromNav) {
@@ -39,6 +51,12 @@ const VerificarEmailEmpresa = () => {
       setEmpresaNombre(pend);
     }
   }, [empresaFromNav]);
+
+  useEffect(() => {
+    if (isDemoMode) {
+      sessionStorage.setItem('pendingSignupMode', 'demo');
+    }
+  }, [isDemoMode]);
 
   useEffect(() => {
     if (
@@ -103,12 +121,18 @@ const VerificarEmailEmpresa = () => {
         toast.warning('Indicá el nombre de tu empresa para crearla.');
         return;
       }
-      if (!codigoAdministrador.trim()) {
+      if (!isDemoMode && !codigoAdministrador.trim()) {
         toast.warning('Ingresá el código de habilitación que te envió el administrador para tu correo.');
         return;
       }
       const slug = nombre.toLowerCase().replace(/\s+/g, '-');
-      const res = await createTenant(nombre, slug, codigoAdministrador.trim(), chosenPlan);
+      const res = await createTenant(
+        nombre,
+        slug,
+        codigoAdministrador.trim(),
+        chosenPlan,
+        { creationMode: isDemoMode ? 'demo' : 'standard' }
+      );
       if (!res?.success || !res.orgId) {
         throw new Error('No se pudo crear la empresa');
       }
@@ -116,7 +140,14 @@ const VerificarEmailEmpresa = () => {
       await completeCompanyAfterVerification();
       sessionStorage.removeItem('pendingEmpresaNombre');
       sessionStorage.removeItem('pendingChosenPlan');
+      sessionStorage.removeItem('pendingSignupMode');
       sessionStorage.setItem('postVerifyGoConfig', '1');
+      if (isDemoMode) {
+        toast.success(
+          'Gracias por probar NexoPOS. Tu demo full está activa por 48 hs: recorré todo y cuando quieras seguís con un plan pago.',
+          { autoClose: 7000 }
+        );
+      }
       navigate('/configuracion/empresa', { replace: true });
     } catch (err) {
       const codigo = err?.code || '';
@@ -138,7 +169,9 @@ const VerificarEmailEmpresa = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4 py-10">
       <div className="max-w-lg w-full bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="py-10 px-8">
-          <p className="text-sm font-semibold text-indigo-600">{modoNuevaEmpresa ? 'Nueva empresa' : 'Tu cuenta NexoPOS'}</p>
+          <p className={`text-sm font-semibold ${isDemoMode ? 'text-emerald-600' : 'text-indigo-600'}`}>
+            {modoNuevaEmpresa ? (isDemoMode ? 'Demo 48 hs' : 'Nueva empresa') : 'Tu cuenta NexoPOS'}
+          </p>
           <h1 className="text-2xl font-extrabold text-gray-900 mt-1">Verificá tu correo electrónico</h1>
 
           <p className="text-sm text-gray-700 mt-3 leading-relaxed">
@@ -154,6 +187,14 @@ const VerificarEmailEmpresa = () => {
 
           {modoNuevaEmpresa && (
             <>
+              {isDemoMode && (
+                <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                  <p className="font-semibold">Vas a arrancar con la demo full por 48 horas.</p>
+                  <p className="mt-1">
+                    Tenés acceso completo para probar todo sin vueltas. Cuando termines, activás el plan que mejor te quede.
+                  </p>
+                </div>
+              )}
               <div className="mt-8 space-y-3">
                 <label className="block text-xs font-semibold text-gray-500 uppercase">Nombre de la empresa</label>
                 <input
@@ -163,22 +204,26 @@ const VerificarEmailEmpresa = () => {
                   onChange={(e) => setEmpresaNombre(e.target.value)}
                   placeholder="Ej: Mi negocio"
                 />
-                <label className="block text-xs font-semibold text-gray-500 uppercase mt-4">
-                  Código de habilitación (solo para este correo)
-                </label>
-                <input
-                  type="password"
-                  autoComplete="off"
-                  className="nexo-field py-3"
-                  value={codigoAdministrador}
-                  onChange={(e) => setCodigoAdministrador(e.target.value)}
-                  placeholder="Te lo envía el administrador para tu correo — un solo uso"
-                />
+                {!isDemoMode && (
+                  <>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mt-4">
+                      Código de habilitación (solo para este correo)
+                    </label>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      className="nexo-field py-3"
+                      value={codigoAdministrador}
+                      onChange={(e) => setCodigoAdministrador(e.target.value)}
+                      placeholder="Te lo envía el administrador para tu correo — un solo uso"
+                    />
+                  </>
+                )}
               </div>
 
               <div className="mt-5">
                 <label className="block text-xs font-semibold text-gray-500 uppercase">
-                  Abono desde el tercer mes
+                  {isDemoMode ? 'Plan sugerido para continuar después de la demo' : 'Abono desde el tercer mes'}
                 </label>
                 <div className="mt-2 grid grid-cols-1 gap-2">
                   {PLAN_IDS.map((id) => (
@@ -204,15 +249,27 @@ const VerificarEmailEmpresa = () => {
                       />
                       <strong>{planLabel(id)}</strong>
                       <span className="ml-2 text-xs text-gray-500">{PLAN_DEEP_COPY_ES[id]?.tagline}</span>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Incluye {PLAN_COMMERCIAL_META_ES[id]?.includedUsers} usuarios y {PLAN_COMMERCIAL_META_ES[id]?.includedBranches} sucursales.
+                      </p>
                     </label>
                   ))}
                 </div>
               </div>
 
               <p className="text-xs text-gray-500 mt-3">
-                El administrador debe generar el código asociando <strong>este mismo correo</strong>. Una vez activa la empresa,
-                se cobran dos cuotas de kit inicial de <strong>$250.000</strong> con versión completa. Desde el tercer pago
-                se aplica el abono que elijas acá.
+                {isDemoMode ? (
+                  <>
+                    Al confirmar, se crea tu empresa demo por <strong>48 hs</strong> con versión completa para que la pruebes a fondo.
+                    Después podés activar el plan que elegiste acá sin volver a cargar todo.
+                  </>
+                ) : (
+                  <>
+                    El administrador debe generar el código asociando <strong>este mismo correo</strong>. Una vez activa la empresa,
+                    se cobran dos cuotas de kit inicial de <strong>$250.000</strong> con versión completa. Desde el tercer pago
+                    se aplica el abono que elijas acá.
+                  </>
+                )}
               </p>
             </>
           )}

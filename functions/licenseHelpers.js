@@ -48,6 +48,12 @@ function evaluateLicenseState(lic) {
   const until = paidUntilToMillis(lic.paidUntil);
   if (until != null) {
     const now = Date.now();
+    if (lic.demo === true) {
+      if (now <= until) {
+        return { phase: 'demo_active', paidUntilMs: until };
+      }
+      return { phase: 'demo_expired', paidUntilMs: until };
+    }
     if (now <= until) {
       return { phase: 'active', paidUntilMs: until };
     }

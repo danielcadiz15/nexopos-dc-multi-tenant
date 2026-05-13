@@ -294,7 +294,7 @@ async function checkLicense(req, res) {
     const method = req.method || 'GET';
     const pagoUrl = lic.pagoBilleteraUrl || lic.pago_billetera_url || null;
 
-    if (state.phase === 'active') {
+    if (state.phase === 'active' || state.phase === 'demo_active') {
       return { ok: true };
     }
     if (state.phase === 'blocked') {
@@ -327,6 +327,15 @@ async function checkLicense(req, res) {
       };
     }
     const isUnpaidExpired = state.phase === 'unpaid_expired';
+    if (state.phase === 'demo_expired') {
+      return {
+        ok: false,
+        reason: 'Tu demo de 48 horas finalizó. Activá un plan para continuar usando NexoPOS.',
+        code: 'LICENSE_DEMO_EXPIRED',
+        graceEndsAt: state.paidUntilMs || null,
+        pagoBilleteraUrl: pagoUrl
+      };
+    }
     return {
       ok: false,
       reason: isUnpaidExpired

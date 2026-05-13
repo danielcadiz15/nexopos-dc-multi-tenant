@@ -31,6 +31,27 @@ const KEYS = [
   'usuarios'
 ];
 
+const PLAN_COMMERCIAL_META = {
+  basic: {
+    includedUsers: 2,
+    includedBranches: 1,
+    extraUserArs: 12000,
+    extraBranchArs: 25000
+  },
+  intermediate: {
+    includedUsers: 6,
+    includedBranches: 3,
+    extraUserArs: 10000,
+    extraBranchArs: 22000
+  },
+  premium: {
+    includedUsers: 15,
+    includedBranches: 8,
+    extraUserArs: 9000,
+    extraBranchArs: 20000
+  }
+};
+
 /** Todo habilitado — usado en las 2 primeras cuotas (versión full). */
 function presetPremiumModules() {
   const m = {};
@@ -97,6 +118,7 @@ function getModulePresetForPlan(rawPlan) {
 
 module.exports = {
   KEYS,
+  PLAN_COMMERCIAL_META,
   presetPremiumModules,
   presetIntermediateModules,
   presetBasicModules,
