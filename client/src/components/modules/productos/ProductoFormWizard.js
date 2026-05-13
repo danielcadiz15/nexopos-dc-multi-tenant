@@ -30,6 +30,10 @@ export default function ProductoFormWizard({
   margenGanancia,
   handlePrecioChange,
   handleMargenChange,
+  sugerencia,
+  pricingSuggestionConfig,
+  onPricingSuggestionConfigChange,
+  onAplicarPrecioSugerido,
   guardarProducto,
   submitting,
   navigate,
@@ -206,6 +210,21 @@ export default function ProductoFormWizard({
                   min="0"
                 />
               </div>
+              {sugerencia?.canSuggest && (
+                <div className="mt-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+                  <p>
+                    Sugerido: <strong>${sugerencia.suggestedPrice.toFixed(2)}</strong>
+                    {' · '}Costo total unitario: ${sugerencia.costoTotalUnitario.toFixed(2)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onAplicarPrecioSugerido}
+                    className="mt-2 rounded-md border border-indigo-300 bg-white px-2.5 py-1 font-semibold text-indigo-700 hover:bg-indigo-100"
+                  >
+                    Usar sugerido
+                  </button>
+                </div>
+              )}
             </div>
             <div>
               <label className="text-sm font-semibold text-slate-800">Margen de ganancia (%)</label>
@@ -229,6 +248,84 @@ export default function ProductoFormWizard({
               </Link>
               .
             </p>
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold text-slate-700">Sugerencia por gastos mensuales</p>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="text-xs text-slate-600">
+                  Alquiler
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={pricingSuggestionConfig?.alquilerMensual ?? ''}
+                    onChange={(e) => onPricingSuggestionConfigChange('alquilerMensual', e.target.value)}
+                    className={fieldClass}
+                  />
+                </label>
+                <label className="text-xs text-slate-600">
+                  Móvil
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={pricingSuggestionConfig?.movilMensual ?? ''}
+                    onChange={(e) => onPricingSuggestionConfigChange('movilMensual', e.target.value)}
+                    className={fieldClass}
+                  />
+                </label>
+                <label className="text-xs text-slate-600">
+                  Combustible
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={pricingSuggestionConfig?.combustibleMensual ?? ''}
+                    onChange={(e) => onPricingSuggestionConfigChange('combustibleMensual', e.target.value)}
+                    className={fieldClass}
+                  />
+                </label>
+                <label className="text-xs text-slate-600">
+                  Otros
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={pricingSuggestionConfig?.otrosGastosMensuales ?? ''}
+                    onChange={(e) => onPricingSuggestionConfigChange('otrosGastosMensuales', e.target.value)}
+                    className={fieldClass}
+                  />
+                </label>
+                <label className="text-xs text-slate-600">
+                  Unidades/mes
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={pricingSuggestionConfig?.unidadesMensualesEstimadas ?? ''}
+                    onChange={(e) =>
+                      onPricingSuggestionConfigChange('unidadesMensualesEstimadas', e.target.value)
+                    }
+                    className={fieldClass}
+                  />
+                </label>
+                <label className="text-xs text-slate-600">
+                  Margen objetivo (%)
+                  <input
+                    type="number"
+                    min="0"
+                    max="99"
+                    step="0.1"
+                    value={pricingSuggestionConfig?.margenObjetivoPct ?? ''}
+                    onChange={(e) => onPricingSuggestionConfigChange('margenObjetivoPct', e.target.value)}
+                    className={fieldClass}
+                  />
+                </label>
+              </div>
+              <p className="mt-2 text-xs text-slate-600">
+                Gastos mensuales: ${sugerencia?.gastosMensuales?.toFixed?.(2) || '0.00'} · gasto por unidad: $
+                {sugerencia?.gastoPorUnidad?.toFixed?.(2) || '0.00'}
+              </p>
+            </div>
           </div>
         )}
 

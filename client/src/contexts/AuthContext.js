@@ -36,6 +36,27 @@ export function AuthProvider({ children }) {
   /** Módulos de licencia normalizados (cada clave del catálogo existe; solo `false` desactiva). */
   const [companyModules, setCompanyModules] = useState(() => mergeCompanyModules({}));
   const currentUserSucursalesKey = JSON.stringify(currentUser?.sucursales || []);
+  const storageGet = (key) => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  };
+  const storageSet = (key, value) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      /* storage no disponible */
+    }
+  };
+  const storageRemove = (key) => {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* storage no disponible */
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -49,13 +70,13 @@ export function AuthProvider({ children }) {
           // Establecer orgId inmediatamente desde claims/localStorage (fallback) para evitar redirección temprana
           try {
             const claimCompanyId = customClaims?.companyId || customClaims?.orgId || null;
-            const storedCompanyId = localStorage.getItem('companyId') || localStorage.getItem('orgId');
+            const storedCompanyId = storageGet('companyId') || storageGet('orgId');
             resolvedOrgId = claimCompanyId || storedCompanyId || null;
             if (resolvedOrgId) {
               setOrgId(resolvedOrgId);
-              localStorage.setItem('orgId', resolvedOrgId);
-              localStorage.setItem('companyId', resolvedOrgId);
-              if (claimCompanyId) localStorage.setItem('companyId', claimCompanyId);
+              storageSet('orgId', resolvedOrgId);
+              storageSet('companyId', resolvedOrgId);
+              if (claimCompanyId) storageSet('companyId', claimCompanyId);
             }
           } catch {}
           
@@ -101,11 +122,11 @@ export function AuthProvider({ children }) {
                 });
                 // Guardar en localStorage para que los servicios puedan acceder
                 if (newOrgId) {
-                  localStorage.setItem('orgId', newOrgId);
-                  localStorage.setItem('companyId', newOrgId);
+                  storageSet('orgId', newOrgId);
+                  storageSet('companyId', newOrgId);
                 } else {
-                  localStorage.removeItem('orgId');
-                  localStorage.removeItem('companyId');
+                  storageRemove('orgId');
+                  storageRemove('companyId');
                 }
               } else {
                 // Un usuario sin empresa debe elegir "Crear empresa" o ser invitado por un administrador.
@@ -192,8 +213,8 @@ export function AuthProvider({ children }) {
         setPermisosEfectivos({});
         setCompanyModules(mergeCompanyModules({}));
         setOrgId(null);
-        localStorage.removeItem('orgId');
-        localStorage.removeItem('sucursalSeleccionada');
+        storageRemove('orgId');
+        storageRemove('sucursalSeleccionada');
         if (uoUnsubRef.current) {
           uoUnsubRef.current();
           uoUnsubRef.current = null;
@@ -218,11 +239,11 @@ export function AuthProvider({ children }) {
 
     try {
       if (orgId) {
-        localStorage.setItem('orgId', orgId);
-        localStorage.setItem('companyId', orgId);
+        storageSet('orgId', orgId);
+        storageSet('companyId', orgId);
       } else {
-        localStorage.removeItem('orgId');
-        localStorage.removeItem('companyId');
+        storageRemove('orgId');
+        storageRemove('companyId');
       }
     } catch (storageError) {
       console.warn('[AUTH] No se pudo sincronizar orgId en localStorage:', storageError);
@@ -438,7 +459,7 @@ export function AuthProvider({ children }) {
       setSucursalesDisponibles(sucursales);
       
       // Seleccionar la primera sucursal por defecto o la guardada en localStorage
-      const sucursalGuardada = localStorage.getItem('sucursalSeleccionada');
+      const sucursalGuardada = storageGet('sucursalSeleccionada');
       console.log('🏢 [AUTH] Sucursal guardada en localStorage:', sucursalGuardada);
       
       if (sucursalGuardada) {
@@ -449,12 +470,12 @@ export function AuthProvider({ children }) {
         } else if (sucursales.length > 0) {
           console.log('🏢 [AUTH] Sucursal guardada no encontrada, usando primera disponible:', sucursales[0]);
           setSucursalSeleccionada(sucursales[0]);
-          localStorage.setItem('sucursalSeleccionada', sucursales[0].id);
+          storageSet('sucursalSeleccionada', sucursales[0].id);
         }
       } else if (sucursales.length > 0) {
         console.log('🏢 [AUTH] No hay sucursal guardada, usando primera disponible:', sucursales[0]);
         setSucursalSeleccionada(sucursales[0]);
-        localStorage.setItem('sucursalSeleccionada', sucursales[0].id);
+        storageSet('sucursalSeleccionada', sucursales[0].id);
       } else {
         // Si aún no hay, crear una sucursal virtual temporal para evitar crashes
         console.log('🏢 [AUTH] No hay sucursales disponibles, creando fallback temporal');
@@ -483,7 +504,7 @@ export function AuthProvider({ children }) {
     const sucursal = sucursalesDisponibles.find(s => s.id === sucursalId);
     if (sucursal) {
       setSucursalSeleccionada(sucursal);
-      localStorage.setItem('sucursalSeleccionada', sucursalId);
+      storageSet('sucursalSeleccionada', sucursalId);
       toast.success(`Cambiado a ${sucursal.nombre}`);
     }
   };
@@ -498,11 +519,11 @@ export function AuthProvider({ children }) {
       // Obtener token con custom claims
       const tokenResult = await firebaseUser.getIdTokenResult(true);
       const customClaims = tokenResult.claims;
-      const resolvedOrgId = customClaims.companyId || customClaims.orgId || localStorage.getItem('companyId') || localStorage.getItem('orgId') || null;
+      const resolvedOrgId = customClaims.companyId || customClaims.orgId || storageGet('companyId') || storageGet('orgId') || null;
       if (resolvedOrgId) {
         setOrgId(resolvedOrgId);
-        localStorage.setItem('orgId', resolvedOrgId);
-        localStorage.setItem('companyId', resolvedOrgId);
+        storageSet('orgId', resolvedOrgId);
+        storageSet('companyId', resolvedOrgId);
       }
       
       const user = {
@@ -570,9 +591,9 @@ export function AuthProvider({ children }) {
       setSucursalesDisponibles([]);
       setPermisosEfectivos({});
       setCompanyModules(mergeCompanyModules({}));
-      localStorage.removeItem('sucursalSeleccionada');
-      localStorage.removeItem('orgId');
-      localStorage.removeItem('companyId');
+      storageRemove('sucursalSeleccionada');
+      storageRemove('orgId');
+      storageRemove('companyId');
       toast.info('Sesion cerrada correctamente');
     } catch (error) {
       console.error('? [AUTH] Error cerrando sesion:', error);
@@ -632,8 +653,8 @@ export function AuthProvider({ children }) {
           prev.orgId ||
           prev.companyId ||
           claimCompanyId ||
-          localStorage.getItem('companyId') ||
-          localStorage.getItem('orgId') ||
+          storageGet('companyId') ||
+          storageGet('orgId') ||
           null;
         return {
           ...prev,
@@ -644,8 +665,8 @@ export function AuthProvider({ children }) {
 
       if (claimCompanyId) {
         setOrgId((pid) => pid || claimCompanyId);
-        localStorage.setItem('orgId', claimCompanyId);
-        localStorage.setItem('companyId', claimCompanyId);
+        storageSet('orgId', claimCompanyId);
+        storageSet('companyId', claimCompanyId);
       }
 
       return { emailVerified: verified };
@@ -665,13 +686,13 @@ export function AuthProvider({ children }) {
     const resolvedOrgId =
       customClaims.companyId ||
       customClaims.orgId ||
-      localStorage.getItem('companyId') ||
-      localStorage.getItem('orgId') ||
+      storageGet('companyId') ||
+      storageGet('orgId') ||
       null;
     if (resolvedOrgId) {
       setOrgId(resolvedOrgId);
-      localStorage.setItem('orgId', resolvedOrgId);
-      localStorage.setItem('companyId', resolvedOrgId);
+      storageSet('orgId', resolvedOrgId);
+      storageSet('companyId', resolvedOrgId);
     }
     const user = {
       id: firebaseUser.uid,

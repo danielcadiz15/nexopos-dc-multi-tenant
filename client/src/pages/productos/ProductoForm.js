@@ -26,6 +26,10 @@ import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
 import Spinner from '../../components/common/Spinner';
 import ProductoFormWizard from '../../components/modules/productos/ProductoFormWizard';
+import {
+  computeSuggestedPrice,
+  getPricingSuggestionDefaults
+} from '../../utils/precioSugerido';
 
 const ProductoForm = () => {
   const { id } = useParams();
@@ -59,6 +63,10 @@ const ProductoForm = () => {
   const [modoCalculo, setModoCalculo] = useState('manual'); // 'manual' o 'porcentaje'
   const [wizardStep, setWizardStep] = useState(1);
   const [barcodeLookupLoading, setBarcodeLookupLoading] = useState(false);
+  const [showSugerenciaPanel, setShowSugerenciaPanel] = useState(false);
+  const [pricingSuggestionConfig, setPricingSuggestionConfig] = useState(
+    getPricingSuggestionDefaults()
+  );
   /** true si en esta sesión hubo datos desde caché/OFF/UPC (no contribuir al catálogo global como “manual”) */
   const sesionAltaDesdeFuenteExternaRef = useRef(false);
 
@@ -67,6 +75,18 @@ const ProductoForm = () => {
       sesionAltaDesdeFuenteExternaRef.current = false;
     }
   }, [id]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('pricing_suggestion_config');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return;
+      setPricingSuggestionConfig((prev) => ({ ...prev, ...parsed }));
+    } catch (e) {
+      console.warn('No se pudo cargar configuración de sugerencia de precios:', e?.message || e);
+    }
+  }, []);
   
   // Datos de respaldo para cuando fallan las APIs
   const CATEGORIAS_RESPALDO = [];
@@ -118,6 +138,18 @@ const ProductoForm = () => {
       const nuevoPrecioVenta = calcularPrecioVentaPorMargen(formData.precio_costo, nuevoMargen);
       setFormData(prev => ({ ...prev, precio_venta: nuevoPrecioVenta }));
     }
+  };
+
+  const handlePricingSuggestionConfigChange = (field, value) => {
+    setPricingSuggestionConfig((prev) => {
+      const next = { ...prev, [field]: value };
+      try {
+        localStorage.setItem('pricing_suggestion_config', JSON.stringify(next));
+      } catch (e) {
+        console.warn('No se pudo guardar configuración de sugerencia:', e?.message || e);
+      }
+      return next;
+    });
   };
   
   // Cargar datos iniciales
@@ -471,6 +503,22 @@ const ProductoForm = () => {
 
   const retrocederWizard = () => setWizardStep((s) => Math.max(1, s - 1));
 
+  const sugerencia = computeSuggestedPrice({
+    costoUnitario: formData.precio_costo,
+    ...pricingSuggestionConfig
+  });
+  const diferenciaSugerida =
+    (parseFloat(String(formData.precio_venta ?? '').replace(',', '.')) || 0) -
+    sugerencia.suggestedPrice;
+
+  const usarPrecioSugerido = () => {
+    if (!sugerencia.canSuggest) return;
+    const suggestedRounded = sugerencia.suggestedPrice.toFixed(2);
+    setFormData((prev) => ({ ...prev, precio_venta: suggestedRounded }));
+    calcularMargen(formData.precio_costo, suggestedRounded);
+    toast.info('Aplicamos el precio sugerido al campo de venta.');
+  };
+
   // Si hay error de carga, mostrar mensaje de error
   if (loadError && !loading) {
     return (
@@ -529,6 +577,10 @@ const ProductoForm = () => {
         margenGanancia={margenGanancia}
         handlePrecioChange={handlePrecioChange}
         handleMargenChange={handleMargenChange}
+        sugerencia={sugerencia}
+        pricingSuggestionConfig={pricingSuggestionConfig}
+        onPricingSuggestionConfigChange={handlePricingSuggestionConfigChange}
+        onAplicarPrecioSugerido={usarPrecioSugerido}
         guardarProducto={guardarProducto}
         submitting={submitting}
         navigate={navigate}
@@ -758,6 +810,28 @@ const ProductoForm = () => {
                       readOnly={modoCalculo === 'porcentaje'}
                     />
                   </div>
+                  {sugerencia.canSuggest && (
+                    <div className="mt-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+                      <p>
+                        Precio sugerido: <strong>${sugerencia.suggestedPrice.toFixed(2)}</strong>
+                        {' · '}
+                        costo total unitario (con gastos): ${sugerencia.costoTotalUnitario.toFixed(2)}
+                      </p>
+                      <p className="mt-1">
+                        Diferencia vs precio actual:{' '}
+                        <strong className={diferenciaSugerida >= 0 ? 'text-emerald-700' : 'text-red-700'}>
+                          ${diferenciaSugerida.toFixed(2)}
+                        </strong>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={usarPrecioSugerido}
+                        className="mt-2 rounded-md border border-indigo-300 bg-white px-2.5 py-1 font-semibold text-indigo-700 hover:bg-indigo-100"
+                      >
+                        Usar sugerido
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
                 <div>
@@ -794,6 +868,109 @@ const ProductoForm = () => {
                   )}
                 </div>
                 
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSugerenciaPanel((v) => !v)}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
+                  >
+                    {showSugerenciaPanel ? 'Ocultar' : 'Mostrar'} cálculo de precio sugerido (gastos + margen objetivo)
+                  </button>
+                </div>
+
+                {showSugerenciaPanel && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-600">
+                      Cargá tus gastos mensuales y el margen objetivo para sugerir un precio de venta por unidad.
+                    </p>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <label className="text-xs text-slate-600">
+                        Alquiler mensual
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={pricingSuggestionConfig.alquilerMensual}
+                          onChange={(e) =>
+                            handlePricingSuggestionConfigChange('alquilerMensual', e.target.value)
+                          }
+                          className="nexo-field mt-1"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-600">
+                        Móvil / teléfono mensual
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={pricingSuggestionConfig.movilMensual}
+                          onChange={(e) =>
+                            handlePricingSuggestionConfigChange('movilMensual', e.target.value)
+                          }
+                          className="nexo-field mt-1"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-600">
+                        Combustible mensual
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={pricingSuggestionConfig.combustibleMensual}
+                          onChange={(e) =>
+                            handlePricingSuggestionConfigChange('combustibleMensual', e.target.value)
+                          }
+                          className="nexo-field mt-1"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-600">
+                        Otros gastos mensuales
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={pricingSuggestionConfig.otrosGastosMensuales}
+                          onChange={(e) =>
+                            handlePricingSuggestionConfigChange('otrosGastosMensuales', e.target.value)
+                          }
+                          className="nexo-field mt-1"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-600">
+                        Unidades mensuales estimadas
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={pricingSuggestionConfig.unidadesMensualesEstimadas}
+                          onChange={(e) =>
+                            handlePricingSuggestionConfigChange('unidadesMensualesEstimadas', e.target.value)
+                          }
+                          className="nexo-field mt-1"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-600">
+                        Margen objetivo (%)
+                        <input
+                          type="number"
+                          min="0"
+                          max="99"
+                          step="0.1"
+                          value={pricingSuggestionConfig.margenObjetivoPct}
+                          onChange={(e) =>
+                            handlePricingSuggestionConfigChange('margenObjetivoPct', e.target.value)
+                          }
+                          className="nexo-field mt-1"
+                        />
+                      </label>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-700">
+                      Gastos mensuales: <strong>${sugerencia.gastosMensuales.toFixed(2)}</strong>{' '}
+                      · Gasto por unidad: <strong>${sugerencia.gastoPorUnidad.toFixed(2)}</strong>
+                    </p>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Stock mínimo
