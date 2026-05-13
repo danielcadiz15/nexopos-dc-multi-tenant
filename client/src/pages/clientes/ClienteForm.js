@@ -311,7 +311,7 @@ const ClienteForm = () => {
                 name="nombre"
                 value={formData.nombre}
                 onChange={handleChange}
-                className={`block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                className={`nexo-field sm:text-sm ${
                   errores.nombre ? 'border-red-500' : ''
                 }`}
                 placeholder="Nombre del cliente"
@@ -331,7 +331,7 @@ const ClienteForm = () => {
                 name="apellido"
                 value={formData.apellido}
                 onChange={handleChange}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="nexo-field sm:text-sm"
                 placeholder="Apellido del cliente"
               />
             </div>
@@ -346,7 +346,7 @@ const ClienteForm = () => {
                 name="dni_cuit"
                 value={formData.dni_cuit}
                 onChange={handleChange}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="nexo-field sm:text-sm"
                 placeholder="DNI o CUIT del cliente"
               />
             </div>
@@ -361,7 +361,7 @@ const ClienteForm = () => {
                 name="telefono"
                 value={formData.telefono}
                 onChange={handleChange}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="nexo-field sm:text-sm"
                 placeholder="Teléfono de contacto"
               />
             </div>
@@ -376,7 +376,7 @@ const ClienteForm = () => {
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
-                className={`block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                className={`nexo-field sm:text-sm ${
                   errores.email ? 'border-red-500' : ''
                 }`}
                 placeholder="Correo electrónico"
@@ -396,7 +396,7 @@ const ClienteForm = () => {
                 name="direccion"
                 value={formData.direccion}
                 onChange={handleChange}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="nexo-field sm:text-sm"
                 placeholder="Dirección del cliente"
               />
             </div>
@@ -413,7 +413,7 @@ const ClienteForm = () => {
                 name="categoria"
                 value={formData.categoria}
                 onChange={handleChange}
-                className={`block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                className={`nexo-field sm:text-sm ${
                   errores.categoria ? 'border-red-500' : ''
                 }`}
                 placeholder="Ej: Minorista, Mayorista, VIP"
@@ -435,7 +435,7 @@ const ClienteForm = () => {
               value={formData.notas}
               onChange={handleChange}
               rows={3}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="nexo-field sm:text-sm"
               placeholder="Notas adicionales sobre el cliente"
             />
           </div>

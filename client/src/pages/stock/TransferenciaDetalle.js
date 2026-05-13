@@ -113,10 +113,15 @@ const TransferenciaDetalle = () => {
   };
 
   const handleCantidadChange = (productoId, value, max) => {
-    let val = Number(value);
-    if (isNaN(val) || val < 0) val = 0;
+    const t = String(value ?? '').trim();
+    if (t === '') {
+      setCantidadesDevolver((prev) => ({ ...prev, [productoId]: '' }));
+      return;
+    }
+    let val = parseInt(t, 10);
+    if (!Number.isFinite(val) || val < 0) val = 0;
     if (val > max) val = max;
-    setCantidadesDevolver(prev => ({ ...prev, [productoId]: val }));
+    setCantidadesDevolver((prev) => ({ ...prev, [productoId]: val }));
   };
 
   const devolverSeleccionados = async () => {
@@ -124,10 +129,17 @@ const TransferenciaDetalle = () => {
     try {
       // Preparar devoluciones reales (solo productos con cantidad pendiente)
       const devoluciones = productosConNombre
-        .filter(prod => (cantidadesDevolver[prod.producto_id] || 0) > 0)
-        .map(prod => ({
+        .filter((prod) => {
+          const c = cantidadesDevolver[prod.producto_id];
+          const n = c === '' || c === undefined || c === null ? 0 : Number(c);
+          return n > 0;
+        })
+        .map((prod) => ({
           producto_id: prod.producto_id,
-          cantidad: Math.min(cantidadesDevolver[prod.producto_id] || 0, prod.cantidad)
+          cantidad: Math.min(
+            Number(cantidadesDevolver[prod.producto_id]) || 0,
+            prod.cantidad
+          )
         }));
       if (devoluciones.length === 0) {
         setDevolviendo(false);
@@ -306,7 +318,12 @@ const TransferenciaDetalle = () => {
                       type="number"
                       min={0}
                       max={prod.cantidad}
-                      value={cantidadesDevolver[prod.producto_id] || 0}
+                      value={
+                        cantidadesDevolver[prod.producto_id] === '' ||
+                        cantidadesDevolver[prod.producto_id] === undefined
+                          ? ''
+                          : cantidadesDevolver[prod.producto_id]
+                      }
                       onChange={e => handleCantidadChange(prod.producto_id, e.target.value, prod.cantidad)}
                       className="w-20 border rounded px-2 py-1 text-center"
                       disabled={devolviendo || devolucionCompleta || transferencia.cancelada}

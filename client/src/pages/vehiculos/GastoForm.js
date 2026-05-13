@@ -154,7 +154,7 @@ const GastoForm = ({ vehiculoId, onClose, onSuccess }) => {
                 onChange={handleChange}
                 max={new Date().toISOString().split('T')[0]}
                 className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                  errors.fecha ? 'border-red-300' : 'border-gray-300'
+                  errors.fecha ? 'border-red-300' : 'border-slate-200'
                 }`}
               />
               {errors.fecha && (
@@ -176,7 +176,7 @@ const GastoForm = ({ vehiculoId, onClose, onSuccess }) => {
                     className={`flex items-center justify-center space-x-2 p-3 border rounded-md transition-colors ${
                       formData.categoria === categoria.value
                         ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                        : 'border-gray-300 hover:border-gray-400'
+                        : 'border-slate-200 hover:border-slate-400'
                     }`}
                   >
                     <span className="text-xl">{categoria.icon}</span>
@@ -201,7 +201,7 @@ const GastoForm = ({ vehiculoId, onClose, onSuccess }) => {
                 value={formData.concepto}
                 onChange={handleChange}
                 className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                  errors.concepto ? 'border-red-300' : 'border-gray-300'
+                  errors.concepto ? 'border-red-300' : 'border-slate-200'
                 }`}
                 placeholder={
                   formData.categoria === 'seguro' ? 'Ej: Póliza mensual' :
@@ -230,7 +230,7 @@ const GastoForm = ({ vehiculoId, onClose, onSuccess }) => {
                 step="0.01"
                 min="0.01"
                 className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                  errors.monto ? 'border-red-300' : 'border-gray-300'
+                  errors.monto ? 'border-red-300' : 'border-slate-200'
                 }`}
                 placeholder="0.00"
               />

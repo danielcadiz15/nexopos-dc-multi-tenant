@@ -14,7 +14,7 @@ const Select = ({
   return (
     <div>
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="mb-1 block text-sm font-medium text-slate-700">
           {label} {required && <span className="text-red-500">*</span>}
         </label>
       )}
@@ -22,10 +22,9 @@ const Select = ({
         value={value}
         onChange={onChange}
         className={`
-          block w-full px-3 py-2 border rounded-md shadow-sm
-          focus:outline-none focus:ring-indigo-500 focus:border-indigo-500
-          ${error ? 'border-red-300' : 'border-gray-300'}
-          ${disabled ? 'bg-gray-100' : 'bg-white'}
+          nexo-field
+          ${error ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}
+          ${disabled ? 'bg-slate-100' : ''}
         `}
         required={required}
         disabled={disabled}

@@ -2,6 +2,8 @@
 export const PLAN_TIERS = ['basic', 'intermediate', 'premium'];
 
 export const PLAN_LABELS_ES = {
+  trial: 'Cortesía inicial',
+  demo: 'Cortesía inicial',
   basic: 'Básica',
   intermediate: 'Intermedia',
   premium: 'Premium'
@@ -13,10 +15,11 @@ export function normalizeLicensePlan(raw) {
     .trim();
   if (s === 'pro') return 'intermediate';
   if (s === 'enterprise') return 'premium';
+  if (s === 'demo' || s === 'trial') return 'trial';
   if (PLAN_TIERS.includes(s)) return s;
   return 'basic';
 }
 
 export function defaultPlanPrices() {
-  return { basic: 0, intermediate: 0, premium: 0 };
+  return { basic: 80000, intermediate: 120000, premium: 180000 };
 }

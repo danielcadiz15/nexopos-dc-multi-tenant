@@ -185,6 +185,18 @@ class FirebaseService {
     return unwrapApiPayload({ data: respData, status });
   }
 
+  async patch(endpoint = '', data = {}) {
+    const response = await this.api.patch(endpoint, data);
+    const { data: respData, status } = response || {};
+    if (typeof status === 'number' && status >= 400) {
+      const message = (respData && (respData.message || respData.error)) || 'Error en la solicitud PATCH';
+      const error = new Error(message);
+      error.response = { status, data: respData };
+      throw error;
+    }
+    return unwrapApiPayload({ data: respData, status });
+  }
+
   async delete(endpoint = '', data = {}) {
     const response = await this.api.delete(endpoint, data);
     const { data: respData, status } = response || {};
@@ -214,9 +226,29 @@ export function tenantDoc(orgId, path, id) {
   return doc(db, `tenants/${orgId}/${path}/${id}`);
 }
 
-export async function createTenant(nombre, slug) {
+export async function createTenant(nombre, slug, codigoAdministrador, chosenPlan = 'basic') {
   const callable = httpsCallable(functions, 'createTenant');
-  const res = await callable({ nombre, slug });
+  const res = await callable({
+    nombre,
+    slug,
+    codigoAdministrador: codigoAdministrador != null ? String(codigoAdministrador) : '',
+    chosenPlan
+  });
+  return res.data;
+}
+
+/** Solo super admin. Vincula el código al correo (`targetEmail`) que usará quien cree la empresa. */
+export async function generateTenantBootstrapCode({
+  targetEmail,
+  expiresInDays,
+  note
+} = {}) {
+  const callable = httpsCallable(functions, 'generateTenantBootstrapCode');
+  const res = await callable({
+    targetEmail: targetEmail != null ? String(targetEmail).trim() : '',
+    expiresInDays: expiresInDays != null ? Number(expiresInDays) : undefined,
+    note: note != null ? String(note) : ''
+  });
   return res.data;
 }
 
@@ -229,6 +261,14 @@ export async function joinTenant(joinCode) {
 export async function setActiveTenant(orgId) {
   const callable = httpsCallable(functions, 'setActiveTenant');
   const res = await callable({ orgId });
+  return res.data;
+}
+
+/** Dueño/admin (o super admin con orgId): crea solo lo que falta (categorías, proveedor, etiquetas de listas). */
+export async function migrateOrgCatalogDefaults(orgId) {
+  const callable = httpsCallable(functions, 'migrateOrgCatalogDefaults');
+  const raw = orgId != null ? String(orgId).trim() : '';
+  const res = await callable(raw ? { orgId: raw } : {});
   return res.data;
 }
 

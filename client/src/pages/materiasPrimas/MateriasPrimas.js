@@ -454,7 +454,7 @@ const MateriasPrimas = () => {
                 <select
                   value={ajusteData.tipo}
                   onChange={(e) => setAjusteData({ ...ajusteData, tipo: e.target.value })}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field"
                 >
                   <option value="ingreso">Ingreso (+)</option>
                   <option value="egreso">Egreso (-)</option>
@@ -488,7 +488,7 @@ const MateriasPrimas = () => {
                 <select
                   value={ajusteData.motivo}
                   onChange={(e) => setAjusteData({ ...ajusteData, motivo: e.target.value })}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field"
                 >
                   <option value="compra">Compra</option>
                   <option value="ajuste_inventario">Ajuste de Inventario</option>
@@ -506,7 +506,7 @@ const MateriasPrimas = () => {
                   value={ajusteData.notas}
                   onChange={(e) => setAjusteData({ ...ajusteData, notas: e.target.value })}
                   rows={2}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field"
                   placeholder="Detalles adicionales..."
                 />
               </div>

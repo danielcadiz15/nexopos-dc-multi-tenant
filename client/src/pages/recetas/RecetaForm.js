@@ -410,7 +410,7 @@ const RecetaForm = () => {
                     name="producto_id"
                     value={formData.producto_id || ''}
                     onChange={handleChange}
-                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="nexo-field"
                     required
                   >
                     <option value="">Selecciona un producto</option>
@@ -431,7 +431,7 @@ const RecetaForm = () => {
                     name="nombre"
                     value={formData.nombre}
                     onChange={handleChange}
-                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="nexo-field"
                     required
                   />
                 </div>
@@ -445,7 +445,7 @@ const RecetaForm = () => {
                     value={formData.descripcion}
                     onChange={handleChange}
                     rows={3}
-                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="nexo-field"
                   />
                 </div>
                 
@@ -460,7 +460,7 @@ const RecetaForm = () => {
                       value={formData.rendimiento}
                       onChange={handleChange}
                       min={1}
-                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field"
                       required
                     />
                     <p className="mt-1 text-sm text-gray-500">
@@ -478,7 +478,7 @@ const RecetaForm = () => {
                       value={formData.tiempo_preparacion}
                       onChange={handleChange}
                       min={1}
-                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field"
                     />
                   </div>
                 </div>
@@ -496,7 +496,7 @@ const RecetaForm = () => {
                   value={formData.instrucciones}
                   onChange={handleChange}
                   rows={6}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field"
                   placeholder="Escribe aquí las instrucciones paso a paso..."
                 />
               </div>
@@ -523,7 +523,7 @@ const RecetaForm = () => {
                       onChange={handleChange}
                       min={0}
                       step={0.01}
-                      className="block w-full border-gray-300 pl-7 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field pl-7"
                     />
                   </div>
                   <p className="mt-1 text-xs text-gray-500">
@@ -546,7 +546,7 @@ const RecetaForm = () => {
                       onChange={handleChange}
                       min={0}
                       step={0.01}
-                      className="block w-full border-gray-300 pl-7 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field pl-7"
                     />
                   </div>
                   <p className="mt-1 text-xs text-gray-500">
@@ -630,7 +630,7 @@ const RecetaForm = () => {
                           <select
                             value={detalle.materia_prima_id}
                             onChange={(e) => handleDetalleChange(index, 'materia_prima_id', e.target.value)}
-                            className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                            className="nexo-field"
                             required
                           >
                             <option value="">Seleccionar materia prima</option>
@@ -654,7 +654,7 @@ const RecetaForm = () => {
                               onChange={(e) => handleDetalleChange(index, 'cantidad', e.target.value)}
                               min="0.01"
                               step="0.01"
-                              className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                              className="nexo-field"
                               required
                             />
                             <span className="text-sm text-gray-500 whitespace-nowrap">

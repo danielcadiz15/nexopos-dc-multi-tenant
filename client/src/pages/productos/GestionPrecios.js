@@ -1,5 +1,5 @@
 // src/pages/productos/GestionPrecios.js - VERSIÓN CORREGIDA
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -24,10 +24,14 @@ import ListaPreciosImprimir from '../../components/modules/productos/ListaPrecio
 
 // Utilidades
 import { formatCurrency } from '../../utils/format';
+import { numberOrZero } from '../../utils/numberInput';
+import useEmpresaConfig from '../../hooks/useEmpresaConfig';
+import { etiquetaLista } from '../../utils/listasPreciosLabels';
 
 const GestionPrecios = () => {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const { empresaConfig } = useEmpresaConfig();
   
   // Estados
   const [productos, setProductos] = useState([]);
@@ -48,7 +52,7 @@ const GestionPrecios = () => {
   const [procesandoMasivo, setProcesandoMasivo] = useState(false);
   const [configuracionMasiva, setConfiguracionMasiva] = useState({
     tipo_actualizacion: 'porcentaje',
-    valor: 0,
+    valor: '',
     lista_precio: 'todas',
     categoria_id: '',
     motivo: '',
@@ -164,7 +168,7 @@ const GestionPrecios = () => {
   
   // Ejecutar actualización masiva
   const ejecutarActualizacionMasiva = async () => {
-    if (configuracionMasiva.valor === 0) {
+    if (numberOrZero(configuracionMasiva.valor) === 0) {
       toast.warning('El valor de actualización no puede ser 0');
       return;
     }
@@ -179,6 +183,7 @@ const GestionPrecios = () => {
       
       const resultado = await listasPreciosService.actualizacionMasiva({
         ...configuracionMasiva,
+        valor: numberOrZero(configuracionMasiva.valor),
         usuario_id: currentUser?.uid
       });
       
@@ -193,7 +198,7 @@ const GestionPrecios = () => {
       // Resetear configuración
       setConfiguracionMasiva({
         tipo_actualizacion: 'porcentaje',
-        valor: 0,
+        valor: '',
         lista_precio: 'todas',
         categoria_id: '',
         motivo: '',
@@ -269,8 +274,9 @@ const GestionPrecios = () => {
     }
   };
   
-  // Columnas de la tabla
-  const columns = [
+  // Columnas de la tabla (etiquetas Lista 1–3 si la empresa las define)
+  const columns = useMemo(
+    () => [
     {
       header: 'Producto',
       accessor: 'nombre',
@@ -291,7 +297,7 @@ const GestionPrecios = () => {
       )
     },
     {
-      header: 'Mayorista',
+      header: etiquetaLista(empresaConfig, 'mayorista'),
       accessor: 'precio_mayorista',
       cell: (row) => {
         const precio = row.listas_precios?.mayorista || row.precio_venta || 0;
@@ -310,7 +316,7 @@ const GestionPrecios = () => {
       }
     },
     {
-      header: 'Interior',
+      header: etiquetaLista(empresaConfig, 'interior'),
       accessor: 'precio_interior',
       cell: (row) => {
         const precio = row.listas_precios?.interior || row.precio_venta || 0;
@@ -329,7 +335,7 @@ const GestionPrecios = () => {
       }
     },
     {
-      header: 'Posadas',
+      header: etiquetaLista(empresaConfig, 'posadas'),
       accessor: 'precio_posadas',
       cell: (row) => {
         const precio = row.listas_precios?.posadas || row.precio_venta || 0;
@@ -362,7 +368,9 @@ const GestionPrecios = () => {
         </div>
       )
     }
-  ];
+  ],
+    [empresaConfig]
+  );
   
   return (
     <div className="space-y-6">
@@ -463,10 +471,12 @@ const GestionPrecios = () => {
                 <input
                   type="number"
                   value={configuracionMasiva.valor}
-                  onChange={(e) => setConfiguracionMasiva({
-                    ...configuracionMasiva,
-                    valor: parseFloat(e.target.value) || 0
-                  })}
+                  onChange={(e) =>
+                    setConfiguracionMasiva({
+                      ...configuracionMasiva,
+                      valor: e.target.value
+                    })
+                  }
                   className="w-full border rounded px-3 py-2"
                   step="0.01"
                   placeholder={configuracionMasiva.tipo_actualizacion === 'porcentaje' ? '10' : '100'}
@@ -526,9 +536,9 @@ const GestionPrecios = () => {
                   className="w-full border rounded px-3 py-2"
                 >
                   <option value="todas">Todas las listas</option>
-                  <option value="mayorista">Solo Mayorista</option>
-                  <option value="interior">Solo Interior</option>
-                  <option value="posadas">Solo Posadas</option>
+                  <option value="mayorista">Solo {etiquetaLista(empresaConfig, 'mayorista')}</option>
+                  <option value="interior">Solo {etiquetaLista(empresaConfig, 'interior')}</option>
+                  <option value="posadas">Solo {etiquetaLista(empresaConfig, 'posadas')}</option>
                 </select>
               </div>
               
@@ -578,7 +588,7 @@ const GestionPrecios = () => {
               <Button
                 color="warning"
                 onClick={ejecutarActualizacionMasiva}
-                disabled={configuracionMasiva.valor === 0 || procesandoMasivo}
+                disabled={numberOrZero(configuracionMasiva.valor) === 0 || procesandoMasivo}
                 loading={procesandoMasivo}
               >
                 {procesandoMasivo ? 'Procesando...' : 'Aplicar Actualización'}

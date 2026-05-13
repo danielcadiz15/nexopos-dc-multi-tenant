@@ -1,7 +1,7 @@
 /**
  * Facturación de licencias con Mercado Pago (Argentina / ARS).
- * - Preferencia Checkout: un pago → +1 mes (metadata / external_reference = orgId)
- * - Preapproval: débito recurrente mensual; cada cobro aprobado dispara webhook
+ * - Preferencia Checkout: un pago → +30 días desde acreditación (metadata / external_reference = orgId)
+ * - Preapproval: débito recurrente; cada cobro aprobado dispara webhook
  * - Webhook: confirma pago vía GET /payments/:id y extiende paidUntil (idempotente)
  */
 
@@ -10,6 +10,11 @@ const functions = require('firebase-functions');
 const db = admin.firestore();
 const { authenticateUser } = require('../utils/auth');
 const { PLAN_TIERS, normalizePlan } = require('../utils/planTiers');
+const { getModulePresetForPlan } = require('../utils/modulePresets');
+const {
+  resolveOnboardingFromDoc,
+  amountMatchesMercadoPago
+} = require('../utils/onboardingBilling');
 
 const MP_API = 'https://api.mercadopago.com';
 
@@ -17,6 +22,12 @@ const PLAN_LABEL_ES = {
   basic: 'Básica',
   intermediate: 'Intermedia',
   premium: 'Premium'
+};
+
+const DEFAULT_PLAN_PRICES_ARS = {
+  basic: 80000,
+  intermediate: 120000,
+  premium: 180000
 };
 
 function getAccessToken() {
@@ -58,16 +69,18 @@ async function mpFetch(path, options = {}) {
 }
 
 function emptyPlanPrices() {
-  return { basic: 0, intermediate: 0, premium: 0 };
+  return { ...DEFAULT_PLAN_PRICES_ARS };
 }
 
 async function loadBillingConfig() {
   let legacyMonthly = Number(process.env.LICENSE_MONTHLY_PRICE_ARS || 0);
   const planPrices = emptyPlanPrices();
+  let billingDoc = {};
   try {
     const snap = await db.collection('platform').doc('billing').get();
     if (snap.exists) {
-      const d = snap.data() || {};
+      billingDoc = snap.data() || {};
+      const d = billingDoc;
       if (d.monthlyPriceARS != null && !Number.isNaN(Number(d.monthlyPriceARS))) {
         legacyMonthly = Number(d.monthlyPriceARS);
       }
@@ -85,7 +98,13 @@ async function loadBillingConfig() {
     planPrices.basic = legacyMonthly;
   }
   const monthlyPriceARS = planPrices.basic;
-  return { monthlyPriceARS, planPrices, currencyId: 'ARS' };
+  const onboardingMerged = resolveOnboardingFromDoc(billingDoc);
+  return {
+    monthlyPriceARS,
+    planPrices,
+    currencyId: 'ARS',
+    ...onboardingMerged
+  };
 }
 
 function priceForPlan(cfg, planId) {
@@ -96,6 +115,29 @@ function priceForPlan(cfg, planId) {
 
 function anyPlanHasPositivePrice(cfg) {
   return PLAN_TIERS.some((k) => priceForPlan(cfg, k) > 0);
+}
+
+function onboardingPaymentConfigured(cfg) {
+  const a = cfg?.onboardingInstallmentAmountARS;
+  return typeof a === 'number' && a > 0;
+}
+
+async function loadCompanyLicenseDoc(orgId) {
+  const id = String(orgId || '').trim();
+  if (!id) return {};
+  try {
+    let lic = {};
+    const r = await db.collection('companies').doc(id).collection('config').doc('license').get();
+    if (r.exists) lic = r.data() || {};
+    if (!lic.paidUntil && Object.keys(lic).length === 0) {
+      const r2 = await db.collection('licenses').doc(id).get();
+      if (r2.exists) lic = { ...lic, ...(r2.data() || {}) };
+    }
+    return lic;
+  } catch (e) {
+    console.warn('[billing] loadCompanyLicenseDoc:', e.message);
+    return {};
+  }
 }
 
 async function loadCompanyPlanForBilling(orgId) {
@@ -116,21 +158,23 @@ async function loadCompanyPlanForBilling(orgId) {
   }
 }
 
-async function resolvePlanFromApprovedPayment(payment, orgId) {
+async function resolvePlanFromApprovedPayment(payment, orgId, licSnap) {
   const meta = payment.metadata || {};
+  const kind = String(meta.kind || '');
+  const fromFuture = meta.future_plan || meta.chosen_plan;
+  if ((kind === 'license_onboarding' || kind === 'onboarding') && fromFuture) {
+    return normalizePlan(fromFuture);
+  }
+
   const fromMeta = meta.plan || meta.plan_id;
-  if (fromMeta) return normalizePlan(fromMeta);
+  if (fromMeta && kind !== 'license_onboarding') return normalizePlan(fromMeta);
 
   const id = String(orgId || '').trim();
-  if (!id) return null;
-  try {
-    const snap = await db.collection('companies').doc(id).collection('config').doc('license').get();
-    const lic = snap.exists ? snap.data() || {} : {};
-    const fromLic = lic.mercadopagoBillingPlan || lic.plan;
-    return normalizePlan(fromLic);
-  } catch {
-    return 'basic';
-  }
+  if (!id) return 'basic';
+
+  const lic = licSnap && typeof licSnap === 'object' ? licSnap : {};
+  const fromLic = lic.mercadopagoBillingPlan || lic.chosenPlan || lic.plan;
+  return normalizePlan(fromLic);
 }
 
 function getPublicAppUrl() {
@@ -167,12 +211,46 @@ function resolveOrgIdFromPayment(payment) {
   return null;
 }
 
-async function extendLicenseByOneMonth(orgId, paymentId, sourceLabel, planToApply = null) {
+const LICENSE_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Fecha de acreditación del pago en MP (para anclar los 30 días). */
+function paymentApprovedMs(payment) {
+  if (!payment || typeof payment !== 'object') return Date.now();
+  const parse = (s) => {
+    if (!s) return null;
+    const t = new Date(s).getTime();
+    return Number.isNaN(t) ? null : t;
+  };
+  return (
+    parse(payment.date_approved) ||
+    parse(payment.date_last_updated) ||
+    parse(payment.date_created) ||
+    Date.now()
+  );
+}
+
+/**
+ * Modelo onboarding_v2 (alta nueva): primeras N cuotas a monto fijo + full; después precio por plan elegido y ajuste de módulos.
+ * Empresas sin billingModel siguen sólo validando contra el precio del plan (comportamiento previo).
+ */
+function usesOnboardingInstallmentsModel(lic) {
+  return lic && lic.billingModel === 'onboarding_v2';
+}
+
+/**
+ * Extiende la licencia **30 días** desde la acreditación del pago.
+ * @param {{ payment: object, cfg: object, branch: 'onboarding'|'recurring', applyModulesFromPlan?: boolean }} ctx
+ */
+async function extendLicenseAfterPayment(orgId, paymentId, sourceLabel, ctx) {
   const id = String(orgId).trim();
-  if (!id) return { skipped: true, reason: 'no_org' };
+  const payment = ctx && ctx.payment;
+
+  if (!id || !payment) return { skipped: true, reason: 'no_org_or_payment' };
 
   const txnId = `pay_${paymentId}`;
   const txnRef = db.collection('billingMercadoPago').doc(txnId);
+  const { cfg, branch } = ctx;
+  const meta = payment.metadata || {};
 
   return db.runTransaction(async (t) => {
     const txnSnap = await t.get(txnRef);
@@ -190,43 +268,94 @@ async function extendLicenseByOneMonth(orgId, paymentId, sourceLabel, planToAppl
       if (r2.exists) lic = { ...lic, ...(r2.data() || {}) };
     }
 
-    const now = Date.now();
-    let currentEnd = lic.paidUntil ? new Date(lic.paidUntil).getTime() : now;
-    if (Number.isNaN(currentEnd)) currentEnd = now;
-    const baseMs = Math.max(now, currentEnd);
-    const newDate = new Date(baseMs);
-    newDate.setMonth(newDate.getMonth() + 1);
-    const paidUntil = newDate.toISOString();
+    const approvedMs = paymentApprovedMs(payment);
+    let previousEnd = lic.paidUntil ? new Date(lic.paidUntil).getTime() : approvedMs;
+    if (Number.isNaN(previousEnd)) previousEnd = approvedMs;
+    const base = Math.max(approvedMs, previousEnd);
+    const paidUntil = new Date(base + LICENSE_PERIOD_MS).toISOString();
+
+    const mergedChosenPlan = normalizePlan(
+      meta.future_plan ||
+        meta.chosen_plan ||
+        (branch === 'recurring' ? meta.plan || meta.plan_id : null) ||
+        lic.chosenPlan ||
+        lic.plan ||
+        'basic'
+    );
+
+    const slots = cfg.onboardingInstallmentsTotal || 2;
+    let onboardingPaid = Number(lic.onboardingInstallmentsPaid || 0);
+    if (Number.isNaN(onboardingPaid) || onboardingPaid < 0) onboardingPaid = 0;
+    if (onboardingPaid > slots) onboardingPaid = slots;
+
+    /** Plan efectivo en documento licencia tras este pago. */
+    let planToStore =
+      branch === 'onboarding'
+        ? 'premium'
+        : normalizePlan(meta.plan || meta.plan_id || lic.chosenPlan || mergedChosenPlan || 'basic');
+
+    let onboardingInstallmentsPaidNext = onboardingPaid;
+    if (branch === 'onboarding') {
+      onboardingInstallmentsPaidNext = Math.min(onboardingPaid + 1, slots);
+    }
 
     const payload = {
       ...lic,
       paidUntil,
       blocked: false,
+      onboardingInstallmentsPaid: onboardingInstallmentsPaidNext,
+      chosenPlan: mergedChosenPlan,
+      plan: planToStore,
       lastMercadoPagoPaymentId: String(paymentId),
       lastMercadoPagoAt: new Date().toISOString(),
       lastMercadoPagoSource: sourceLabel || 'webhook',
       updatedAt: new Date().toISOString()
     };
 
-    if (planToApply != null && String(planToApply).trim() !== '') {
-      payload.plan = normalizePlan(planToApply);
+    if (payload.trial === true) {
+      payload.trial = admin.firestore.FieldValue.delete();
     }
-
+    payload.trialDays = admin.firestore.FieldValue.delete();
+    payload.trialStartedAt = admin.firestore.FieldValue.delete();
     payload.unpaidGraceStartedAt = admin.firestore.FieldValue.delete();
+
+    /** Primera vez que pasa a abono recurrente: alinear módulos al plan contratado. */
+    const shouldApplyModulePreset =
+      branch === 'recurring' && ctx.applyModulesFromPlan === true && !lic.modulesAppliedForChosenPlanAt;
+
+    if (shouldApplyModulePreset) {
+      const preset = getModulePresetForPlan(planToStore);
+      preset.updatedAt = new Date().toISOString();
+
+      const modRefC = db.collection('companies').doc(id).collection('config').doc('modules');
+      const modRefT = db.collection('tenants').doc(id).collection('config').doc('modules');
+      t.set(modRefC, preset, { merge: true });
+      t.set(modRefT, preset, { merge: true });
+
+      payload.modulesAppliedForChosenPlanAt = new Date().toISOString();
+    }
 
     t.set(txnRef, {
       orgId: id,
       paymentId: String(paymentId),
       source: sourceLabel || 'webhook',
       paidUntil,
+      branch,
       plan: payload.plan || null,
+      onboardingInstallmentsPaid: onboardingInstallmentsPaidNext,
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     t.set(licRefCompany, payload, { merge: true });
     t.set(licRefRoot, payload, { merge: true });
 
-    return { alreadyApplied: false, paidUntil, plan: payload.plan || null };
+    return {
+      alreadyApplied: false,
+      paidUntil,
+      plan: payload.plan || null,
+      branch,
+      onboardingInstallmentsPaid: onboardingInstallmentsPaidNext
+    };
   });
 }
 
@@ -244,8 +373,70 @@ async function processPaymentNotification(paymentId) {
     return;
   }
 
-  const planToApply = await resolvePlanFromApprovedPayment(payment, orgId);
-  const result = await extendLicenseByOneMonth(orgId, paymentId, 'payment_approved', planToApply);
+  const cfg = await loadBillingConfig();
+  const lic = await loadCompanyLicenseDoc(orgId);
+  const txAmount = Number(payment.transaction_amount);
+
+  /** Legado — sin modelo onboarding */
+  let branch;
+  let applyModulesFromPlan = false;
+
+  if (!usesOnboardingInstallmentsModel(lic)) {
+    branch = 'recurring';
+    const planPay = await resolvePlanFromApprovedPayment(payment, orgId, lic);
+    const expected = priceForPlan(cfg, planPay);
+    if (!(expected > 0)) {
+      console.warn('[MP] precio de plan no configurado (legado)', orgId, planPay);
+      return;
+    }
+    if (!amountMatchesMercadoPago(txAmount, expected)) {
+      console.warn('[MP] monto MP no coincide con plan (legado). Esperado:', expected, 'recibido:', txAmount);
+      return;
+    }
+    applyModulesFromPlan = false;
+  } else {
+    const onboardingPaid = Math.min(
+      Number(lic.onboardingInstallmentsPaid || 0),
+      cfg.onboardingInstallmentsTotal
+    );
+
+    if (onboardingPaid < cfg.onboardingInstallmentsTotal) {
+      branch = 'onboarding';
+      if (!amountMatchesMercadoPago(txAmount, cfg.onboardingInstallmentAmountARS)) {
+        console.warn(
+          '[MP] monto instalación esperado:',
+          cfg.onboardingInstallmentAmountARS,
+          'recibido:',
+          txAmount
+        );
+        return;
+      }
+    } else {
+      branch = 'recurring';
+      const planPay = await resolvePlanFromApprovedPayment(payment, orgId, lic);
+      const expected = priceForPlan(cfg, planPay);
+      if (!(expected > 0)) {
+        console.warn('[MP] precio recurrente no configurado', orgId, planPay);
+        return;
+      }
+      if (!amountMatchesMercadoPago(txAmount, expected)) {
+        console.warn('[MP] monto MP no coincide con plan recurrente. Esperado:', expected, 'recibido:', txAmount);
+        return;
+      }
+
+      /** Sólo al primer cobro después de las cuotas de instalación. */
+      const slots = cfg.onboardingInstallmentsTotal;
+      applyModulesFromPlan = onboardingPaid === slots && !lic.modulesAppliedForChosenPlanAt;
+    }
+  }
+
+  const result = await extendLicenseAfterPayment(orgId, paymentId, 'payment_approved', {
+    payment,
+    cfg,
+    branch,
+    applyModulesFromPlan
+  });
+
   console.log('[MP] licencia extendida:', orgId, result);
 }
 
@@ -348,8 +539,10 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
           currencyId: cfg.currencyId,
           /** Access token cargado (secreto o env); no implica precio configurado. */
           mercadoPagoTokenPresent: tokenOk,
-          /** Al menos un plan con precio mensual mayor a cero. */
-          mercadoPagoConfigured: tokenOk && anyPlanHasPositivePrice(cfg)
+          onboardingInstallmentAmountARS: cfg.onboardingInstallmentAmountARS,
+          onboardingInstallmentsTotal: cfg.onboardingInstallmentsTotal,
+          mercadoPagoConfigured:
+            tokenOk && (anyPlanHasPositivePrice(cfg) || onboardingPaymentConfigured(cfg))
         }
       });
     } catch (e) {
@@ -374,41 +567,94 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
       const body = req.body || {};
       const requestedPlan = body.plan != null ? normalizePlan(body.plan) : null;
       const plan = requestedPlan || (await loadCompanyPlanForBilling(orgId));
-      const unitPrice = priceForPlan(cfg, plan);
-      if (!(unitPrice > 0)) {
+
+      const licPre = await loadCompanyLicenseDoc(orgId);
+      const slots = cfg.onboardingInstallmentsTotal;
+      const useOb = usesOnboardingInstallmentsModel(licPre);
+      const onboardingPaid = Math.min(
+        Number(licPre.onboardingInstallmentsPaid || 0),
+        slots
+      );
+      const inOnboardingPayments = useOb && onboardingPaid < slots;
+
+      if (inOnboardingPayments && !onboardingPaymentConfigured(cfg)) {
         return res.status(503).json({
           success: false,
-          message: `Precio no configurado para el plan «${plan}» (panel admin → planPrices o platform/billing).`
+          message:
+            'Falta monto de cuota de instalación en la plataforma (panel administración → facturación).'
         });
       }
 
-      const appUrl = getPublicAppUrl();
-      const notificationUrl = getWebhookUrl(req);
-      const planLabel = PLAN_LABEL_ES[plan] || plan;
-      const unitPriceRounded = Math.round(Number(unitPrice) * 100) / 100;
-      const payerObj = buildCheckoutPayer(req);
+      let unitPrice;
+      let preferenceItem;
+      /** @type {Record<string,string>} */
+      let metadata;
 
-      const preferenceBody = {
-        items: [
-          {
-            id: `nexopos_license_1m_${plan}`,
-            title: `NexoPOS — Licencia 1 mes (${planLabel})`,
-            description: `Licencia software — plan ${planLabel}`,
-            quantity: 1,
-            unit_price: unitPriceRounded,
-            currency_id: cfg.currencyId
-          }
-        ],
-        external_reference: `org:${orgId}`,
-        metadata: {
+      if (inOnboardingPayments) {
+        unitPrice = cfg.onboardingInstallmentAmountARS;
+        const nextCuota = onboardingPaid + 1;
+        const title = `NexoPOS — Instalación (${nextCuota}/${slots})`;
+        preferenceItem = {
+          id: `nexopos_onboarding_${nextCuota}`,
+          title,
+          description: `Cuota instalación equipo — versión completa hasta completar período inicial.`,
+          quantity: 1,
+          unit_price: Math.round(Number(unitPrice) * 100) / 100,
+          currency_id: cfg.currencyId
+        };
+        metadata = {
+          org_id: orgId,
+          kind: 'license_onboarding',
+          future_plan: String(plan),
+          onboarding_quota_index: String(nextCuota),
+          onboarding_quota_total: String(slots)
+        };
+      } else {
+        unitPrice = priceForPlan(cfg, plan);
+        if (!(unitPrice > 0)) {
+          return res.status(503).json({
+            success: false,
+            message: `Precio no configurado para el plan «${plan}» (panel admin → planPrices o platform/billing).`
+          });
+        }
+        const planLabel = PLAN_LABEL_ES[plan] || plan;
+        preferenceItem = {
+          id: `nexopos_license_1m_${plan}`,
+          title: `NexoPOS — Abono (${planLabel})`,
+          description: `Licencia software — ${planLabel} — 30 días.`,
+          quantity: 1,
+          unit_price: Math.round(Number(unitPrice) * 100) / 100,
+          currency_id: cfg.currencyId
+        };
+        metadata = {
           org_id: orgId,
           kind: 'license_month',
           plan: String(plan)
-        },
+        };
+      }
+
+      const chosenPatch = {
+        chosenPlan: plan,
+        mercadopagoBillingPlan: plan,
+        updatedAt: new Date().toISOString()
+      };
+      await db.collection('companies').doc(orgId).collection('config').doc('license').set(chosenPatch, {
+        merge: true
+      });
+      await db.collection('licenses').doc(orgId).set(chosenPatch, { merge: true });
+
+      const appUrl = getPublicAppUrl();
+      const notificationUrl = getWebhookUrl(req);
+      const payerObj = buildCheckoutPayer(req);
+
+      const preferenceBody = {
+        items: [preferenceItem],
+        external_reference: `org:${orgId}`,
+        metadata,
         back_urls: {
-          success: `${appUrl}/configuracion/empresa?mp=approved`,
-          failure: `${appUrl}/configuracion/empresa?mp=failure`,
-          pending: `${appUrl}/configuracion/empresa?mp=pending`
+          success: `${appUrl}/?mp=approved`,
+          failure: `${appUrl}/?mp=failure`,
+          pending: `${appUrl}/?mp=pending`
         },
         notification_url: notificationUrl,
         statement_descriptor: 'NEXOPOS'
@@ -425,7 +671,9 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
         data: {
           init_point: preference.init_point,
           sandbox_init_point: preference.sandbox_init_point,
-          preference_id: preference.id
+          preference_id: preference.id,
+          billingPhase: inOnboardingPayments ? 'onboarding' : 'recurring',
+          nextAmountARS: preferenceItem.unit_price
         }
       });
     } catch (e) {
@@ -445,6 +693,17 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
 
     try {
       const cfg = await loadBillingConfig();
+      const licEarly = await loadCompanyLicenseDoc(orgId);
+      if (
+        usesOnboardingInstallmentsModel(licEarly) &&
+        Number(licEarly.onboardingInstallmentsPaid || 0) < cfg.onboardingInstallmentsTotal
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'Completá primero las cuotas de instalación con el botón «Renovar / Pagar». Después podés usar débito automático mensual.'
+        });
+      }
       if (!getAccessToken()) {
         return res.status(503).json({
           success: false,
@@ -491,7 +750,7 @@ module.exports = async function billingMercadoPagoRoutes(req, res, path) {
             end_date: end.toISOString()
           },
           payer_email: payerEmail,
-          back_url: `${appUrl}/configuracion/empresa?mp=sub_return`,
+          back_url: `${appUrl}/?mp=sub_return`,
           status: 'pending',
           ...(notificationUrl ? { notification_url: notificationUrl } : {})
         })

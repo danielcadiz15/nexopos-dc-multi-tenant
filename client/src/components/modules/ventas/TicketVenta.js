@@ -1,7 +1,7 @@
 /**
- * Componente para generar y mostrar tickets de venta
- * Optimizado para impresora térmica Nictom IT03 80mm
- * 
+ * Componente para generar y mostrar tickets de venta.
+ * Térmico: rollo 80mm (POS web) o 58mm (app caja / `thermalRollWidth="58mm"`).
+ *
  * @module components/modules/ventas/TicketVenta
  * @requires react, ../../services/configuracion.service
  */
@@ -14,10 +14,283 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { printHtmlDocument } from '../../../utils/print.utils';
 
+/** Layout térmico: 80mm (POS web) vs 58mm (app caja / rollo estrecho) */
+const THERMAL_LAYOUT = {
+  '80mm': {
+    page: '80mm auto',
+    bodyFont: '18px',
+    bodyWidth: '70mm',
+    bodyPad: '5mm',
+    lineHeight: '1.5',
+    tituloPrincipal: '28px',
+    subtitulo: '16px',
+    imgMax: '100px',
+    encabezadoMb: '15px',
+    separadorMargin: '12px 0',
+    seccionMargin: '12px 0',
+    filaMargin: '6px 0',
+    colFont: '16px',
+    tablaTh: '16px',
+    tablaTd: '15px',
+    productoNombre: '17px',
+    productoDetalle: '16px',
+    totalSeccionMargin: '12px -5mm',
+    totalTexto: '22px',
+    totalMonto: '26px',
+    footerFont: '16px',
+    footerImportante: '18px',
+    previewWidthPx: 320,
+    htmlTicketLabel: '24px',
+    htmlTicketNumero: '26px',
+    htmlClienteTitle: '20px',
+    htmlClienteNombre: '28px',
+    htmlTotalPagarTitle: '26px',
+    htmlTotalPagarMonto: '36px',
+    htmlNoProductos: '16px',
+    htmlTotalBannerPad: '15px 5px',
+    htmlTotalBannerMargin: '20px -5mm'
+  },
+  '58mm': {
+    page: '58mm auto',
+    bodyFont: '12px',
+    bodyWidth: '48mm',
+    bodyPad: '2mm',
+    lineHeight: '1.35',
+    tituloPrincipal: '17px',
+    subtitulo: '11px',
+    imgMax: '72px',
+    encabezadoMb: '8px',
+    separadorMargin: '8px 0',
+    seccionMargin: '8px 0',
+    filaMargin: '4px 0',
+    colFont: '11px',
+    tablaTh: '11px',
+    tablaTd: '10px',
+    productoNombre: '12px',
+    productoDetalle: '10px',
+    totalSeccionMargin: '8px -2mm',
+    totalTexto: '15px',
+    totalMonto: '18px',
+    footerFont: '11px',
+    footerImportante: '12px',
+    previewWidthPx: 220,
+    htmlTicketLabel: '14px',
+    htmlTicketNumero: '16px',
+    htmlClienteTitle: '12px',
+    htmlClienteNombre: '15px',
+    htmlTotalPagarTitle: '16px',
+    htmlTotalPagarMonto: '22px',
+    htmlNoProductos: '12px',
+    htmlTotalBannerPad: '10px 3px',
+    htmlTotalBannerMargin: '12px -2mm'
+  }
+};
+
+const autoPrintSessionKeys = new Set();
+
+function buildThermalPrintStyles(L) {
+  const filaMin = L.previewWidthPx <= 240 ? '14px' : '20px';
+  return `
+      @page {
+        size: ${L.page};
+        margin: 0;
+      }
+      @media print {
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          color-adjust: exact !important;
+        }
+      }
+      body {
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: ${L.bodyFont} !important;
+        font-weight: 800;
+        line-height: ${L.lineHeight};
+        margin: 0;
+        padding: ${L.bodyPad};
+        width: ${L.bodyWidth};
+        background: white;
+        color: #000000;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+      }
+      * {
+        font-weight: 800 !important;
+        color: #000000 !important;
+        box-sizing: border-box;
+      }
+      .encabezado {
+        text-align: center;
+        margin-bottom: ${L.encabezadoMb};
+        font-weight: 900;
+      }
+      .titulo-principal {
+        font-size: ${L.tituloPrincipal} !important;
+        font-weight: 900 !important;
+        letter-spacing: 1px;
+        margin: 8px 0;
+        text-transform: uppercase;
+        line-height: 1.2;
+      }
+      .subtitulo {
+        font-size: ${L.subtitulo} !important;
+        margin: 4px 0;
+        line-height: 1.3;
+      }
+      .separador {
+        border: none;
+        border-top: 3px solid #000;
+        margin: ${L.separadorMargin};
+        height: 0;
+      }
+      .separador-doble {
+        border: none;
+        border-top: 5px double #000;
+        margin: ${L.separadorMargin};
+        height: 0;
+      }
+      .seccion {
+        margin: ${L.seccionMargin};
+      }
+      .fila {
+        display: flex;
+        justify-content: space-between;
+        margin: ${L.filaMargin};
+        align-items: center;
+        min-height: ${filaMin};
+      }
+      .col-izq {
+        font-weight: 800;
+        font-size: ${L.colFont} !important;
+        flex: 1;
+        text-align: left;
+      }
+      .col-der {
+        font-weight: 900;
+        text-align: right;
+        font-size: ${L.colFont} !important;
+        flex: 1;
+        word-break: break-word;
+      }
+      .tabla-productos {
+        width: 100%;
+        margin: ${L.seccionMargin};
+        border-collapse: collapse;
+      }
+      .tabla-productos td {
+        padding: 6px 3px;
+        font-weight: 800;
+        vertical-align: top;
+        font-size: ${L.tablaTd} !important;
+        line-height: 1.3;
+        word-wrap: break-word;
+        max-width: 0;
+      }
+      .tabla-productos th {
+        font-size: ${L.tablaTh} !important;
+        font-weight: 900;
+        padding: 6px 3px;
+        text-align: center;
+      }
+      .producto-nombre {
+        font-weight: 900 !important;
+        font-size: ${L.productoNombre} !important;
+        line-height: 1.2;
+        word-wrap: break-word;
+        max-width: 0;
+      }
+      .producto-detalle {
+        font-size: ${L.productoDetalle} !important;
+        padding-left: 12px;
+        line-height: 1.3;
+      }
+      .producto-separador {
+        border-bottom: 2px dashed #000;
+        margin: ${L.filaMargin};
+      }
+      .total-seccion {
+        background: #000;
+        color: #FFF !important;
+        padding: 10px;
+        margin: ${L.totalSeccionMargin};
+        text-align: center;
+        border-radius: 3px;
+      }
+      .total-texto {
+        font-size: ${L.totalTexto} !important;
+        font-weight: 900 !important;
+        color: #FFF !important;
+        margin-bottom: 5px;
+      }
+      .total-monto {
+        font-size: ${L.totalMonto} !important;
+        font-weight: 900 !important;
+        color: #FFF !important;
+      }
+      .footer {
+        text-align: center;
+        margin-top: 18px;
+        font-size: ${L.footerFont} !important;
+        line-height: 1.4;
+      }
+      .footer-importante {
+        font-weight: 900;
+        font-size: ${L.footerImportante} !important;
+        margin: ${L.separadorMargin};
+        text-transform: uppercase;
+      }
+      img {
+        max-width: ${L.imgMax} !important;
+        height: auto !important;
+        filter: contrast(2) brightness(0.8);
+        margin: ${L.separadorMargin};
+        display: block;
+      }
+      .ticket-content {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      .ticket-header { flex-shrink: 0; }
+      .ticket-body { flex: 1; min-height: 0; }
+      .ticket-footer {
+        flex-shrink: 0;
+        margin-top: auto;
+      }
+      .texto-largo {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        hyphens: auto;
+        max-width: 100%;
+      }
+      .numero {
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-weight: 900;
+        letter-spacing: 0.5px;
+      }
+    `;
+}
+
 /**
- * Componente de ticket de venta optimizado para Nictom IT03
+ * @param {Object} props
+ * @param {Object} props.venta
+ * @param {Function} props.onClose
+ * @param {'80mm'|'58mm'} [props.thermalRollWidth='80mm']
+ * @param {boolean} [props.autoPrintAfterLoad=false] Impresión inmediata al cargar config (caja)
+ * @param {boolean} [props.hidePdfButton=false] Oculta descarga PDF (caja)
  */
-const TicketVenta = ({ venta, onClose }) => {
+const TicketVenta = ({
+  venta,
+  onClose,
+  thermalRollWidth = '80mm',
+  autoPrintAfterLoad = false,
+  hidePdfButton = false
+}) => {
+  const thermalKey = thermalRollWidth === '58mm' ? '58mm' : '80mm';
+  const L = THERMAL_LAYOUT[thermalKey];
+
   const ticketTermicoRef = useRef();
   const ticketA4Ref = useRef();
   
@@ -76,196 +349,7 @@ const TicketVenta = ({ venta, onClose }) => {
       ? ticketTermicoRef.current 
       : ticketA4Ref.current;
       
-    // Estilos MEJORADOS para Nictom IT03 - Letras más grandes y mejor formato
-    const estilos = formatoSeleccionado === 'termico' ? `
-      @page { 
-        size: 80mm auto; 
-        margin: 0;
-      }
-      @media print {
-        * {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-          color-adjust: exact !important;
-        }
-      }
-      body {
-        font-family: 'Consolas', 'Courier New', monospace;
-        font-size: 18px !important; /* AUMENTADO de 16px a 18px */
-        font-weight: 800;
-        line-height: 1.5; /* MEJORADO de 1.4 a 1.5 */
-        margin: 0;
-        padding: 5mm; /* AUMENTADO de 3mm a 5mm */
-        width: 70mm; /* REDUCIDO de 74mm a 70mm para más margen */
-        background: white;
-        color: #000000;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-      }
-      * { 
-        font-weight: 800 !important; 
-        color: #000000 !important;
-        box-sizing: border-box;
-      }
-      .encabezado {
-        text-align: center;
-        margin-bottom: 15px; /* AUMENTADO de 10px a 15px */
-        font-weight: 900;
-      }
-      .titulo-principal {
-        font-size: 28px !important; /* AUMENTADO de 24px a 28px */
-        font-weight: 900 !important;
-        letter-spacing: 1px;
-        margin: 8px 0; /* AUMENTADO de 5px a 8px */
-        text-transform: uppercase;
-        line-height: 1.2;
-      }
-      .subtitulo {
-        font-size: 16px !important; /* AUMENTADO de 14px a 16px */
-        margin: 4px 0; /* AUMENTADO de 3px a 4px */
-        line-height: 1.3;
-      }
-      .separador {
-        border: none;
-        border-top: 3px solid #000;
-        margin: 12px 0; /* AUMENTADO de 10px a 12px */
-        height: 0;
-      }
-      .separador-doble {
-        border: none;
-        border-top: 5px double #000;
-        margin: 12px 0; /* AUMENTADO de 10px a 12px */
-        height: 0;
-      }
-      .seccion {
-        margin: 12px 0; /* AUMENTADO de 10px a 12px */
-      }
-      .fila {
-        display: flex;
-        justify-content: space-between;
-        margin: 6px 0; /* AUMENTADO de 5px a 6px */
-        align-items: center;
-        min-height: 20px; /* ALTURA MÍNIMA para evitar cortes */
-      }
-      .col-izq {
-        font-weight: 800;
-        font-size: 16px !important; /* AUMENTADO */
-        flex: 1;
-        text-align: left;
-      }
-      .col-der {
-        font-weight: 900;
-        text-align: right;
-        font-size: 16px !important; /* AUMENTADO */
-        flex: 1;
-        word-break: break-word;
-      }
-      .tabla-productos {
-        width: 100%;
-        margin: 12px 0; /* AUMENTADO de 10px a 12px */
-        border-collapse: collapse;
-      }
-      .tabla-productos td {
-        padding: 6px 3px; /* AUMENTADO de 5px 2px a 6px 3px */
-        font-weight: 800;
-        vertical-align: top;
-        font-size: 15px !important; /* AUMENTADO */
-        line-height: 1.3;
-        word-wrap: break-word;
-        max-width: 0; /* Permite que el texto se ajuste */
-      }
-      .tabla-productos th {
-        font-size: 16px !important; /* AUMENTADO */
-        font-weight: 900;
-        padding: 6px 3px;
-        text-align: center;
-      }
-      .producto-nombre {
-        font-weight: 900 !important;
-        font-size: 17px !important; /* AUMENTADO de 15px a 17px */
-        line-height: 1.2;
-        word-wrap: break-word;
-        max-width: 0;
-      }
-      .producto-detalle {
-        font-size: 16px !important; /* AUMENTADO de 14px a 16px */
-        padding-left: 12px; /* AUMENTADO de 10px a 12px */
-        line-height: 1.3;
-      }
-      .producto-separador {
-        border-bottom: 2px dashed #000;
-        margin: 6px 0; /* AUMENTADO de 5px a 6px */
-      }
-      .total-seccion {
-        background: #000;
-        color: #FFF !important;
-        padding: 10px; /* AUMENTADO de 8px a 10px */
-        margin: 12px -5mm; /* AUMENTADO de 10px -3mm a 12px -5mm */
-        text-align: center;
-        border-radius: 3px;
-      }
-      .total-texto {
-        font-size: 22px !important; /* AUMENTADO de 20px a 22px */
-        font-weight: 900 !important;
-        color: #FFF !important;
-        margin-bottom: 5px;
-      }
-      .total-monto {
-        font-size: 26px !important; /* AUMENTADO de 24px a 26px */
-        font-weight: 900 !important;
-        color: #FFF !important;
-      }
-      .footer {
-        text-align: center;
-        margin-top: 18px; /* AUMENTADO de 15px a 18px */
-        font-size: 16px !important; /* AUMENTADO de 14px a 16px */
-        line-height: 1.4;
-      }
-      .footer-importante {
-        font-weight: 900;
-        font-size: 18px !important; /* AUMENTADO de 16px a 18px */
-        margin: 12px 0; /* AUMENTADO de 10px a 12px */
-        text-transform: uppercase;
-      }
-      img {
-        max-width: 100px !important; /* REDUCIDO de 120px a 100px */
-        height: auto !important;
-        filter: contrast(2) brightness(0.8);
-        margin: 12px auto; /* AUMENTADO de 10px a 12px */
-        display: block;
-      }
-      /* NUEVO: Mejoras para evitar cortes */
-      .ticket-content {
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-      }
-      .ticket-header {
-        flex-shrink: 0;
-      }
-      .ticket-body {
-        flex: 1;
-        min-height: 0;
-      }
-      .ticket-footer {
-        flex-shrink: 0;
-        margin-top: auto;
-      }
-      /* NUEVO: Mejoras para texto largo */
-      .texto-largo {
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-        hyphens: auto;
-        max-width: 100%;
-      }
-      /* NUEVO: Mejoras para números */
-      .numero {
-        font-family: 'Consolas', 'Courier New', monospace;
-        font-weight: 900;
-        letter-spacing: 0.5px;
-      }
-    ` : `
+    const estilos = formatoSeleccionado === 'termico' ? buildThermalPrintStyles(L) : `
       @page { size: A4; margin: 20mm; }
       body {
         font-family: Arial, sans-serif;
@@ -297,6 +381,27 @@ const TicketVenta = ({ venta, onClose }) => {
       toast.error('No se pudo abrir la impresión');
     }
   };
+
+  useEffect(() => {
+    if (!autoPrintAfterLoad || cargandoConfig || !venta) return undefined;
+    const key = `ap:${String(venta.id)}:${String(venta.numero || '')}`;
+    if (autoPrintSessionKeys.has(key)) return undefined;
+    autoPrintSessionKeys.add(key);
+    const id = window.setTimeout(() => {
+      try {
+        imprimirTicket();
+      } catch (e) {
+        console.error('[TicketVenta] autoPrint:', e);
+      }
+      if (typeof onClose === 'function') onClose();
+    }, 120);
+    return () => {
+      window.clearTimeout(id);
+      autoPrintSessionKeys.delete(key);
+    };
+    // imprimirTicket depende de estado local estable al disparar (config ya cargada)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPrintAfterLoad, cargandoConfig, venta]);
 
   const descargarPDF = async () => {
     const input = formatoSeleccionado === 'termico' ? ticketTermicoRef.current : ticketA4Ref.current;
@@ -335,8 +440,8 @@ const TicketVenta = ({ venta, onClose }) => {
           </div>
           <hr class="separador-doble">
           <div class="seccion">
-            <div style="text-align: center; font-size: 24px; font-weight: 900;">TICKET DE VENTA</div>
-            <div style="text-align: center; font-size: 26px; font-weight: 900; margin: 8px 0;">${venta.numero || 'S/N'}</div>
+            <div style="text-align: center; font-size: ${L.htmlTicketLabel}; font-weight: 900;">TICKET DE VENTA</div>
+            <div style="text-align: center; font-size: ${L.htmlTicketNumero}; font-weight: 900; margin: 8px 0;">${venta.numero || 'S/N'}</div>
           </div>
           <hr class="separador">
           <div class="seccion">
@@ -345,8 +450,8 @@ const TicketVenta = ({ venta, onClose }) => {
             <div class="fila"><span class="col-izq">VENDEDOR:</span><span class="col-der texto-largo">${venta.usuario_nombre || venta.vendedor || 'Sistema'}</span></div>
             ${venta.cliente_nombre && venta.cliente_nombre !== 'Cliente General' ? `
             <div style="text-align: center; margin: 15px 0; padding: 10px; border: 4px double #000;">
-              <div style="font-size: 20px; font-weight: 900; margin-bottom: 5px;">CLIENTE:</div>
-              <div style="font-size: 28px !important; font-weight: 900 !important; line-height: 1.2;">${venta.cliente_nombre}</div>
+              <div style="font-size: ${L.htmlClienteTitle}; font-weight: 900; margin-bottom: 5px;">CLIENTE:</div>
+              <div style="font-size: ${L.htmlClienteNombre} !important; font-weight: 900 !important; line-height: 1.2;">${venta.cliente_nombre}</div>
             </div>` : ''}
           </div>
           <hr class="separador-doble">
@@ -357,10 +462,10 @@ const TicketVenta = ({ venta, onClose }) => {
             <table class="tabla-productos">
               <thead>
                 <tr>
-                  <th style="font-weight:900; font-size: 16px;">Producto</th>
-                  <th style="font-weight:900; text-align:center; font-size: 16px;">P.Unit</th>
-                  <th style="font-weight:900; text-align:center; font-size: 16px;">Cant</th>
-                  <th style="font-weight:900; text-align:right; font-size: 16px;">Total</th>
+                  <th style="font-weight:900; font-size: ${L.tablaTh};">Producto</th>
+                  <th style="font-weight:900; text-align:center; font-size: ${L.tablaTh};">P.Unit</th>
+                  <th style="font-weight:900; text-align:center; font-size: ${L.tablaTh};">Cant</th>
+                  <th style="font-weight:900; text-align:right; font-size: ${L.tablaTh};">Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -373,14 +478,14 @@ const TicketVenta = ({ venta, onClose }) => {
                   return `
                   <tr>
                     <td class="producto-nombre texto-largo">${item.producto_info?.nombre || item.nombre_producto || item.producto || 'Producto'}</td>
-                    <td style="text-align:center; font-size: 15px;">${formatMoneda(item.precio_unitario)}</td>
-                    <td style="text-align:center; font-size: 15px;">${cantidadTotal}${unidadesGratis > 0 ? ` (${cantidadOriginal}+${unidadesGratis} gratis)` : ''}</td>
-                    <td style="text-align:right; font-weight:900; font-size: 15px;">${formatMoneda(item.precio_total)}</td>
+                    <td style="text-align:center; font-size: ${L.tablaTd};">${formatMoneda(item.precio_unitario)}</td>
+                    <td style="text-align:center; font-size: ${L.tablaTd};">${cantidadTotal}${unidadesGratis > 0 ? ` (${cantidadOriginal}+${unidadesGratis} gratis)` : ''}</td>
+                    <td style="text-align:right; font-weight:900; font-size: ${L.tablaTd};">${formatMoneda(item.precio_total)}</td>
                   </tr>
                 `;
                 }).join('') : `
                   <tr>
-                    <td colspan="4" style="text-align: center; padding: 20px; font-size: 16px;">No hay productos en esta venta</td>
+                    <td colspan="4" style="text-align: center; padding: 20px; font-size: ${L.htmlNoProductos};">No hay productos en esta venta</td>
                   </tr>
                 `}
               </tbody>
@@ -391,9 +496,9 @@ const TicketVenta = ({ venta, onClose }) => {
             <div class="fila"><span class="col-izq">SUBTOTAL:</span><span class="col-der numero">${formatMoneda(venta.subtotal || 0)}</span></div>
             ${(venta.descuento || 0) > 0 ? `<div class="fila"><span class="col-izq">DESCUENTO:</span><span class="col-der numero">-${formatMoneda(venta.descuento)}</span></div>` : ''}
           </div>
-          <div style="background: #000; margin: 20px -5mm; padding: 15px 5px; text-align: center; border: 3px double #fff;">
-            <div style="color: #FFF !important; font-size: 26px !important; font-weight: 900 !important; margin-bottom: 8px;">TOTAL A PAGAR</div>
-            <div style="color: #FFF !important; font-size: 36px !important; font-weight: 900 !important; letter-spacing: 1px;">${formatMoneda(venta.total || 0)}</div>
+          <div style="background: #000; margin: ${L.htmlTotalBannerMargin}; padding: ${L.htmlTotalBannerPad}; text-align: center; border: 3px double #fff;">
+            <div style="color: #FFF !important; font-size: ${L.htmlTotalPagarTitle} !important; font-weight: 900 !important; margin-bottom: 8px;">TOTAL A PAGAR</div>
+            <div style="color: #FFF !important; font-size: ${L.htmlTotalPagarMonto} !important; font-weight: 900 !important; letter-spacing: 1px;">${formatMoneda(venta.total || 0)}</div>
           </div>
           <div class="seccion">
             <div class="fila"><span class="col-izq">FORMA DE PAGO:</span><span class="col-der">${(venta.metodo_pago || 'efectivo').toUpperCase()}</span></div>
@@ -406,7 +511,7 @@ const TicketVenta = ({ venta, onClose }) => {
           <div class="footer">
             <div class="footer-importante">¡GRACIAS POR SU COMPRA!</div>
             <div>Conserve este ticket como comprobante</div>
-            ${empresaConfig.cuit ? `<div style="margin-top: 10px; font-size: 14px;">CUIT: ${empresaConfig.cuit}</div>` : ''}
+            ${empresaConfig.cuit ? `<div style="margin-top: 10px; font-size: ${L.subtitulo};">CUIT: ${empresaConfig.cuit}</div>` : ''}
           </div>
         </div>
       </div>
@@ -430,8 +535,6 @@ const TicketVenta = ({ venta, onClose }) => {
     );
   }
 
-  const { fecha, hora } = formatFechaHora(venta.fecha);
-
   if (cargandoConfig) {
     return (
       <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
@@ -441,6 +544,10 @@ const TicketVenta = ({ venta, onClose }) => {
         </div>
       </div>
     );
+  }
+
+  if (autoPrintAfterLoad) {
+    return null;
   }
 
   return (
@@ -460,12 +567,14 @@ const TicketVenta = ({ venta, onClose }) => {
               >
                 <FaPrint className="mr-1" /> Imprimir
               </button>
+              {!hidePdfButton && (
               <button
                 onClick={descargarPDF}
                 className="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none"
               >
                 <FaDownload className="mr-1" /> Descargar PDF
               </button>
+              )}
               <button
                 onClick={onClose}
                 className="inline-flex items-center px-3 py-2 bg-gray-400 text-white rounded hover:bg-gray-500 focus:outline-none"
@@ -478,7 +587,7 @@ const TicketVenta = ({ venta, onClose }) => {
           <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 120px)' }}>
             <div className="flex justify-center">
               {formatoSeleccionado === 'termico' ? (
-                // Template Térmico 80mm - Vista previa
+                // Vista previa térmica (ancho según rollo 80 / 58 mm)
                 <div 
                   ref={ticketTermicoRef}
                   className="ticket-container bg-white p-4 border-2 border-gray-300"
@@ -486,7 +595,7 @@ const TicketVenta = ({ venta, onClose }) => {
                     fontFamily: 'Consolas, Courier New, monospace', 
                     fontSize: '14px',
                     fontWeight: '700',
-                    width: '320px',
+                    width: `${L.previewWidthPx}px`,
                     margin: '0 auto',
                     backgroundColor: 'white',
                     color: '#000'

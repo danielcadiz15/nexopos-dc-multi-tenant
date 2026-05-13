@@ -11,8 +11,14 @@ import {
 } from '../../utils/licenseUi';
 import { normalizeLicensePlan, PLAN_LABELS_ES } from '../../utils/planTiers';
 import {
+  getNextBillingAmountARS,
+  getPreferredCheckoutPlan,
+  isOnboardingPaymentPhase
+} from '../../utils/billingOnboarding';
+import {
   getBillingPublicConfig,
-  createLicenseMercadoPagoPreference
+  createLicenseMercadoPagoPreference,
+  createLicenseMercadoPagoPreapproval
 } from '../../services/billing.service';
 import MercadoPagoMark from '../common/MercadoPagoMark';
 import { getMercadoPagoCheckoutUrl, goToMercadoPagoCheckout } from '../../utils/mercadopagoCheckout';
@@ -27,6 +33,7 @@ const LicenseBanner = ({ compact }) => {
   const [ui, setUi] = useState(null);
   const [billingMp, setBillingMp] = useState(null);
   const [payLoading, setPayLoading] = useState(false);
+  const [preapprovalLoading, setPreapprovalLoading] = useState(false);
   const [apiBlock, setApiBlock] = useState(null);
 
   const reload = useCallback(async () => {
@@ -53,6 +60,14 @@ const LicenseBanner = ({ compact }) => {
 
   useEffect(() => {
     reload();
+  }, [reload]);
+
+  useEffect(() => {
+    const onReload = () => {
+      reload();
+    };
+    window.addEventListener('nexo-license-reload', onReload);
+    return () => window.removeEventListener('nexo-license-reload', onReload);
   }, [reload]);
 
   useEffect(() => {
@@ -109,8 +124,8 @@ const LicenseBanner = ({ compact }) => {
   }, []);
 
   const abrirPagoMp = async () => {
-    const plan = normalizeLicensePlan(lic?.plan);
-    const price = Number(billingMp?.planPrices?.[plan] ?? billingMp?.monthlyPriceARS ?? 0);
+    const plan = getPreferredCheckoutPlan(lic || {});
+    const price = getNextBillingAmountARS(lic || {}, billingMp || {});
     if (!billingMp?.mercadoPagoTokenPresent || price <= 0) {
       toast.warning(
         'El pago con Mercado Pago no está disponible en este momento. Probá más tarde o usá el enlace alternativo si aparece.'
@@ -136,6 +151,33 @@ const LicenseBanner = ({ compact }) => {
     }
   };
 
+  const activarDebitoAutomatico = async () => {
+    const plan = getPreferredCheckoutPlan(lic || {});
+    if (isOnboardingPaymentPhase(lic || {}, billingMp || {})) {
+      toast.info('Primero completá las dos cuotas del kit inicial. Después podés activar débito automático.');
+      return;
+    }
+    if (!billingMp?.mercadoPagoTokenPresent) {
+      toast.warning('Mercado Pago no está disponible en este momento.');
+      return;
+    }
+    setPreapprovalLoading(true);
+    try {
+      const { data, status } = await createLicenseMercadoPagoPreapproval({ plan });
+      const url = getMercadoPagoCheckoutUrl(data);
+      if (status === 200 && data?.success && url) {
+        toast.info('Te llevamos a Mercado Pago para activar el débito automático mensual.', { autoClose: 5000 });
+        goToMercadoPagoCheckout(url);
+      } else {
+        toast.error(data?.message || data?.detail?.message || 'No se pudo iniciar la suscripción');
+      }
+    } catch (e) {
+      toast.error(e?.message || 'Error al conectar con Mercado Pago');
+    } finally {
+      setPreapprovalLoading(false);
+    }
+  };
+
   const irConfigLicencia = () => {
     navigate('/configuracion/empresa?licencia=1');
   };
@@ -143,23 +185,29 @@ const LicenseBanner = ({ compact }) => {
   if (!orgId) return null;
 
   const planKey = normalizeLicensePlan(lic?.plan);
-  const planLabel = PLAN_LABELS_ES[planKey] || planKey;
+  const inOnboarding = isOnboardingPaymentPhase(lic || {}, billingMp || {});
+  const slotsTot = Number(billingMp?.onboardingInstallmentsTotal ?? 2);
+  const onboardingDone = Number(lic?.onboardingInstallmentsPaid ?? 0);
+  const planLabel = inOnboarding
+    ? `Instalación · versión completa (${onboardingDone + 1}/${slotsTot})`
+    : PLAN_LABELS_ES[planKey] || planKey;
   const pagoUrl = apiBlock?.pagoBilleteraUrl || ui?.pagoUrl;
-  const arsPlan = Number(billingMp?.planPrices?.[planKey] ?? billingMp?.monthlyPriceARS ?? 0);
+  const arsNext = getNextBillingAmountARS(lic || {}, billingMp || {});
   const puedePagarMp =
-    billingMp?.mercadoPagoTokenPresent && arsPlan > 0 && ui?.phase !== 'blocked';
+    billingMp?.mercadoPagoTokenPresent && arsNext > 0 && ui?.phase !== 'blocked';
 
   const graceLike =
     apiBlock?.code === 'LICENSE_GRACE_NO_FACTURACION' || apiBlock?.code === 'LICENSE_NO_PAYMENT_GRACE';
   const apiHard =
     apiBlock?.code === 'LICENSE_EXPIRED' || apiBlock?.code === 'LICENSE_BLOCKED';
 
-  let stripClass = 'border-b border-indigo-200 bg-indigo-50/90 text-indigo-950';
+  let stripClass =
+    'border-b border-indigo-200/80 bg-indigo-50/95 text-indigo-950 backdrop-blur-sm';
   if (ui?.phase === 'grace' || ui?.phase === 'unpaid_grace' || graceLike) {
-    stripClass = 'border-b border-amber-300 bg-amber-50 text-amber-950';
+    stripClass = 'border-b border-amber-300/80 bg-amber-50/95 text-amber-950 backdrop-blur-sm';
   }
   if (ui?.phase === 'expired' || ui?.phase === 'unpaid_expired' || ui?.phase === 'blocked' || apiHard) {
-    stripClass = 'border-b border-red-300 bg-red-50 text-red-950';
+    stripClass = 'border-b border-red-300/80 bg-red-50/95 text-red-950 backdrop-blur-sm';
   }
 
   const daysLeft = ui?.paidUntilMs != null ? daysUntilPaidUntil(ui.paidUntilMs) : null;
@@ -171,6 +219,10 @@ const LicenseBanner = ({ compact }) => {
       d != null && d >= 0
         ? `Vigente hasta ${new Date(ui.paidUntilMs).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })} · ${d} ${d === 1 ? 'día' : 'días'} restantes`
         : 'Licencia activa';
+    if (inOnboarding && lic?.billingModel === 'onboarding_v2') {
+      statusLine +=
+        ' · Período de instalación (versión completa): tras las cuotas fijas pasás al plan que elegiste al pagar.';
+    }
   } else if (ui?.phase === 'grace') {
     statusLine = `Licencia vencida · período de gracia: ${formatGraceCountdown(ui.graceEndsAt)} restantes (no podés registrar ventas nuevas hasta pagar)`;
   } else if (ui?.phase === 'unpaid_needs_anchor') {
@@ -223,7 +275,19 @@ const LicenseBanner = ({ compact }) => {
                 className="inline-flex items-center gap-2 rounded-lg bg-[#009ee3] px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#008dcf] disabled:opacity-50 sm:text-sm"
               >
                 <MercadoPagoMark className="h-5 w-auto shrink-0 opacity-95" />
-                {payLoading ? 'Abriendo…' : `Renovar · ${arsPlan.toLocaleString('es-AR')} ARS`}
+                {payLoading
+                  ? 'Abriendo…'
+                  : `${inOnboarding ? 'Cuota instalación' : 'Renovar'} · ${arsNext.toLocaleString('es-AR')} ARS`}
+              </button>
+            ) : null}
+            {puedePagarMp && !inOnboarding ? (
+              <button
+                type="button"
+                disabled={preapprovalLoading}
+                onClick={activarDebitoAutomatico}
+                className="rounded-lg border border-[#009ee3]/50 bg-white/90 px-3 py-2 text-xs font-semibold text-[#007eb5] hover:bg-sky-50 disabled:opacity-50 sm:text-sm"
+              >
+                {preapprovalLoading ? 'Abriendo…' : 'Activar débito automático'}
               </button>
             ) : null}
             <button

@@ -42,17 +42,17 @@ const ConfirmDialog = ({
     <>
       {/* Overlay */}
       <div 
-        className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4"
+        className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
         onClick={onCancel}
       >
         {/* Modal */}
         <div 
-          className="bg-white rounded-lg max-w-md w-full shadow-lg z-50"
+          className="z-50 w-full max-w-md overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-elevated ring-1 ring-slate-900/5 backdrop-blur-sm"
           onClick={e => e.stopPropagation()}
         >
           {/* Cabecera */}
-          <div className="px-6 py-4 border-b">
-            <h3 className="text-lg font-medium text-gray-900">{title}</h3>
+          <div className="border-b border-slate-100 px-6 py-4">
+            <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
           </div>
           
           {/* Cuerpo */}
@@ -61,7 +61,7 @@ const ConfirmDialog = ({
           </div>
           
           {/* Pie */}
-          <div className="px-6 py-4 bg-gray-50 flex justify-end space-x-2 rounded-b-lg">
+          <div className="flex justify-end space-x-2 rounded-b-2xl bg-slate-50/80 px-6 py-4">
             {/* Botón cancelar */}
             <Button
               color="secondary"

@@ -143,7 +143,7 @@ const Table = ({
    */
   const renderSortIcon = (key) => {
     if (sortConfig.key !== key) {
-      return <FaSort className="ml-1 text-gray-400" />;
+      return <FaSort className="ml-1 text-slate-400" />;
     }
     
     if (sortConfig.direction === 'asc') {
@@ -157,24 +157,25 @@ const Table = ({
   if (!Array.isArray(columns) || columns.length === 0) {
     return (
       <div className="text-center py-4">
-        <p className="text-gray-500">No se han definido columnas para la tabla</p>
+        <p className="text-slate-500">No se han definido columnas para la tabla</p>
       </div>
     );
   }
 
   return (
+    <div className="nexo-surface overflow-hidden">
     <div className="overflow-x-auto">
       {/* Tabla */}
-      <table className="min-w-full divide-y divide-gray-200">
+      <table className="min-w-full divide-y divide-slate-100">
         {/* Cabecera */}
-        <thead className="bg-gray-50">
+        <thead className="bg-slate-50/90">
           <tr>
             {columns.map((column, idx) => (
               <th
                 key={idx}
                 className={`
-                  px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider
-                  ${column.sortable !== false ? 'cursor-pointer hover:bg-gray-100' : ''}
+                  px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider
+                  ${column.sortable !== false ? 'cursor-pointer hover:bg-slate-100/80' : ''}
                 `}
                 onClick={() => {
                   if (column.sortable !== false) {
@@ -192,14 +193,14 @@ const Table = ({
         </thead>
         
         {/* Cuerpo */}
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody className="divide-y divide-slate-100 bg-white/80">
           {paginatedData.length > 0 ? (
             paginatedData.map((row, rowIdx) => (
               <tr
                 key={rowIdx}
                 className={`
-                  ${striped && rowIdx % 2 === 1 ? 'bg-gray-50' : ''}
-                  ${hoverable ? 'hover:bg-gray-100' : ''}
+                  ${striped && rowIdx % 2 === 1 ? 'bg-slate-50/60' : ''}
+                  ${hoverable ? 'hover:bg-slate-100/70' : ''}
                   ${onRowClick ? 'cursor-pointer' : ''}
                 `}
                 onClick={() => onRowClick && onRowClick(row)}
@@ -207,7 +208,7 @@ const Table = ({
                 {columns.map((column, colIdx) => (
                   <td
                     key={colIdx}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                    className="px-6 py-4 whitespace-nowrap text-sm text-slate-600"
                   >
                     {column.cell ? column.cell(row) : row[column.accessor]}
                   </td>
@@ -218,7 +219,7 @@ const Table = ({
             <tr>
               <td
                 colSpan={columns.length}
-                className="px-6 py-4 text-center text-sm text-gray-500"
+                className="px-6 py-4 text-center text-sm text-slate-500"
               >
                 No hay datos disponibles
               </td>
@@ -229,10 +230,10 @@ const Table = ({
       
       {/* Paginación */}
       {pagination && pageCount > 1 && (
-        <div className="py-3 px-6 flex items-center justify-between border-t border-gray-200">
+        <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/50 py-3 px-6">
           <div className="flex-1 flex justify-between items-center">
             {/* Información de páginas */}
-            <p className="text-sm text-gray-700">
+            <p className="text-sm text-slate-700">
               Mostrando
               <span className="font-medium mx-1">
                 {startIndex + 1}
@@ -252,10 +253,10 @@ const Table = ({
                 onClick={() => goToPage(currentPage - 1)}
                 disabled={currentPage === 1}
                 className={`
-                  inline-flex items-center px-4 py-2 border rounded-md text-sm font-medium
+                  inline-flex items-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium shadow-sm
                   ${currentPage === 1
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white text-gray-700 hover:bg-gray-50'}
+                    ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                    : 'bg-white text-slate-700 hover:bg-slate-50'}
                 `}
               >
                 Anterior
@@ -265,10 +266,10 @@ const Table = ({
                 onClick={() => goToPage(currentPage + 1)}
                 disabled={currentPage === pageCount}
                 className={`
-                  inline-flex items-center px-4 py-2 border rounded-md text-sm font-medium
+                  inline-flex items-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium shadow-sm
                   ${currentPage === pageCount
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white text-gray-700 hover:bg-gray-50'}
+                    ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                    : 'bg-white text-slate-700 hover:bg-slate-50'}
                 `}
               >
                 Siguiente
@@ -277,6 +278,7 @@ const Table = ({
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 };

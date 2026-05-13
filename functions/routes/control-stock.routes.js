@@ -1,6 +1,7 @@
 // functions/routes/control-stock.routes.js
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const { safeAudit } = require('../utils/auditLogger');
 
 // Obtener referencia a Firestore
 const db = admin.firestore();
@@ -425,8 +426,24 @@ const crearRegistroAuditoria = async (req, res) => {
     registroAuditoria.fecha_creacion = new Date().toISOString();
     registroAuditoria.timestamp = Date.now();
     
-    // Crear documento en colección de auditoría
+    // Crear documento en colección legacy de auditoría
     const docRef = await db.collection('auditoria-inventario').add(registroAuditoria);
+
+    const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
+    await safeAudit(db, companyId, req, {
+      accion: 'ajustar_stock',
+      modulo: 'stock',
+      entidad: 'control_stock',
+      entidad_id: registroAuditoria.control_id || docRef.id,
+      titulo: 'Ajuste por control de inventario',
+      descripcion: registroAuditoria.observaciones || 'Ajuste de inventario físico',
+      severidad: 'warning',
+      sucursal_id: registroAuditoria.sucursal_id,
+      metadata: {
+        ajustes: registroAuditoria.ajustes || [],
+        tipo_usuario: registroAuditoria.tipo_usuario || null
+      }
+    });
     
     console.log('✅ Registro de auditoría creado con ID:', docRef.id);
     

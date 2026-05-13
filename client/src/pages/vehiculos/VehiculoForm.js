@@ -234,7 +234,7 @@ const VehiculoForm = () => {
                 value={formData.patente}
                 onChange={handleChange}
                 className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                  errors.patente ? 'border-red-300' : 'border-gray-300'
+                  errors.patente ? 'border-red-300' : 'border-slate-200'
                 }`}
                 placeholder="ABC123"
                 style={{ textTransform: 'uppercase' }}
@@ -263,7 +263,7 @@ const VehiculoForm = () => {
                     className={`flex items-center justify-center space-x-2 p-3 border rounded-md transition-colors ${
                       formData.tipo === tipo.value
                         ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                        : 'border-gray-300 hover:border-gray-400'
+                        : 'border-slate-200 hover:border-slate-400'
                     }`}
                   >
                     {renderIconoTipo(tipo.icon)}
@@ -284,7 +284,7 @@ const VehiculoForm = () => {
                 value={formData.marca}
                 onChange={handleChange}
                 className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                  errors.marca ? 'border-red-300' : 'border-gray-300'
+                  errors.marca ? 'border-red-300' : 'border-slate-200'
                 }`}
                 placeholder="Toyota, Ford, etc."
               />
@@ -304,7 +304,7 @@ const VehiculoForm = () => {
                 value={formData.modelo}
                 onChange={handleChange}
                 className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                  errors.modelo ? 'border-red-300' : 'border-gray-300'
+                  errors.modelo ? 'border-red-300' : 'border-slate-200'
                 }`}
                 placeholder="Corolla, Ranger, etc."
               />
@@ -326,7 +326,7 @@ const VehiculoForm = () => {
                 min="1900"
                 max={new Date().getFullYear() + 1}
                 className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                  errors.año ? 'border-red-300' : 'border-gray-300'
+                  errors.año ? 'border-red-300' : 'border-slate-200'
                 }`}
               />
               {errors.año && (
@@ -347,7 +347,7 @@ const VehiculoForm = () => {
                 onChange={handleChange}
                 min="0"
                 className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                  errors.km_actual ? 'border-red-300' : 'border-gray-300'
+                  errors.km_actual ? 'border-red-300' : 'border-slate-200'
                 }`}
                 placeholder="0"
               />
@@ -367,7 +367,7 @@ const VehiculoForm = () => {
                 name="fecha_vencimiento_seguro"
                 value={formData.fecha_vencimiento_seguro}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                className="nexo-field"
               />
               <p className="mt-1 text-sm text-gray-500">
                 Recibirás alertas cuando el seguro esté próximo a vencer

@@ -19,6 +19,7 @@ import configuracionService from '../../services/configuracion.service';
 
 // Componentes
 import Button from '../../components/common/Button';
+import PasswordInput from '../../components/common/PasswordInput';
 
 /**
  * Componente de página de inicio de sesión
@@ -158,14 +159,15 @@ const Login = () => {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto overflow-x-hidden bg-gray-100 px-4 py-6">
-      <div className="max-w-md w-full bg-white rounded-xl shadow-lg overflow-hidden">
-        <div className="py-10 px-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-extrabold text-gray-900">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-100 bg-nexo-mesh px-4 py-6">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-elevated ring-1 ring-slate-900/[0.04] backdrop-blur-sm">
+        <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-sky-500" />
+        <div className="px-8 py-10">
+          <div className="mb-8 text-center">
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
               Ingresar a NexoPOS
             </h1>
-            <p className="mt-2 text-sm text-gray-600">
+            <p className="mt-2 text-sm text-slate-600">
               Elegí cómo querés entrar. Los permisos reales dependen de tu empresa y rol.
             </p>
           </div>
@@ -216,7 +218,7 @@ const Login = () => {
                 <FaAndroid className="text-xl" />
                 Descargar app Caja (APK)
               </a>
-              <p className="mt-2 text-xs text-gray-600">
+              <p className="mt-2 text-xs text-slate-600">
                 Para usar el mostrador en el celular. Si ya tenés la app, actualizá cuando publiques una nueva versión.
               </p>
             </div>
@@ -225,12 +227,12 @@ const Login = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Correo electrónico */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="email" className="block text-sm font-medium text-slate-700">
                 Correo electrónico
               </label>
-              <div className="mt-1 relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FaUser className="h-5 w-5 text-gray-400" />
+              <div className="relative mt-1">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                  <FaUser className="h-5 w-5 text-slate-400" />
                 </div>
                 <input
                   id="email"
@@ -239,12 +241,7 @@ const Login = () => {
                   autoComplete="email"
                   value={formData.email}
                   onChange={handleChange}
-                  className={`
-                    block w-full pl-10 pr-3 py-2 border 
-                    ${errors.email ? 'border-red-300' : 'border-gray-300'} 
-                    rounded-md shadow-sm placeholder-gray-400
-                    focus:outline-none focus:ring-indigo-500 focus:border-indigo-500
-                  `}
+                  className={`nexo-field pl-10 ${errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`}
                   placeholder="ejemplo@correo.com"
                 />
               </div>
@@ -255,27 +252,19 @@ const Login = () => {
             
             {/* Contraseña */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="block text-sm font-medium text-slate-700">
                 Contraseña
               </label>
-              <div className="mt-1 relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FaLock className="h-5 w-5 text-gray-400" />
-                </div>
-                <input
+              <div className="mt-1">
+                <PasswordInput
                   id="password"
                   name="password"
-                  type="password"
                   autoComplete="current-password"
                   value={formData.password}
                   onChange={handleChange}
-                  className={`
-                    block w-full pl-10 pr-3 py-2 border 
-                    ${errors.password ? 'border-red-300' : 'border-gray-300'} 
-                    rounded-md shadow-sm placeholder-gray-400
-                    focus:outline-none focus:ring-indigo-500 focus:border-indigo-500
-                  `}
+                  className={`nexo-field ${errors.password ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`}
                   placeholder="••••••••"
+                  leftSlot={<FaLock className="h-5 w-5 text-slate-400" />}
                 />
               </div>
               {errors.password && (
@@ -297,20 +286,20 @@ const Login = () => {
           </form>
           
           <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-slate-600">
               ¿Olvidaste tu contraseña? Contacta al administrador
             </p>
-            <p className="text-sm text-gray-600 mt-2">
+            <p className="mt-2 text-sm text-slate-600">
               ¿Querés abrir una nueva empresa? <Link to="/signup" className="text-indigo-600 font-semibold">Crear empresa</Link>
             </p>
-            <p className="text-xs text-gray-500 mt-3">
+            <p className="mt-3 text-xs text-slate-500">
               Si sos cajero, tu administrador debe crearte o invitarte dentro de su empresa.
             </p>
           </div>
         </div>
         
-        <div className="bg-gray-50 py-4 px-8 border-t border-gray-200 text-center">
-          <p className="text-xs text-gray-600">
+        <div className="border-t border-slate-100 bg-slate-50/90 px-8 py-4 text-center backdrop-blur-sm">
+          <p className="text-xs text-slate-500">
             © 2026 Sistema de Gestión para Despensa. Todos los derechos reservados.
           </p>
         </div>

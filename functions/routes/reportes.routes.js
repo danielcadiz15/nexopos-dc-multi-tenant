@@ -2,6 +2,35 @@
 const admin = require('firebase-admin');
 const db = admin.firestore();
 
+function fechaDocumento(data) {
+  const raw = data?.fecha || data?.fechaCreacion || data?.created_at || data?.fechaActualizacion;
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (raw.toDate) return raw.toDate();
+  return null;
+}
+
+async function obtenerProductosEmpresa(companyId) {
+  const productosMap = {};
+  if (companyId) {
+    const tenantSnap = await db.collection('companies').doc(companyId).collection('productos').get();
+    tenantSnap.forEach(doc => {
+      productosMap[doc.id] = doc.data();
+    });
+  }
+  const globalSnap = await db.collection('productos').get();
+  globalSnap.forEach(doc => {
+    const data = doc.data();
+    if (!companyId || !data.orgId || data.orgId === companyId) {
+      productosMap[doc.id] = productosMap[doc.id] || data;
+    }
+  });
+  return productosMap;
+}
+
 module.exports = async function reportesRoutes(req, res, path) {
   console.log('📊 [REPORTES] Ruta:', path);
   
@@ -11,7 +40,7 @@ module.exports = async function reportesRoutes(req, res, path) {
     // ==================== REPORTE DE VENTAS CORREGIDO ====================
     if (path === '/reportes/ventas' && req.method === 'GET') {
       try {
-        const { fechaInicio, fechaFin, sucursal_id } = req.query;
+        const { fechaInicio, fechaFin, sucursal_id, estado, proveedor_id } = req.query;
         
         console.log('📊 [REPORTES VENTAS] Params:', { fechaInicio, fechaFin, sucursal_id });
         
@@ -308,13 +337,16 @@ module.exports = async function reportesRoutes(req, res, path) {
         ventasSnapshot.forEach(doc => {
           const venta = doc.data();
           
-          // Verificar si es de hoy
-          let fechaVenta;
+          // Fecha efectiva: campo fecha o fechaCreacion (misma lógica admin / cajero)
+          let fechaVenta = null;
           if (venta.fecha && typeof venta.fecha === 'string') {
             fechaVenta = new Date(venta.fecha);
           } else if (venta.fecha && venta.fecha.toDate) {
             fechaVenta = venta.fecha.toDate();
-          } else {
+          } else if (venta.fechaCreacion && venta.fechaCreacion.toDate) {
+            fechaVenta = venta.fechaCreacion.toDate();
+          }
+          if (!fechaVenta || Number.isNaN(fechaVenta.getTime())) {
             return;
           }
           
@@ -339,9 +371,12 @@ module.exports = async function reportesRoutes(req, res, path) {
           const idsArray = Array.from(productosIds);
           
           // Firestore limita las consultas 'in' a 10 elementos
+          const productosCol = companyId
+            ? db.collection('companies').doc(companyId).collection('productos')
+            : db.collection('productos');
           for (let i = 0; i < idsArray.length; i += 10) {
             const batch = idsArray.slice(i, i + 10);
-            const productosQuery = await db.collection('productos')
+            const productosQuery = await productosCol
               .where(admin.firestore.FieldPath.documentId(), 'in', batch)
               .get();
             
@@ -464,15 +499,17 @@ module.exports = async function reportesRoutes(req, res, path) {
         let ventasQuery = companyId ? db.collection('companies').doc(companyId).collection('ventas') : db.collection('ventas');
         const ventasSnapshot = await ventasQuery.get();
         
-        // Filtrar ventas en el rango de fechas y completadas
+        // Filtrar ventas en el rango de fechas y estados que representan venta realizada
+        const estadosVentaRealizada = new Set(['completada', 'entregado', 'finalizada']);
         const ventasFiltradas = [];
         ventasSnapshot.forEach(doc => {
           const venta = doc.data();
-          const fechaVenta = new Date(venta.fecha);
+          const fechaVenta = fechaDocumento(venta);
+          if (!fechaVenta) return;
           
           if (fechaVenta >= fechaInicioDate && 
               fechaVenta <= fechaFinDate && 
-              venta.estado === 'completada') {
+              estadosVentaRealizada.has(String(venta.estado || '').toLowerCase())) {
             ventasFiltradas.push({
               id: doc.id,
               ...venta
@@ -493,12 +530,8 @@ module.exports = async function reportesRoutes(req, res, path) {
         const productosVendidos = {};
         const clientesCompras = {};
         
-        // Obtener información de productos para costos
-        const productosSnapshot = await db.collection('productos').get();
-        const productosMap = {};
-        productosSnapshot.forEach(doc => {
-          productosMap[doc.id] = doc.data();
-        });
+        // Obtener información de productos para costos desde el tenant y legacy compatible.
+        const productosMap = await obtenerProductosEmpresa(companyId);
         
         // Procesar cada venta
         for (const venta of ventasFiltradas) {
@@ -708,10 +741,10 @@ module.exports = async function reportesRoutes(req, res, path) {
         const compras = [];
         comprasSnap.forEach(d => {
           const c = d.data();
-          let fecha = null;
-          if (c.fecha && typeof c.fecha === 'string') fecha = new Date(c.fecha);
-          else if (c.fecha && c.fecha.toDate) fecha = c.fecha.toDate();
+          let fecha = fechaDocumento(c);
           if (!fecha) return;
+          if (estado && String(c.estado || '').toLowerCase() !== String(estado).toLowerCase()) return;
+          if (proveedor_id && c.proveedor_id !== proveedor_id) return;
           if (fecha >= fIni && fecha <= fFin) {
             compras.push({ id: d.id, ...c, fechaISO: fecha.toISOString() });
           }
@@ -776,7 +809,7 @@ module.exports = async function reportesRoutes(req, res, path) {
     // ==================== VARIANTES: compras/por-dia, compras/por-proveedor, compras/productos-mas-comprados ====================
     if (path === '/reportes/compras/por-dia' && req.method === 'GET') {
       try {
-        const { fechaInicio, fechaFin, sucursal_id } = req.query;
+        const { fechaInicio, fechaFin, sucursal_id, estado, proveedor_id } = req.query;
         if (!fechaInicio || !fechaFin) { res.status(400).json({ error:'Fechas requeridas' }); return true; }
         let comprasQuery = companyId ? db.collection('companies').doc(companyId).collection('compras') : db.collection('compras');
         if (sucursal_id) comprasQuery = comprasQuery.where('sucursal_id','==',sucursal_id);
@@ -786,8 +819,10 @@ module.exports = async function reportesRoutes(req, res, path) {
         const porDia = {};
         snap.forEach(d=>{
           const c = d.data();
-          let fecha=null; if (c.fecha && typeof c.fecha==='string') fecha=new Date(c.fecha); else if (c.fecha && c.fecha.toDate) fecha=c.fecha.toDate();
+          let fecha = fechaDocumento(c);
           if (!fecha) return; if (fecha < fIni || fecha > fFin) return;
+          if (estado && String(c.estado || '').toLowerCase() !== String(estado).toLowerCase()) return;
+          if (proveedor_id && c.proveedor_id !== proveedor_id) return;
           const key = fecha.toISOString().split('T')[0];
           if (!porDia[key]) porDia[key] = { fecha:key, total:0, cantidad:0 };
           const t = parseFloat(c.total || c.subtotal || 0) || 0;
@@ -799,7 +834,7 @@ module.exports = async function reportesRoutes(req, res, path) {
     }
     if (path === '/reportes/compras/por-proveedor' && req.method === 'GET') {
       try {
-        const { fechaInicio, fechaFin, sucursal_id } = req.query;
+        const { fechaInicio, fechaFin, sucursal_id, estado, proveedor_id } = req.query;
         if (!fechaInicio || !fechaFin) { res.status(400).json({ error:'Fechas requeridas' }); return true; }
         let comprasQuery = companyId ? db.collection('companies').doc(companyId).collection('compras') : db.collection('compras');
         if (sucursal_id) comprasQuery = comprasQuery.where('sucursal_id','==',sucursal_id);
@@ -809,8 +844,10 @@ module.exports = async function reportesRoutes(req, res, path) {
         const porProv = {};
         snap.forEach(d=>{
           const c = d.data();
-          let fecha=null; if (c.fecha && typeof c.fecha==='string') fecha=new Date(c.fecha); else if (c.fecha && c.fecha.toDate) fecha=c.fecha.toDate();
+          let fecha = fechaDocumento(c);
           if (!fecha) return; if (fecha < fIni || fecha > fFin) return;
+          if (estado && String(c.estado || '').toLowerCase() !== String(estado).toLowerCase()) return;
+          if (proveedor_id && c.proveedor_id !== proveedor_id) return;
           const key = c.proveedor_id || 'sin_proveedor';
           if (!porProv[key]) porProv[key] = { proveedor_id:key, nombre: c.proveedor || c.proveedor_nombre || 'Proveedor', total:0, cantidad:0 };
           const t = parseFloat(c.total || c.subtotal || 0) || 0;
@@ -825,7 +862,7 @@ module.exports = async function reportesRoutes(req, res, path) {
     }
     if (path === '/reportes/compras/productos-mas-comprados' && req.method === 'GET') {
       try {
-        const { fechaInicio, fechaFin, sucursal_id } = req.query;
+        const { fechaInicio, fechaFin, sucursal_id, estado, proveedor_id } = req.query;
         if (!fechaInicio || !fechaFin) { res.status(400).json({ error:'Fechas requeridas' }); return true; }
         let comprasQuery = companyId ? db.collection('companies').doc(companyId).collection('compras') : db.collection('compras');
         if (sucursal_id) comprasQuery = comprasQuery.where('sucursal_id','==',sucursal_id);
@@ -835,8 +872,10 @@ module.exports = async function reportesRoutes(req, res, path) {
         const productos = {};
         snap.forEach(d=>{
           const c = d.data();
-          let fecha=null; if (c.fecha && typeof c.fecha==='string') fecha=new Date(c.fecha); else if (c.fecha && c.fecha.toDate) fecha=c.fecha.toDate();
+          let fecha = fechaDocumento(c);
           if (!fecha) return; if (fecha < fIni || fecha > fFin) return;
+          if (estado && String(c.estado || '').toLowerCase() !== String(estado).toLowerCase()) return;
+          if (proveedor_id && c.proveedor_id !== proveedor_id) return;
           if (Array.isArray(c.detalles)) {
             c.detalles.forEach(det=>{
               const pid = det.producto_id || 'sin_id';

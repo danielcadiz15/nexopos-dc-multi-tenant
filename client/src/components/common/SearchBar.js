@@ -46,7 +46,7 @@ const SearchBar = forwardRef(({
   };
 
   return (
-    <div className="flex relative">
+    <div className="relative flex">
       {/* Campo de búsqueda */}
       <input
         ref={ref}
@@ -55,11 +55,7 @@ const SearchBar = forwardRef(({
         onChange={onChange}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className="
-          block w-full rounded-md border-gray-300 shadow-sm
-          focus:border-indigo-500 focus:ring-indigo-500 pr-20
-          py-2 px-3 border
-        "
+        className="nexo-field pr-20"
         {...rest}
       />
       
@@ -70,7 +66,7 @@ const SearchBar = forwardRef(({
           <button
             type="button"
             onClick={onClear}
-            className="text-gray-400 hover:text-gray-600 mr-1"
+            className="mr-1 text-slate-400 hover:text-slate-600"
             aria-label="Limpiar búsqueda"
           >
             <FaTimes />
@@ -81,7 +77,7 @@ const SearchBar = forwardRef(({
         <button
           type="button"
           onClick={onSearch}
-          className="text-gray-600 hover:text-indigo-600"
+          className="text-slate-500 hover:text-indigo-600"
           aria-label="Buscar"
         >
           <FaSearch />

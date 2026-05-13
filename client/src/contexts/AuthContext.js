@@ -15,6 +15,7 @@ import { auth, db } from '../firebase/config';
 import { toast } from 'react-toastify';
 import { getEmailActionCodeSettings } from '../utils/emailVerification';
 import sucursalesService from '../services/sucursales.service';
+import { MODULE_KEYS, mergeCompanyModules } from '../config/modulesCatalog';
 
 const AuthContext = createContext();
 
@@ -32,6 +33,8 @@ export function AuthProvider({ children }) {
 
   // NUEVO: Estado para permisos efectivos
   const [permisosEfectivos, setPermisosEfectivos] = useState({});
+  /** Módulos de licencia normalizados (cada clave del catálogo existe; solo `false` desactiva). */
+  const [companyModules, setCompanyModules] = useState(() => mergeCompanyModules({}));
   const currentUserSucursalesKey = JSON.stringify(currentUser?.sucursales || []);
 
   useEffect(() => {
@@ -178,6 +181,7 @@ export function AuthProvider({ children }) {
           setCurrentUser(null);
           setIsAuthenticated(false);
           setPermisosEfectivos({});
+          setCompanyModules(mergeCompanyModules({}));
           setOrgId(null);
         }
       } else {
@@ -186,6 +190,7 @@ export function AuthProvider({ children }) {
         setSucursalSeleccionada(null);
         setSucursalesDisponibles([]);
         setPermisosEfectivos({});
+        setCompanyModules(mergeCompanyModules({}));
         setOrgId(null);
         localStorage.removeItem('orgId');
         localStorage.removeItem('sucursalSeleccionada');
@@ -255,6 +260,8 @@ export function AuthProvider({ children }) {
         permisosBase = {
           productos: { ver: true, crear: true, editar: true, eliminar: true },
           categorias: { ver: true, crear: true, editar: true, eliminar: true },
+          proveedores: { ver: true, crear: true, editar: true, eliminar: true },
+          punto_venta: { ver: true, crear: true, editar: true, eliminar: true },
           compras: { ver: true, crear: true, editar: true, eliminar: true },
           ventas: { ver: true, crear: true, editar: true, eliminar: true },
           stock: { ver: true, crear: true, editar: true, eliminar: true },
@@ -265,7 +272,7 @@ export function AuthProvider({ children }) {
           materias_primas: { ver: true, crear: true, editar: true, eliminar: true },
           recetas: { ver: true, crear: true, editar: true, eliminar: true },
           produccion: { ver: true, crear: true, editar: true, eliminar: true },
-          // NUEVOS MODULOS
+          vehiculos: { ver: true, crear: true, editar: true, eliminar: true },
           clientes: { ver: true, crear: true, editar: true, eliminar: true },
           caja: { ver: true, crear: true, editar: true, eliminar: true },
           gastos: { ver: true, crear: true, editar: true, eliminar: true },
@@ -281,6 +288,8 @@ export function AuthProvider({ children }) {
         permisosBase = {
           productos: { ver: true, crear: true, editar: true, eliminar: false },
           categorias: { ver: true, crear: true, editar: true, eliminar: false },
+          proveedores: { ver: true, crear: true, editar: true, eliminar: false },
+          punto_venta: { ver: true, crear: true, editar: true, eliminar: false },
           compras: { ver: true, crear: true, editar: true, eliminar: false },
           ventas: { ver: true, crear: true, editar: true, eliminar: false },
           stock: { ver: true, crear: true, editar: true, eliminar: false },
@@ -291,7 +300,7 @@ export function AuthProvider({ children }) {
           materias_primas: { ver: true, crear: true, editar: true, eliminar: false },
           recetas: { ver: true, crear: true, editar: true, eliminar: false },
           produccion: { ver: true, crear: true, editar: true, eliminar: false },
-          // NUEVOS MODULOS
+          vehiculos: { ver: true, crear: true, editar: true, eliminar: false },
           clientes: { ver: true, crear: true, editar: true, eliminar: false },
           caja: { ver: true, crear: true, editar: true, eliminar: false },
           gastos: { ver: true, crear: true, editar: false, eliminar: false },
@@ -305,8 +314,10 @@ export function AuthProvider({ children }) {
         console.log('🔐 [AUTH] Usuario es empleado, asignando permisos básicos');
                // Empleado tiene permisos basicos
         permisosBase = {
-           productos: { ver: true, crear: true, editar: true, eliminar: false },
+               productos: { ver: true, crear: true, editar: true, eliminar: false },
            categorias: { ver: true, crear: true, editar: true, eliminar: false },
+           proveedores: { ver: false, crear: false, editar: false, eliminar: false },
+           punto_venta: { ver: true, crear: true, editar: false, eliminar: false },
           compras: { ver: true, crear: false, editar: false, eliminar: false },
            ventas: { ver: true, crear: true, editar: false, eliminar: false },
            stock: { ver: true, crear: false, editar: false, eliminar: false, control: { ver: true, crear: true, editar: false, eliminar: false } },
@@ -317,7 +328,7 @@ export function AuthProvider({ children }) {
            materias_primas: { ver: true, crear: true, editar: true, eliminar: false },
            recetas: { ver: true, crear: true, editar: true, eliminar: false },
            produccion: { ver: true, crear: true, editar: false, eliminar: false },
-           // NUEVOS MODULOS
+           vehiculos: { ver: false, crear: false, editar: false, eliminar: false },
            clientes: { ver: true, crear: true, editar: true, eliminar: false },
            caja: { ver: true, crear: true, editar: false, eliminar: false },
            gastos: { ver: false, crear: false, editar: false, eliminar: false },
@@ -330,39 +341,26 @@ export function AuthProvider({ children }) {
       }
       
       // NUEVO: Consultar configuración de módulos desde Firestore
-      let modulosHabilitados = {};
+      let modulosRaw = {};
       if (orgId) {
         try {
           console.log('🔐 [AUTH] Consultando configuración de módulos para orgId:', orgId);
-          const modulesDoc = await doc(db, 'companies', orgId, 'config', 'modules');
-          const modulesSnapshot = await getDoc(modulesDoc);
-          
+          const modulesRef = doc(db, 'companies', orgId, 'config', 'modules');
+          const modulesSnapshot = await getDoc(modulesRef);
+
           if (modulesSnapshot.exists()) {
-            modulosHabilitados = modulesSnapshot.data();
-            console.log('🔐 [AUTH] Módulos habilitados en Firestore:', modulosHabilitados);
+            modulosRaw = modulesSnapshot.data();
+            console.log('🔐 [AUTH] Módulos en Firestore:', modulosRaw);
           } else {
-            console.log('🔐 [AUTH] No se encontró configuración de módulos, usando todos habilitados');
-            // Si no existe configuración, habilitar todos los módulos por defecto
-            modulosHabilitados = {
-              productos: true, categorias: true, compras: true, ventas: true, stock: true,
-              reportes: true, promociones: true, usuarios: true, sucursales: true,
-              materias_primas: true, recetas: true, produccion: true, clientes: true,
-              caja: true, gastos: true, devoluciones: true, listas_precios: true,
-              transferencias: true, auditoria: true, configuracion: true
-            };
+            console.log('🔐 [AUTH] Sin doc de módulos: se asume todo habilitado (compatibilidad)');
           }
         } catch (error) {
           console.warn('🔐 [AUTH] Error consultando configuración de módulos:', error.message);
-          // En caso de error, habilitar todos los módulos por defecto
-          modulosHabilitados = {
-            productos: true, categorias: true, compras: true, ventas: true, stock: true,
-            reportes: true, promociones: true, usuarios: true, sucursales: true,
-            materias_primas: true, recetas: true, produccion: true, clientes: true,
-            caja: true, gastos: true, devoluciones: true, listas_precios: true,
-            transferencias: true, auditoria: true, configuracion: true
-          };
         }
       }
+
+      const mergedModules = mergeCompanyModules(modulosRaw);
+      setCompanyModules(mergedModules);
       
       // Combinar con permisos personalizados
       const permisosPersonalizados = usuario.permisos || {};
@@ -378,22 +376,13 @@ export function AuthProvider({ children }) {
         }
       });
       
-      // NUEVO: Aplicar filtro de módulos habilitados
-      Object.keys(permisosFinales).forEach(modulo => {
-        if (modulosHabilitados[modulo] === false) {
-          console.log(`🔐 [AUTH] Módulo ${modulo} deshabilitado en configuración, removiendo permisos`);
+      // Aplicar licencia / módulos: cualquier clave del catálogo en false anula permisos CRUD
+      MODULE_KEYS.forEach((modulo) => {
+        if (mergedModules[modulo] === false) {
+          console.log(`🔐 [AUTH] Módulo ${modulo} deshabilitado en configuración, sin permisos`);
           permisosFinales[modulo] = { ver: false, crear: false, editar: false, eliminar: false };
         }
       });
-      
-      // TEMPORAL: Forzar habilitación de compras para TODOS los usuarios
-      if (permisosFinales.compras) {
-        console.log('🔐 [AUTH] TEMPORAL: Forzando habilitación de compras para TODOS los usuarios');
-        permisosFinales.compras.ver = true;
-        permisosFinales.compras.crear = true;
-        permisosFinales.compras.editar = true;
-        permisosFinales.compras.eliminar = false;
-      }
       
       console.log('🔐 [AUTH] Permisos efectivos calculados:', permisosFinales);
       setPermisosEfectivos(permisosFinales);
@@ -405,8 +394,14 @@ export function AuthProvider({ children }) {
         productos: { ver: true, crear: false, editar: false, eliminar: false },
         ventas: { ver: true, crear: true, editar: false, eliminar: false }
       });
+      setCompanyModules(mergeCompanyModules({}));
     }
   };
+
+  const syncEffectivePermissions = useCallback(async () => {
+    if (!currentUser) return;
+    await calcularPermisosEfectivos(currentUser, orgId);
+  }, [currentUser, orgId]);
 
   /**
    * Cargar sucursales disponibles para el usuario
@@ -574,6 +569,7 @@ export function AuthProvider({ children }) {
       setSucursalSeleccionada(null);
       setSucursalesDisponibles([]);
       setPermisosEfectivos({});
+      setCompanyModules(mergeCompanyModules({}));
       localStorage.removeItem('sucursalSeleccionada');
       localStorage.removeItem('orgId');
       localStorage.removeItem('companyId');
@@ -720,8 +716,12 @@ export function AuthProvider({ children }) {
          rol: currentUser?.rol,
          rolId: currentUser?.rolId
        });
+
+       if (companyModules?.[modulo] === false) {
+         return false;
+       }
        
-       // Administrador siempre tiene todos los permisos
+       // Administrador siempre tiene todos los permisos (salvo módulo desactivado arriba)
        if (currentUser?.rol === 'Administrador' || 
            currentUser?.rol === 'admin' || 
            currentUser?.rol === 'Admin' ||
@@ -793,6 +793,7 @@ export function AuthProvider({ children }) {
     signUp,
     refreshAuthSession,
     completeCompanyAfterVerification,
+    syncEffectivePermissions,
     logout,
     getAccessToken,
     hasPermission,
@@ -802,6 +803,7 @@ export function AuthProvider({ children }) {
     cambiarSucursal,
     canAccessSucursal,
     permisosEfectivos,
+    companyModules,
     getUserInfo,
     orgId
   };

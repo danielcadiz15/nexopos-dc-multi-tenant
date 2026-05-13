@@ -18,6 +18,8 @@ const tenantsCallables = require('./callables/tenants');
 exports.createTenant = tenantsCallables.createTenant;
 exports.joinTenant = tenantsCallables.joinTenant;
 exports.setActiveTenant = tenantsCallables.setActiveTenant;
+exports.generateTenantBootstrapCode = tenantsCallables.generateTenantBootstrapCode;
+exports.migrateOrgCatalogDefaults = tenantsCallables.migrateOrgCatalogDefaults;
 
 // ==================== IMPORTAR MIGRACIÓN ====================
 const { 
@@ -30,6 +32,7 @@ const {
 // ==================== IMPORTAR TODOS LOS MÓDULOS ====================
 const listasPreciosRoutes = require('./routes/listas-precios.routes');
 const productosRoutes = require('./routes/productos.routes');
+const barcodeCatalogRoutes = require('./routes/barcode-catalog.routes');
 const categoriasRoutes = require('./routes/categorias.routes');
 const clientesRoutes = require('./routes/clientes.routes');
 const proveedoresRoutes = require('./routes/proveedores.routes');
@@ -56,6 +59,7 @@ const serviciosVehiculosRoutes = require('./routes/servicios.vehiculos.routes');
 // Rutas de Caja
 const cajaRoutes = require('./routes/caja.routes');
 const billingMercadoPagoRoutes = require('./routes/billing-mercadopago.routes');
+const auditoriaRoutes = require('./routes/auditoria.routes');
 const { normalizePlan: normalizeLicensePlanId } = require('./utils/planTiers');
 
 // Rutas de Control de Stock
@@ -247,11 +251,7 @@ const {
   isFacturacionRequest
 } = require('./licenseHelpers');
 
-const SUPER_ADMIN_EMAIL = 'danielcadiz15@gmail.com';
-
-function isSuperAdminEmail(email) {
-  return (email || '').toLowerCase() === SUPER_ADMIN_EMAIL;
-}
+const { isSuperAdminEmail } = require('./utils/superAdmin');
 
 async function loadLicenseDoc(companyId) {
   let lic = {};
@@ -425,8 +425,9 @@ async function nexoposMainApi(req, res) {
     if ((path.startsWith('/ventas') && path !== '/ventas/eliminadas') || 
         path.startsWith('/usuarios') || 
         path.startsWith('/productos') ||
+        path.startsWith('/barcode-catalog') ||
         path.startsWith('/clientes') ||
-        path.startsWith('/compras') || path.startsWith('/stock') || path.startsWith('/caja') || path.startsWith('/reportes')) {
+        path.startsWith('/compras') || path.startsWith('/stock') || path.startsWith('/caja') || path.startsWith('/reportes') || path.startsWith('/auditoria')) {
       await authenticateUser(req, res, () => {});
       const lic = await checkLicense(req, res);
       if (!lic.ok) {
@@ -807,7 +808,8 @@ async function nexoposMainApi(req, res) {
           const snap = await db.collection('platform').doc('billing').get();
           const raw = snap.exists ? snap.data() || {} : {};
           const planTiers = ['basic', 'intermediate', 'premium'];
-          const planPrices = { basic: 0, intermediate: 0, premium: 0 };
+          const defaultPlanPrices = { basic: 80000, intermediate: 120000, premium: 180000 };
+          const planPrices = { ...defaultPlanPrices };
           if (raw.planPrices && typeof raw.planPrices === 'object') {
             for (const k of planTiers) {
               if (raw.planPrices[k] != null && !Number.isNaN(Number(raw.planPrices[k]))) {
@@ -819,10 +821,13 @@ async function nexoposMainApi(req, res) {
           if (planPrices.basic <= 0 && legacy != null && !Number.isNaN(legacy) && legacy > 0) {
             planPrices.basic = legacy;
           }
+          const { resolveOnboardingFromDoc } = require('./utils/onboardingBilling');
+          const ob = resolveOnboardingFromDoc(raw);
           return res.json({
             success: true,
             data: {
               ...raw,
+              ...ob,
               planPrices,
               monthlyPriceARS:
                 planPrices.basic > 0 ? planPrices.basic : legacy != null ? legacy : null
@@ -835,9 +840,9 @@ async function nexoposMainApi(req, res) {
           const snap = await db.collection('platform').doc('billing').get();
           const existing = snap.exists ? snap.data() || {} : {};
           const mergedPrices = {
-            basic: 0,
-            intermediate: 0,
-            premium: 0,
+            basic: 80000,
+            intermediate: 120000,
+            premium: 180000,
             ...(existing.planPrices && typeof existing.planPrices === 'object' ? existing.planPrices : {})
           };
 
@@ -866,23 +871,56 @@ async function nexoposMainApi(req, res) {
             mergedPrices.basic = monthlyPriceARS;
           }
 
-          if (!body.planPrices && body.monthlyPriceARS == null) {
+          let onboardingInstallmentAmountARS;
+          let onboardingInstallmentsTotal;
+          if (body.onboardingInstallmentAmountARS != null) {
+            const ob = Number(body.onboardingInstallmentAmountARS);
+            if (Number.isNaN(ob) || ob <= 0) {
+              return res.status(400).json({
+                success: false,
+                message: 'onboardingInstallmentAmountARS inválido.'
+              });
+            }
+            onboardingInstallmentAmountARS = ob;
+          }
+          if (body.onboardingInstallmentsTotal != null) {
+            const t = Math.floor(Number(body.onboardingInstallmentsTotal));
+            if (Number.isNaN(t) || t < 1 || t > 24) {
+              return res.status(400).json({
+                success: false,
+                message: 'onboardingInstallmentsTotal debe ser entre 1 y 24.'
+              });
+            }
+            onboardingInstallmentsTotal = t;
+          }
+
+          const hasPricing = Boolean(body.planPrices) || body.monthlyPriceARS != null;
+          const hasOnboarding =
+            body.onboardingInstallmentAmountARS != null || body.onboardingInstallmentsTotal != null;
+
+          if (!hasPricing && !hasOnboarding) {
             return res.status(400).json({
               success: false,
-              message: 'Enviá planPrices (basic, intermediate, premium) o monthlyPriceARS (solo Básica).'
+              message:
+                'Enviá planPrices (o monthlyPriceARS) y/o onboardingInstallmentAmountARS / onboardingInstallmentsTotal.'
             });
           }
 
-          const monthlyPriceARS = mergedPrices.basic;
+          const toSet = {
+            updatedAt: new Date().toISOString()
+          };
+          if (hasPricing) {
+            toSet.planPrices = mergedPrices;
+            toSet.monthlyPriceARS = mergedPrices.basic;
+          }
+          if (onboardingInstallmentAmountARS != null) {
+            toSet.onboardingInstallmentAmountARS = onboardingInstallmentAmountARS;
+          }
+          if (onboardingInstallmentsTotal != null) {
+            toSet.onboardingInstallmentsTotal = onboardingInstallmentsTotal;
+          }
 
-          await db.collection('platform').doc('billing').set(
-            {
-              planPrices: mergedPrices,
-              monthlyPriceARS,
-              updatedAt: new Date().toISOString()
-            },
-            { merge: true }
-          );
+          await db.collection('platform').doc('billing').set(toSet, { merge: true });
           return res.json({ success: true });
         }
       }
@@ -964,6 +1002,15 @@ async function nexoposMainApi(req, res) {
         }
       }
       
+      // Catálogo por código (UPC proxy + contribución global) — solo alta de productos
+      if (!responseEnviada && path.startsWith('/barcode-catalog')) {
+        const barcodeHandled = await barcodeCatalogRoutes(req, res, path);
+        if (barcodeHandled) {
+          responseEnviada = true;
+          return;
+        }
+      }
+
       // Productos
       if (!responseEnviada && path.startsWith('/productos')) {
         const productosHandled = await productosRoutes(req, res, path);
@@ -1019,7 +1066,7 @@ async function nexoposMainApi(req, res) {
       }
       
       // Control de Stock y Solicitudes de Ajuste
-      if (!responseEnviada && (path.startsWith('/control-stock') || path.startsWith('/solicitudes-ajuste'))) {
+      if (!responseEnviada && (path.startsWith('/control-stock') || path.startsWith('/solicitudes-ajuste') || path.startsWith('/auditoria-inventario'))) {
         console.log('🔍 [ROUTING] Llamando a manejarRutasControlStock para:', path);
         const controlStockHandled = await manejarRutasControlStock(req, res, path);
         console.log('🔍 [ROUTING] Resultado de manejarRutasControlStock:', controlStockHandled);
@@ -1077,6 +1124,14 @@ async function nexoposMainApi(req, res) {
       if (!responseEnviada && path.startsWith('/reportes')) {
         const reportesHandled = await reportesRoutes(req, res, path);
         if (reportesHandled) {
+          responseEnviada = true;
+          return;
+        }
+      }
+      // Auditoría
+      if (!responseEnviada && path.startsWith('/auditoria')) {
+        const auditoriaHandled = await auditoriaRoutes(req, res, path);
+        if (auditoriaHandled) {
           responseEnviada = true;
           return;
         }

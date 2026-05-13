@@ -1,6 +1,7 @@
 // functions/routes/stock-sucursal.routes.js
 const admin = require('firebase-admin');
 const db = admin.firestore();
+const { safeAudit } = require('../utils/auditLogger');
 
 const obtenerProductoDoc = async (companyId, productoId) => {
   if (!productoId) return null;
@@ -514,6 +515,23 @@ const stockSucursalRoutes = async (req, res, path) => {
           motivo,
           fecha: admin.firestore.FieldValue.serverTimestamp(),
           usuario_id: req.body.usuario_id || 'sistema'
+        });
+
+        await safeAudit(db, companyId, req, {
+          accion: 'ajustar_stock',
+          modulo: 'stock',
+          entidad: 'stock_sucursal',
+          entidad_id: stockDoc.id,
+          titulo: `Ajuste de stock ${ajusteNum > 0 ? 'entrada' : 'salida'}`,
+          descripcion: motivo,
+          severidad: 'warning',
+          sucursal_id,
+          metadata: {
+            producto_id,
+            stock_anterior: stockActual,
+            ajuste: ajusteNum,
+            stock_nuevo: nuevaCantidad
+          }
         });
         
         res.json({

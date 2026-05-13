@@ -333,7 +333,7 @@ const ReporteVentas = () => {
                   type="date"
                   value={fechaInicio}
                   onChange={(e) => handleFechaChange('fechaInicio', e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field pl-10 sm:text-sm"
                 />
               </div>
             </div>
@@ -348,7 +348,7 @@ const ReporteVentas = () => {
                   type="date"
                   value={fechaFin}
                   onChange={(e) => handleFechaChange('fechaFin', e.target.value)}
-                  className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field pl-10 sm:text-sm"
                 />
               </div>
             </div>
@@ -360,7 +360,7 @@ const ReporteVentas = () => {
               <select
                 value={agrupacion}
                 onChange={(e) => setAgrupacion(e.target.value)}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="nexo-field sm:text-sm"
               >
                 <option value="dia">Día</option>
                 <option value="semana">Semana</option>
@@ -376,7 +376,7 @@ const ReporteVentas = () => {
               <select
                 value={tipoGrafico}
                 onChange={(e) => setTipoGrafico(e.target.value)}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="nexo-field sm:text-sm"
               >
                 <option value="area">Área</option>
                 <option value="linea">Línea</option>

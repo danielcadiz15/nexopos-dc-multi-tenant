@@ -104,6 +104,22 @@ class ApiService {
     return { data: responseData, status: response.status };
   }
 
+  async patch(endpoint = '', data = {}, params = {}) {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(this.buildUrl(endpoint, params), {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(data)
+    });
+    const responseData = await response.json().catch(() => ({}));
+    if (response.status === 402) {
+      emitLicense402(responseData);
+    } else {
+      try { window.dispatchEvent(new CustomEvent('license:ok')); } catch {}
+    }
+    return { data: responseData, status: response.status };
+  }
+
   async delete(endpoint = '', data = {}, params = {}) {
     const headers = await this.getAuthHeaders();
     const response = await fetch(this.buildUrl(endpoint, params), {

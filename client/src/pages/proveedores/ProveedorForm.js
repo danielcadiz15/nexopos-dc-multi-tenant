@@ -238,7 +238,7 @@ const ProveedorForm = () => {
                   value={formData.nombre}
                   onChange={handleInputChange}
                   className={`block w-full pl-10 pr-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                    errors.nombre ? 'border-red-300' : 'border-gray-300'
+                    errors.nombre ? 'border-red-300' : 'border-slate-200'
                   }`}
                   placeholder="Nombre del proveedor"
                 />
@@ -260,7 +260,7 @@ const ProveedorForm = () => {
                   name="contacto"
                   value={formData.contacto}
                   onChange={handleInputChange}
-                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field pl-10 pr-3"
                   placeholder="Nombre del contacto"
                 />
               </div>
@@ -279,7 +279,7 @@ const ProveedorForm = () => {
                   value={formData.telefono}
                   onChange={handleInputChange}
                   className={`block w-full pl-10 pr-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                    errors.telefono ? 'border-red-300' : 'border-gray-300'
+                    errors.telefono ? 'border-red-300' : 'border-slate-200'
                   }`}
                   placeholder="Teléfono de contacto"
                 />
@@ -302,7 +302,7 @@ const ProveedorForm = () => {
                   value={formData.email}
                   onChange={handleInputChange}
                   className={`block w-full pl-10 pr-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                    errors.email ? 'border-red-300' : 'border-gray-300'
+                    errors.email ? 'border-red-300' : 'border-slate-200'
                   }`}
                   placeholder="correo@ejemplo.com"
                 />
@@ -324,7 +324,7 @@ const ProveedorForm = () => {
                   name="sitio_web"
                   value={formData.sitio_web}
                   onChange={handleInputChange}
-                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field pl-10 pr-3"
                   placeholder="www.ejemplo.com"
                 />
               </div>
@@ -342,7 +342,7 @@ const ProveedorForm = () => {
                   name="direccion"
                   value={formData.direccion}
                   onChange={handleInputChange}
-                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field pl-10 pr-3"
                   placeholder="Dirección completa"
                 />
               </div>
@@ -358,7 +358,7 @@ const ProveedorForm = () => {
                 name="ciudad"
                 value={formData.ciudad}
                 onChange={handleInputChange}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                className="nexo-field"
                 placeholder="Ciudad"
               />
             </div>
@@ -376,7 +376,7 @@ const ProveedorForm = () => {
                   value={formData.cuit}
                   onChange={handleInputChange}
                   className={`block w-full pl-10 pr-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                    errors.cuit ? 'border-red-300' : 'border-gray-300'
+                    errors.cuit ? 'border-red-300' : 'border-slate-200'
                   }`}
                   placeholder="XX-XXXXXXXX-X"
                 />
@@ -395,7 +395,7 @@ const ProveedorForm = () => {
                 name="condicion_iva"
                 value={formData.condicion_iva}
                 onChange={handleInputChange}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                className="nexo-field"
               >
                 <option value="Responsable Inscripto">Responsable Inscripto</option>
                 <option value="Monotributo">Monotributo</option>
@@ -415,7 +415,7 @@ const ProveedorForm = () => {
                 value={formData.observaciones}
                 onChange={handleInputChange}
                 rows="3"
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                className="nexo-field"
                 placeholder="Notas adicionales sobre el proveedor"
               />
             </div>

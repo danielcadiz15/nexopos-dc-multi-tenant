@@ -317,7 +317,7 @@ const ProduccionForm = () => {
                   name="receta_id"
                   value={formData.receta_id}
                   onChange={handleChange}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field"
                   required
                 >
                   <option value="">Selecciona una receta</option>
@@ -339,7 +339,7 @@ const ProduccionForm = () => {
                   value={formData.cantidad}
                   onChange={handleChange}
                   min={1}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field"
                   required
                 />
                 <p className="mt-1 text-sm text-gray-500">
@@ -356,7 +356,7 @@ const ProduccionForm = () => {
                   value={formData.notas}
                   onChange={handleChange}
                   rows={3}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field"
                   placeholder="Observaciones o detalles adicionales..."
                 />
               </div>

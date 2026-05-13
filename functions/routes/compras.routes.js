@@ -1,6 +1,66 @@
 // functions/routes/compras.routes.js - VERSIÓN CORREGIDA
 const admin = require('firebase-admin');
 const db = admin.firestore();
+const { normalizeMedioPagoCaja } = require('../utils/cajaMedios');
+const { incrementarSaldoSucursal } = require('../utils/cajaSaldo');
+const { safeAudit } = require('../utils/auditLogger');
+
+function roundMoney(x) {
+  const n = parseFloat(x);
+  if (Number.isNaN(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+async function obtenerSnapshotProductoEmpresa(companyId, productId) {
+  if (companyId) {
+    const doc = await db.collection('companies').doc(companyId).collection('productos').doc(productId).get();
+    if (doc.exists) return doc;
+  }
+  const doc = await db.collection('productos').doc(productId).get();
+  if (!doc.exists) return null;
+  const data = doc.data();
+  if (companyId && data.orgId && data.orgId !== companyId) return null;
+  return doc;
+}
+
+async function obtenerRefProductoEmpresa(companyId, productId) {
+  if (companyId) {
+    const ref = db.collection('companies').doc(companyId).collection('productos').doc(productId);
+    const s = await ref.get();
+    if (s.exists) return ref;
+  }
+  const ref = db.collection('productos').doc(productId);
+  const s = await ref.get();
+  if (!s.exists) return null;
+  const data = s.data();
+  if (companyId && data.orgId && data.orgId !== companyId) return null;
+  return ref;
+}
+
+async function computeCambiosCosto(companyId, detalles) {
+  if (!detalles || !Array.isArray(detalles)) return [];
+  const out = [];
+  for (const det of detalles) {
+    if (!det.producto_id || det.precio_unitario == null) continue;
+    const nuevo = roundMoney(det.precio_unitario);
+    const snap = await obtenerSnapshotProductoEmpresa(companyId, det.producto_id);
+    if (!snap || !snap.exists) continue;
+    const d = snap.data();
+    const anterior = roundMoney(d.precio_costo ?? 0);
+    if (Math.abs(nuevo - anterior) < 0.005) continue;
+    const pct = anterior > 0 ? roundMoney(((nuevo - anterior) / anterior) * 100) : null;
+    out.push({
+      producto_id: det.producto_id,
+      nombre: d.nombre || '',
+      codigo: d.codigo || '',
+      precio_costo_anterior: anterior,
+      precio_compra_unitario: nuevo,
+      variacion_pct: pct,
+      direccion: nuevo > anterior ? 'subio' : 'bajo'
+    });
+  }
+  return out;
+}
 
 // Función para enriquecer compras con información de proveedores
 const enriquecerComprasConProveedores = async (compras) => {
@@ -435,18 +495,20 @@ const comprasRoutes = async (req, res, path) => {
         try {
           const pago = nuevaCompra.pago || {};
           const origen = (pago.origen || pago.tipo || '').toLowerCase(); // 'caja' | 'externo'
-          const medioPago = pago.medio_pago || 'efectivo';
+          const medioPago = normalizeMedioPagoCaja(pago.medio_pago || 'efectivo');
           const permitirNegativo = pago.permitir_negativo === true;
           const montoEgreso = parseFloat(nuevaCompra.total || nuevaCompra.subtotal || 0) || 0;
           const sucursalPagoId = compraFirebase.sucursal_id || sucursalPrincipalId;
 
-          // Helper: calcular saldo de caja de la sucursal
-          async function obtenerSaldoCaja(companyIdArg, sucursalIdArg) {
+          // Helper: calcular saldo de caja de la sucursal. Si se indica medio,
+          // valida solo esa billetera/medio para no mezclar efectivo con transferencias.
+          async function obtenerSaldoCaja(companyIdArg, sucursalIdArg, medioFiltro = null) {
             const movsSnap = await db.collection('companies').doc(companyIdArg).collection('caja')
               .doc(sucursalIdArg).collection('movimientos').get();
             let saldo = 0;
             movsSnap.forEach(m => {
               const d = m.data();
+              if (medioFiltro && normalizeMedioPagoCaja(d.medio_pago) !== medioFiltro) return;
               const monto = parseFloat(d.monto || 0) || 0;
               if ((d.tipo || '').toLowerCase() === 'ingreso') saldo += monto;
               else if ((d.tipo || '').toLowerCase() === 'egreso') saldo -= monto;
@@ -455,13 +517,23 @@ const comprasRoutes = async (req, res, path) => {
           }
 
           if (origen === 'caja' && montoEgreso > 0) {
-            const saldo = await obtenerSaldoCaja(companyId, sucursalPagoId);
-            console.log('💸 [CAJA] Validación de saldo:', { saldo, montoEgreso, permitirNegativo });
+            const mediosConSaldoPropio = ['efectivo', 'transferencia', 'mercadopago', 'tarjeta'];
+            const medioParaValidar = mediosConSaldoPropio.includes(medioPago) ? medioPago : null;
+            const saldo = await obtenerSaldoCaja(companyId, sucursalPagoId, medioParaValidar);
+            console.log('💸 [CAJA] Validación de saldo:', { saldo, montoEgreso, permitirNegativo, medioPago, medioParaValidar });
             if (saldo < montoEgreso && !permitirNegativo) {
+              await docRef.delete().catch((deleteError) => {
+                console.warn('⚠️ [COMPRAS] No se pudo revertir compra sin pago por saldo insuficiente:', deleteError.message);
+              });
+              const medioLabel = medioParaValidar
+                ? ` de ${medioParaValidar === 'mercadopago' ? 'billetera virtual / MercadoPago' : medioParaValidar}`
+                : '';
               return res.status(400).json({
                 success: false,
-                message: 'Saldo de caja insuficiente para cubrir la compra',
+                message: `Saldo disponible${medioLabel} insuficiente para cubrir la compra`,
                 saldo_actual: saldo,
+                saldo_medio: saldo,
+                medio_pago: medioPago,
                 requiere_confirmacion: true,
                 compra_id: docRef.id
               });
@@ -485,6 +557,7 @@ const comprasRoutes = async (req, res, path) => {
             });
             // Marcar pagada
             await docRef.update({ estado_pago: 'pagada', pago: { ...pago, origen: 'caja', medio_pago: medioPago } });
+            await incrementarSaldoSucursal(db, companyId, sucursalPagoId, -montoEgreso);
             console.log('💸 [CAJA] Egreso registrado por compra en caja:', { id: docRef.id, monto: montoEgreso });
           } else if (origen === 'externo') {
             // No afecta caja, marcar pagada
@@ -497,6 +570,24 @@ const comprasRoutes = async (req, res, path) => {
         } catch (e) {
           console.warn('⚠️ [COMPRAS] Error al registrar pago:', e.message);
         }
+
+        await safeAudit(db, companyId, req, {
+          accion: 'crear',
+          modulo: 'compras',
+          entidad: 'compra',
+          entidad_id: docRef.id,
+          titulo: `Compra creada ${compraFirebase.numero || docRef.id}`,
+          descripcion: `Total: ${compraFirebase.total || 0}`,
+          severidad: 'info',
+          sucursal_id: compraFirebase.sucursal_id,
+          monto: compraFirebase.total,
+          metadata: {
+            proveedor_id: compraFirebase.proveedor_id || null,
+            estado: compraFirebase.estado,
+            estado_pago: compraFirebase.estado_pago,
+            items: Array.isArray(compraFirebase.detalles) ? compraFirebase.detalles.length : 0
+          }
+        });
 
         res.status(201).json({
           success: true,
@@ -575,9 +666,15 @@ const comprasRoutes = async (req, res, path) => {
     if (req.method === 'PUT' && pathParts.length === 2) {
       try {
         const compraId = pathParts[1];
-        const datosActualizados = req.body;
-        
-        console.log(`📦 [COMPRAS] Actualizando compra ${compraId}:`, datosActualizados);
+        const datosActualizados = req.body || {};
+        const {
+          actualizar_precios_costo_ids,
+          actualizar_precios,
+          usuario_id: usuarioRecepcionPut,
+          ...datosCompraLimpios
+        } = datosActualizados;
+
+        console.log(`📦 [COMPRAS] Actualizando compra ${compraId}:`, datosCompraLimpios);
         
         // Obtener la compra actual
         let compraDoc = null;
@@ -609,11 +706,10 @@ const comprasRoutes = async (req, res, path) => {
         
         const compraActual = compraDoc.data();
         const estadoAnterior = compraActual.estado;
-        const estadoNuevo = datosActualizados.estado;
-        
-        // Preparar datos de actualización
+        const estadoNuevo = datosCompraLimpios.estado;
+
         const actualizacion = {
-          ...datosActualizados,
+          ...datosCompraLimpios,
           fechaActualizacion: admin.firestore.FieldValue.serverTimestamp()
         };
         
@@ -626,9 +722,17 @@ const comprasRoutes = async (req, res, path) => {
           estadoAnterior !== 'recibida'
         );
         
+        let cambiosCostoResumen = [];
+
         if (debeActualizarStock) {
           console.log('🔄 [COMPRAS] Actualizando stock porque el estado cambió a recibida/completada...');
-          
+
+          try {
+            cambiosCostoResumen = await computeCambiosCosto(companyId, compraActual.detalles || []);
+          } catch (ce) {
+            console.warn('[COMPRAS] No se pudo calcular cambios de costo:', ce.message);
+          }
+
           // Obtener sucursal
           let sucursalId = compraActual.sucursal_id;
           
@@ -650,7 +754,16 @@ const comprasRoutes = async (req, res, path) => {
             });
             return true;
           }
-          
+
+          const idsCosto = Array.isArray(actualizar_precios_costo_ids)
+            ? actualizar_precios_costo_ids.filter(Boolean)
+            : [];
+          const refProductosCosto = new Map();
+          for (const pid of idsCosto) {
+            const r = await obtenerRefProductoEmpresa(companyId, pid);
+            if (r) refProductosCosto.set(pid, r);
+          }
+
           // USAR TRANSACCIÓN para actualizar compra y stock
           await db.runTransaction(async (transaction) => {
             // 1. Actualizar la compra
@@ -707,8 +820,16 @@ const comprasRoutes = async (req, res, path) => {
                     referencia_tipo: 'compra',
                     referencia_id: compraId,
                     fecha: admin.firestore.FieldValue.serverTimestamp(),
-                    usuario_id: datosActualizados.usuario_id || 'sistema'
+                    usuario_id: usuarioRecepcionPut || datosCompraLimpios.usuario_id || 'sistema'
                   });
+
+                  const refCosto = refProductosCosto.get(detalle.producto_id);
+                  if (refCosto && detalle.precio_unitario != null) {
+                    transaction.update(refCosto, {
+                      precio_costo: roundMoney(detalle.precio_unitario),
+                      fechaActualizacion: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                  }
                 }
               }
             }
@@ -721,19 +842,40 @@ const comprasRoutes = async (req, res, path) => {
           await compraDoc.ref.update(actualizacion);
           console.log('✅ [COMPRAS] Compra actualizada (sin cambios de stock)');
         }
+
+        await safeAudit(db, companyId, req, {
+          accion: debeActualizarStock ? 'recibir' : 'editar',
+          modulo: 'compras',
+          entidad: 'compra',
+          entidad_id: compraId,
+          titulo: debeActualizarStock ? `Compra recibida ${compraActual.numero || compraId}` : `Compra editada ${compraActual.numero || compraId}`,
+          descripcion: estadoNuevo && estadoNuevo !== estadoAnterior ? `Estado: ${estadoAnterior || '-'} -> ${estadoNuevo}` : 'Actualización de compra',
+          severidad: debeActualizarStock ? 'warning' : 'info',
+          sucursal_id: compraActual.sucursal_id,
+          monto: compraActual.total,
+          metadata: {
+            estado_anterior: estadoAnterior || null,
+            estado_nuevo: estadoNuevo || null,
+            cambios_costo: cambiosCostoResumen
+          }
+        });
         
         res.json({
           success: true,
           data: {
             id: compraId,
-            ...actualizacion
+            ...actualizacion,
+            cambios_costo: debeActualizarStock ? cambiosCostoResumen : [],
+            precios_costo_aplicados: Array.isArray(actualizar_precios_costo_ids)
+              ? actualizar_precios_costo_ids.length
+              : 0
           },
-          message: debeActualizarStock ? 
-            'Compra actualizada y stock procesado correctamente' : 
+          message: debeActualizarStock ?
+            'Compra actualizada y stock procesado correctamente' :
             'Compra actualizada correctamente'
         });
         return true;
-        
+
       } catch (error) {
         console.error('❌ [COMPRAS] Error al actualizar compra:', error);
         res.status(500).json({
@@ -744,9 +886,65 @@ const comprasRoutes = async (req, res, path) => {
         return true;
       }
     }
-    // Resto de rutas existentes...
-    // (PUT, PATCH, etc. - mantener como están)
-    
+    // PATCH /compras/:id/aplicar-costos-productos — sincronizar precio_costo del producto con la línea de compra ya recibida
+    if (req.method === 'PATCH' && pathParts.length === 3 && pathParts[2] === 'aplicar-costos-productos') {
+      try {
+        if (!companyId) {
+          res.status(400).json({ success: false, message: 'CompanyId requerido' });
+          return true;
+        }
+        const compraId = pathParts[1];
+        const { producto_ids } = req.body || {};
+        if (!Array.isArray(producto_ids) || producto_ids.length === 0) {
+          res.status(400).json({ success: false, message: 'producto_ids es requerido' });
+          return true;
+        }
+
+        const compraRef = db.collection('companies').doc(companyId).collection('compras').doc(compraId);
+        const compraSnap = await compraRef.get();
+        if (!compraSnap.exists) {
+          res.status(404).json({ success: false, message: 'Compra no encontrada' });
+          return true;
+        }
+        const compraData = compraSnap.data();
+        const okEstados = ['recibida', 'completada'];
+        if (!okEstados.includes(compraData.estado)) {
+          res.status(400).json({
+            success: false,
+            message: 'Solo se pueden aplicar costos en compras ya recibidas'
+          });
+          return true;
+        }
+
+        const actualizados = [];
+        for (const pid of producto_ids) {
+          const det = (compraData.detalles || []).find((d) => d.producto_id === pid);
+          if (!det || det.precio_unitario == null) continue;
+          const ref = await obtenerRefProductoEmpresa(companyId, pid);
+          if (!ref) continue;
+          await ref.update({
+            precio_costo: roundMoney(det.precio_unitario),
+            fechaActualizacion: admin.firestore.FieldValue.serverTimestamp()
+          });
+          actualizados.push(pid);
+        }
+
+        res.json({
+          success: true,
+          data: { cantidad: actualizados.length, producto_ids: actualizados },
+          message:
+            actualizados.length > 0
+              ? `Precio de costo actualizado en ${actualizados.length} producto(s)`
+              : 'Ningún producto coincidente para actualizar'
+        });
+        return true;
+      } catch (err) {
+        console.error('[COMPRAS] aplicar-costos-productos:', err);
+        res.status(500).json({ success: false, message: err.message || 'Error' });
+        return true;
+      }
+    }
+
     // POST /compras/:id/pagos - Registrar pago de compra (caja o externo)
     if (req.method === 'POST' && pathParts.length === 3 && pathParts[2] === 'pagos') {
       try {
@@ -754,7 +952,7 @@ const comprasRoutes = async (req, res, path) => {
         const compraId = pathParts[1];
         const body = req.body || {};
         const origen = (body.origen || body.tipo || '').toLowerCase(); // 'caja' | 'externo'
-        const medioPago = body.medio_pago || 'efectivo';
+        const medioPago = normalizeMedioPagoCaja(body.medio_pago || 'efectivo');
         const permitirNegativo = body.permitir_negativo === true;
         const monto = parseFloat(body.monto || 0) || 0;
         if (!monto || monto <= 0) return res.status(400).json({ success:false, message:'Monto inválido' });
@@ -801,10 +999,35 @@ const comprasRoutes = async (req, res, path) => {
             sucursal_id: sucursalPagoId,
             fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
           });
+          await incrementarSaldoSucursal(db, companyId, sucursalPagoId, -monto);
           await compraRef.update({ estado_pago: 'pagada' });
+          await safeAudit(db, companyId, req, {
+            accion: 'registrar_pago',
+            modulo: 'compras',
+            entidad: 'compra',
+            entidad_id: compraId,
+            titulo: `Pago de compra desde caja`,
+            descripcion: `Monto: ${monto} · Medio: ${medioPago}`,
+            severidad: permitirNegativo ? 'warning' : 'info',
+            sucursal_id: sucursalPagoId,
+            monto,
+            metadata: { origen, medio_pago: medioPago, permitir_negativo: permitirNegativo }
+          });
           return res.json({ success:true, message:'Pago registrado desde caja' });
         } else if (origen === 'externo') {
           await compraRef.update({ estado_pago: 'pagada' });
+          await safeAudit(db, companyId, req, {
+            accion: 'registrar_pago',
+            modulo: 'compras',
+            entidad: 'compra',
+            entidad_id: compraId,
+            titulo: `Pago externo de compra`,
+            descripcion: `Monto: ${monto} · Medio: ${medioPago}`,
+            severidad: 'info',
+            sucursal_id: sucursalPagoId,
+            monto,
+            metadata: { origen, medio_pago: medioPago }
+          });
           return res.json({ success:true, message:'Pago externo registrado (sin afectar caja)' });
         }
         

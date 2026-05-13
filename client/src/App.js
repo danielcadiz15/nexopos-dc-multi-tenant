@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -18,6 +18,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 // Componentes de Layout
 import Layout from './components/layout/Layout';
 import ProtectedRoute from './components/common/ProtectedRoute';
+import MercadoPagoReturnHandler from './components/billing/MercadoPagoReturnHandler';
 
 // Páginas públicas
 import Login from './pages/auth/Login';
@@ -94,11 +95,8 @@ import ProduccionDetalle from './pages/produccion/ProduccionDetalle';
 //listas de precios
 import GestionPrecios from './pages/productos/GestionPrecios';
 import Caja from './pages/caja/Caja';
-import Gastos from './pages/gastos/Gastos';
-import GastoForm from './pages/gastos/GastoForm';
 import Devoluciones from './pages/devoluciones/Devoluciones';
 import DevolucionForm from './pages/devoluciones/DevolucionForm';
-import ListasPrecios from './pages/listas-precios/ListasPrecios';
 import Transferencias from './pages/transferencias/Transferencias';
 import TransferenciaForm from './pages/transferencias/TransferenciaForm';
 import VentasEliminadas from './pages/ventas/VentasEliminadas';
@@ -108,6 +106,7 @@ import ConfiguracionEmpresa from './pages/configuracion/configuracionempresa';
 // Módulo de Proveedores
 import Proveedores from './pages/proveedores/Proveedores';
 import ProveedorForm from './pages/proveedores/ProveedorForm';
+import Sucursales from './pages/sucursales/Sucursales';
 import MobilePuntoVenta from './components/mobile/MobilePuntoVenta';
 import AdminPanel from './pages/admin/AdminPanel';
 import SuperAdminRoute from './components/common/SuperAdminRoute';
@@ -115,11 +114,11 @@ import LicenseBanner from './components/layout/LicenseBanner';
 import { useViewportHeight } from './hooks/useViewportHeight';
 
 const CajeroApp = () => (
-  <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-gray-50 px-2 pt-1 pb-1 sm:px-3">
+  <div className="scrollbar-thin flex h-full min-h-0 w-full flex-col overflow-y-auto overscroll-y-contain bg-gray-50 px-2 pt-1 pb-1 sm:px-3">
     <div className="shrink-0">
       <LicenseBanner compact />
     </div>
-    <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
+    <div className="min-h-0 flex flex-1 flex-col">
       <MobilePuntoVenta />
     </div>
   </div>
@@ -145,6 +144,7 @@ const AppContent = () => {
     <>
     <div className="nexo-viewport-root">
     <Router>
+      <MercadoPagoReturnHandler />
       <div className="nexo-route-outlet flex min-h-0 flex-1 flex-col overflow-hidden">
       <Routes>
         {/* Rutas públicas */}
@@ -185,6 +185,7 @@ const AppContent = () => {
             
             {/* Módulo de Stock */}
             <Route path="/stock" element={<Stock />} />
+            <Route path="/stock/ajustes" element={<Stock />} />
             <Route path="/stock/inicializar" element={<InicializarStock />} />
             <Route path="/stock/ajuste/:id" element={<AjusteStock />} />
             <Route path="/stock/transferencias" element={<TransferenciasStock />} />
@@ -232,14 +233,15 @@ const AppContent = () => {
 			{/* Módulo de Proveedores */}
 			<Route path="/proveedores" element={<Proveedores />} />
 			<Route path="/proveedores/nuevo" element={<ProveedorForm />} />
-			<Route path="/proveedores/editar/:id" element={<ProveedorForm />} />
+            <Route path="/proveedores/editar/:id" element={<ProveedorForm />} />
+			<Route path="/sucursales" element={<Sucursales />} />
 			{/* Nuevos Módulos */}
 			<Route path="/caja" element={<Caja />} />
-			<Route path="/gastos" element={<Gastos />} />
-			<Route path="/gastos/nuevo" element={<GastoForm />} />
+			<Route path="/gastos" element={<Navigate to="/caja" replace />} />
+			<Route path="/gastos/nuevo" element={<Navigate to="/caja" replace />} />
 			<Route path="/devoluciones" element={<Devoluciones />} />
 			<Route path="/devoluciones/nueva" element={<DevolucionForm />} />
-			<Route path="/listas-precios" element={<ListasPrecios />} />
+			<Route path="/listas-precios" element={<Navigate to="/productos/precios" replace />} />
 			<Route path="/transferencias" element={<Transferencias />} />
 			<Route path="/transferencias/nueva" element={<TransferenciaForm />} />
 			<Route path="/auditoria" element={<Auditoria />} />
@@ -262,8 +264,9 @@ const AppContent = () => {
     </Router>
     </div>
       <ToastContainer
-        position="top-right"
-        autoClose={3000}
+        position="top-center"
+        theme="colored"
+        autoClose={3800}
         hideProgressBar={false}
         newestOnTop
         closeOnClick
@@ -271,6 +274,9 @@ const AppContent = () => {
         pauseOnFocusLoss
         draggable
         pauseOnHover
+        toastClassName="rounded-2xl shadow-xl border-0 font-medium"
+        bodyClassName="text-sm px-1"
+        limit={4}
       />
     </>
   );

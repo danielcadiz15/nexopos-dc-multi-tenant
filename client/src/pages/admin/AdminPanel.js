@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import ApiService from '../../services/api.service';
+import { generateTenantBootstrapCode } from '../../services/firebase.service';
 import { toast } from 'react-toastify';
 import { normalizeLicensePlan, PLAN_LABELS_ES } from '../../utils/planTiers';
 import MercadoPagoMark from '../../components/common/MercadoPagoMark';
+import PlanesAbonoExplainerModal from '../../components/configuracion/PlanesAbonoExplainerModal';
+import { FaLayerGroup } from 'react-icons/fa';
+import { MODULE_KEYS, buildModulosDefaultIntermediate } from '../../config/modulesCatalog';
 
 const api = new ApiService('/admin');
 
@@ -12,8 +16,20 @@ const AdminPanel = () => {
   const [editLic, setEditLic] = useState(null); // { id, plan, paidUntil, blocked, reason }
   const [editMods, setEditMods] = useState(null); // { id, modules }
   const [saving, setSaving] = useState(false);
-  const [planPricesForm, setPlanPricesForm] = useState({ basic: '', intermediate: '', premium: '' });
+  const [planPricesForm, setPlanPricesForm] = useState({ basic: '80000', intermediate: '120000', premium: '180000' });
+  const [onboardingForm, setOnboardingForm] = useState({
+    onboardingInstallmentAmountARS: '250000',
+    onboardingInstallmentsTotal: '2'
+  });
   const [savingPrecio, setSavingPrecio] = useState(false);
+
+  /** Códigos de habilitación al crear empresa (Firestore + callable; vinculados al correo del dueño) */
+  const [habEmail, setHabEmail] = useState('');
+  const [habDias, setHabDias] = useState(90);
+  const [habNota, setHabNota] = useState('');
+  const [habResultado, setHabResultado] = useState(null);
+  const [generandoHab, setGenerandoHab] = useState(false);
+  const [showPlanesExplainer, setShowPlanesExplainer] = useState(false);
 
   const cargarPrecioPlataforma = async () => {
     try {
@@ -22,9 +38,15 @@ const AdminPanel = () => {
         const d = data.data;
         const pp = d.planPrices || {};
         setPlanPricesForm({
-          basic: String(pp.basic ?? d.monthlyPriceARS ?? ''),
-          intermediate: String(pp.intermediate ?? ''),
-          premium: String(pp.premium ?? '')
+          basic: String(pp.basic ?? d.monthlyPriceARS ?? '80000'),
+          intermediate: String(pp.intermediate ?? '120000'),
+          premium: String(pp.premium ?? '180000')
+        });
+        setOnboardingForm({
+          onboardingInstallmentAmountARS: String(
+            d.onboardingInstallmentAmountARS ?? '250000'
+          ),
+          onboardingInstallmentsTotal: String(d.onboardingInstallmentsTotal ?? '2')
         });
       }
     } catch {
@@ -45,9 +67,23 @@ const AdminPanel = () => {
           return;
         }
       }
+      const obAmt = Number(onboardingForm.onboardingInstallmentAmountARS);
+      const obTot = Math.floor(Number(onboardingForm.onboardingInstallmentsTotal));
+      if (Number.isNaN(obAmt) || obAmt <= 0) {
+        toast.error('Monto cuota instalación inválido');
+        return;
+      }
+      if (Number.isNaN(obTot) || obTot < 1 || obTot > 24) {
+        toast.error('Cantidad de cuotas instalación: entre 1 y 24');
+        return;
+      }
       setSavingPrecio(true);
-      const { status } = await api.put('/platform/billing', { planPrices });
-      if (status === 200) toast.success('Precios por plan guardados');
+      const { status } = await api.put('/platform/billing', {
+        planPrices,
+        onboardingInstallmentAmountARS: obAmt,
+        onboardingInstallmentsTotal: obTot
+      });
+      if (status === 200) toast.success('Facturación (planes + instalación) guardada');
       else toast.error('No se pudo guardar');
     } catch {
       toast.error('Error al guardar precios');
@@ -106,9 +142,15 @@ const AdminPanel = () => {
     try {
       const { data, status } = await api.get(`/empresas/${empresaId}/modulos`);
       const actual = (status === 200 && data?.data) ? data.data : {};
-      setEditMods({ id: empresaId, modules: actual });
+      setEditMods({
+        id: empresaId,
+        modules: { ...buildModulosDefaultIntermediate(), ...actual }
+      });
     } catch {
-      setEditMods({ id: empresaId, modules: {} });
+      setEditMods({
+        id: empresaId,
+        modules: { ...buildModulosDefaultIntermediate() }
+      });
     }
   };
 
@@ -126,6 +168,49 @@ const AdminPanel = () => {
       }
     } catch (e) {
       toast.error('Error al eliminar empresa');
+    }
+  };
+
+  const generarCodigoHabilitacion = async () => {
+    const mail = habEmail.trim();
+    if (!mail) {
+      toast.error('Ingresá el correo exacto que usará el cliente para registrarse y crear la empresa.');
+      return;
+    }
+    try {
+      setGenerandoHab(true);
+      const dias = Math.min(365, Math.max(1, Number(habDias) || 90));
+      const data = await generateTenantBootstrapCode({
+        targetEmail: mail,
+        expiresInDays: dias,
+        note: habNota.trim().slice(0, 200)
+      });
+      if (!data?.success || !data?.code) {
+        throw new Error(data?.message || 'Respuesta inválida');
+      }
+      setHabResultado({
+        code: data.code,
+        allowedEmail: data.allowedEmail || mail.toLowerCase(),
+        expiresAt: data.expiresAt
+      });
+      toast.success('Código generado. Compartilo por un canal seguro; solo funciona con ese correo y un solo uso.');
+    } catch (e) {
+      const c = e?.code || '';
+      let m = e?.message || 'No se pudo generar el código';
+      if (c === 'functions/failed-precondition') m = e.message || m;
+      toast.error(m);
+    } finally {
+      setGenerandoHab(false);
+    }
+  };
+
+  const copiarCodigoHabilitacion = async () => {
+    if (!habResultado?.code) return;
+    try {
+      await navigator.clipboard.writeText(habResultado.code);
+      toast.info('Código copiado');
+    } catch {
+      toast.warning('No se pudo copiar; seleccioná el texto manualmente.');
     }
   };
 
@@ -155,6 +240,17 @@ const AdminPanel = () => {
             (<code className="bg-gray-100 px-1 rounded">docs/billing-mercadopago.md</code>).
           </span>
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPlanesExplainer(true)}
+            className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-900 shadow-sm transition hover:bg-indigo-100"
+          >
+            <FaLayerGroup className="h-4 w-4" />
+            Guía: qué incluye cada plan
+          </button>
+          <span className="text-xs text-gray-500">Módulos, ventajas y diferencias entre abonos.</span>
+        </div>
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
             { key: 'basic', label: 'Básica' },
@@ -175,6 +271,43 @@ const AdminPanel = () => {
             </div>
           ))}
         </div>
+        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50/90 p-3 max-w-3xl space-y-2">
+          <h3 className="text-sm font-semibold text-gray-800">Cuotas de instalación (modelo alta nueva)</h3>
+          <p className="text-xs text-gray-600 leading-relaxed">
+            Primeros pagos al monto indicado → <strong>30 días</strong> cada uno y <strong>módulos completos</strong>.
+            Después cobra según los precios Básica / Intermedia / Premium. Las empresas sin{' '}
+            <code className="bg-gray-100 px-1 rounded text-[11px]">billingModel: onboarding_v2</code> siguen el modelo
+            anterior (solo precio por plan).
+          </p>
+          <div className="flex flex-wrap gap-4 items-end">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">ARS por cuota de instalación</label>
+              <input
+                type="number"
+                min="1"
+                step="1000"
+                className="border rounded px-3 py-2 w-40"
+                value={onboardingForm.onboardingInstallmentAmountARS}
+                onChange={(e) =>
+                  setOnboardingForm((p) => ({ ...p, onboardingInstallmentAmountARS: e.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Nº de cuotas a ese monto</label>
+              <input
+                type="number"
+                min={1}
+                max={24}
+                className="border rounded px-3 py-2 w-24"
+                value={onboardingForm.onboardingInstallmentsTotal}
+                onChange={(e) =>
+                  setOnboardingForm((p) => ({ ...p, onboardingInstallmentsTotal: e.target.value }))
+                }
+              />
+            </div>
+          </div>
+        </div>
         <div className="mt-3">
           <button
             type="button"
@@ -182,9 +315,91 @@ const AdminPanel = () => {
             className="px-4 py-2 rounded bg-green-600 text-white disabled:opacity-50"
             onClick={guardarPrecioPlataforma}
           >
-            {savingPrecio ? 'Guardando…' : 'Guardar precios'}
+            {savingPrecio ? 'Guardando…' : 'Guardar planes e instalación'}
           </button>
         </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow p-4 border border-gray-100">
+        <h2 className="text-lg font-semibold text-gray-800">Gestión de correos — código de habilitación (alta de empresa)</h2>
+        <p className="text-sm text-gray-600 mt-1 max-w-3xl">
+          Generá un código <strong>de un solo uso</strong> asociado al <strong>correo del futuro dueño</strong>. Esa persona
+          debe registrarse e iniciar sesión con <strong>exactamente ese correo</strong> (verificado) e ingresar el código
+          al crear la organización. Sin código válido no puede completar el alta. La vigencia comercial (prueba y luego
+          pago con Mercado Pago) sigue igual para la empresa ya creada.
+        </p>
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 max-w-4xl">
+          <div className="md:col-span-2">
+            <label className="block text-xs text-gray-500 mb-1">Correo del cliente (debe coincidir con su cuenta)</label>
+            <input
+              type="email"
+              className="border rounded px-3 py-2 w-full"
+              value={habEmail}
+              onChange={(e) => setHabEmail(e.target.value)}
+              placeholder="cliente@ejemplo.com"
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Válido (días, máx. 365)</label>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              className="border rounded px-3 py-2 w-28"
+              value={habDias}
+              onChange={(e) => setHabDias(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Nota interna (opcional)</label>
+            <input
+              className="border rounded px-3 py-2 w-full"
+              value={habNota}
+              onChange={(e) => setHabNota(e.target.value)}
+              placeholder="Ej.: presupuesto aprobado / contacto"
+            />
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={generandoHab}
+            className="px-4 py-2 rounded bg-indigo-600 text-white disabled:opacity-50"
+            onClick={generarCodigoHabilitacion}
+          >
+            {generandoHab ? 'Generando…' : 'Generar código de habilitación'}
+          </button>
+        </div>
+        {habResultado ? (
+          <div className="mt-4 rounded-md border border-indigo-200 bg-indigo-50/80 p-3 max-w-3xl space-y-2">
+            <p className="text-xs text-gray-700">
+              <strong>Correo vinculado:</strong> {habResultado.allowedEmail}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <code className="text-sm font-mono break-all flex-1 min-w-0">{habResultado.code}</code>
+              <button
+                type="button"
+                onClick={copiarCodigoHabilitacion}
+                className="shrink-0 px-3 py-1 rounded border border-indigo-600 text-indigo-900 text-sm font-medium hover:bg-white"
+              >
+                Copiar
+              </button>
+            </div>
+            <p className="text-xs text-gray-600">
+              Vence:{' '}
+              {habResultado.expiresAt
+                ? new Date(habResultado.expiresAt).toLocaleString('es-AR', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })
+                : '—'}
+            </p>
+          </div>
+        ) : null}
       </div>
 
       <div className="overflow-x-auto bg-white rounded shadow">
@@ -263,11 +478,9 @@ const AdminPanel = () => {
           <div className="bg-white rounded shadow w-full max-w-md p-4">
             <h3 className="text-lg font-semibold mb-3">Editar Módulos: {editMods.id}</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-              {Object.keys({
-                productos:true,categorias:true,clientes:true,proveedores:true,compras:true,ventas:true,punto_venta:true,stock:true,listas_precios:true,transferencias:true,reportes:true,promociones:false,caja:true,gastos:true,devoluciones:true,auditoria:false,vehiculos:false,produccion:false,recetas:false,materias_primas:false,configuracion:true
-              }).map(key=> (
+              {MODULE_KEYS.map(key=> (
                 <label key={key} className="flex items-center gap-2 p-2 rounded border">
-                  <input type="checkbox" checked={!!editMods.modules?.[key]} onChange={e=> setEditMods(prev=> ({...prev, modules: { ...prev.modules, [key]: e.target.checked }}))} />
+                  <input type="checkbox" checked={editMods.modules?.[key] !== false} onChange={e=> setEditMods(prev=> ({...prev, modules: { ...prev.modules, [key]: e.target.checked }}))} />
                   <span className="capitalize">{key.replaceAll('_',' ')}</span>
                 </label>
               ))}
@@ -279,6 +492,12 @@ const AdminPanel = () => {
           </div>
         </div>
       )}
+
+      <PlanesAbonoExplainerModal
+        open={showPlanesExplainer}
+        onClose={() => setShowPlanesExplainer(false)}
+        initialPlan="intermediate"
+      />
     </div>
   );
 };

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/common/Button';
+import PasswordInput from '../../components/common/PasswordInput';
 
 const Signup = () => {
   const { signUp, isAuthenticated, orgId } = useAuth();
@@ -50,32 +51,34 @@ const Signup = () => {
 
           <form onSubmit={onSubmit} className="space-y-4">
             <input
-              className="w-full border border-gray-300 rounded-md px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="nexo-field py-3"
               type="text"
               placeholder="Nombre de empresa"
               value={empresa}
               onChange={e=>setEmpresa(e.target.value)}
             />
             <input
-              className="w-full border border-gray-300 rounded-md px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="nexo-field py-3"
               type="email"
               placeholder="Email del administrador"
               value={email}
               onChange={e=>setEmail(e.target.value)}
             />
-            <input
-              className="w-full border border-gray-300 rounded-md px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              type="password"
+            <PasswordInput
+              className="nexo-field py-3"
+              name="password"
               placeholder="Contraseña"
               value={password}
-              onChange={e=>setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
             />
-            <input
-              className="w-full border border-gray-300 rounded-md px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              type="password"
+            <PasswordInput
+              className="nexo-field py-3"
+              name="confirm"
               placeholder="Confirmar contraseña"
               value={confirm}
-              onChange={e=>setConfirm(e.target.value)}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoComplete="new-password"
             />
             <Button type="submit" fullWidth loading={loading}>
               Crear empresa

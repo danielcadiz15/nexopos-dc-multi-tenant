@@ -46,20 +46,23 @@ const Button = ({
   // Mapeo de colores
   const colorClasses = {
     primary: outline
-      ? 'border-indigo-600 text-indigo-600 hover:bg-indigo-50'
-      : 'bg-indigo-600 hover:bg-indigo-700 text-white',
+      ? 'border-2 border-indigo-500 text-indigo-600 hover:bg-indigo-50/90'
+      : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/25 hover:from-indigo-500 hover:to-violet-500',
     secondary: outline
-      ? 'border-gray-600 text-gray-600 hover:bg-gray-50'
-      : 'bg-gray-600 hover:bg-gray-700 text-white',
+      ? 'border-2 border-slate-400 text-slate-700 hover:bg-slate-50'
+      : 'bg-slate-600 text-white hover:bg-slate-700',
     success: outline
-      ? 'border-green-600 text-green-600 hover:bg-green-50'
-      : 'bg-green-600 hover:bg-green-700 text-white',
+      ? 'border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50'
+      : 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/20 hover:from-emerald-500 hover:to-teal-500',
     danger: outline
-      ? 'border-red-600 text-red-600 hover:bg-red-50'
-      : 'bg-red-600 hover:bg-red-700 text-white',
+      ? 'border-2 border-red-500 text-red-600 hover:bg-red-50'
+      : 'bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md shadow-red-500/20 hover:from-red-500 hover:to-rose-500',
     warning: outline
-      ? 'border-yellow-500 text-yellow-600 hover:bg-yellow-50'
-      : 'bg-yellow-500 hover:bg-yellow-600 text-white',
+      ? 'border-2 border-amber-400 text-amber-800 hover:bg-amber-50'
+      : 'bg-gradient-to-r from-amber-400 to-orange-500 text-amber-950 shadow-md hover:from-amber-300 hover:to-orange-400',
+    info: outline
+      ? 'border-2 border-sky-500 text-sky-700 hover:bg-sky-50'
+      : 'bg-gradient-to-r from-sky-600 to-cyan-600 text-white shadow-md shadow-sky-500/20 hover:from-sky-500 hover:to-cyan-500',
   };
 
   // Mapeo de tamaños
@@ -71,9 +74,9 @@ const Button = ({
 
   // Clases base
   let buttonClasses = `
-    font-medium rounded-md transition-colors
+    font-semibold rounded-xl transition-all duration-200
     focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500
-    ${colorClasses[color]}
+    ${colorClasses[color] || colorClasses.primary}
     ${sizeClasses[finalSize]} 
     ${outline ? 'border' : ''}
     ${fullWidth ? 'w-full' : ''}

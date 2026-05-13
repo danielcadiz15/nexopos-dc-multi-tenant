@@ -2,6 +2,42 @@
 const admin = require('firebase-admin');
 const db = admin.firestore();
 
+function sucursalPerteneceAEmpresa(data, companyId) {
+  if (!companyId || !data) return true;
+  const oid = data.orgId || data.companyId;
+  return !oid || oid === companyId;
+}
+
+function esSucursalPrincipal(data) {
+  return data?.tipo === 'principal' || data?.es_principal === true;
+}
+
+async function sucursalTieneStock(sucursalId, companyId) {
+  const checks = [];
+  if (companyId) {
+    checks.push(
+      db
+        .collection('companies')
+        .doc(companyId)
+        .collection('stock_sucursal')
+        .where('sucursal_id', '==', sucursalId)
+        .limit(50)
+        .get()
+    );
+  }
+  checks.push(
+    db.collection('stock_sucursal').where('sucursal_id', '==', sucursalId).limit(50).get()
+  );
+  const snaps = await Promise.all(checks);
+  for (const snap of snaps) {
+    for (const doc of snap.docs) {
+      const c = parseFloat(doc.data()?.cantidad ?? doc.data()?.quantity ?? 0);
+      if (Number.isFinite(c) && c > 0) return true;
+    }
+  }
+  return false;
+}
+
 // Función para crear sucursal principal por defecto para una empresa específica
 async function crearSucursalPrincipal(companyId) {
   try {
@@ -96,7 +132,15 @@ const sucursalesRoutes = async (req, res, path) => {
     else if (path === '/sucursales/activas' && req.method === 'GET') {
       console.log(`🔍 [SUCURSALES] Obteniendo sucursales activas para companyId: ${companyId}`);
       
-      const sucursales = [];
+      const sucursalesPorId = new Map();
+      const agregarSucursal = (id, data = {}) => {
+        if (!id || data.activa === false) return;
+        sucursalesPorId.set(id, {
+          id,
+          ...data,
+          orgId: data.orgId || companyId
+        });
+      };
       
       if (companyId) {
         // Buscar en la colección principal con orgId
@@ -104,50 +148,26 @@ const sucursalesRoutes = async (req, res, path) => {
         const sucursalesSnapshot = await query.get();
         
         sucursalesSnapshot.forEach(doc => {
-          sucursales.push({
-            id: doc.id,
-            ...doc.data()
-          });
+          agregarSucursal(doc.id, doc.data());
         });
         
-        // Si no se encontraron sucursales en la colección principal, buscar en la subcolección del tenant
-        if (sucursales.length === 0) {
-          console.log(`🔍 [SUCURSALES] No se encontraron sucursales en colección principal, buscando en subcolección del tenant`);
-          
-          const tenantSucursalesSnapshot = await db.collection('tenants').doc(companyId).collection('sucursales').get();
-          
-          tenantSucursalesSnapshot.forEach(doc => {
-            sucursales.push({
-              id: doc.id,
-              ...doc.data(),
-              orgId: companyId // Asegurar que tenga orgId
-            });
-          });
-          
-          // Si se encontraron en la subcolección, crear espejo en la colección principal
-          if (sucursales.length > 0) {
-            console.log(`📝 [SUCURSALES] Creando espejo de ${sucursales.length} sucursales en colección principal`);
-            const batch = db.batch();
-            
-            sucursales.forEach(sucursal => {
-              const docRef = db.collection('sucursales').doc(sucursal.id);
-              batch.set(docRef, {
-                ...sucursal,
-                orgId: companyId,
-                activa: true,
-                tipo: sucursal.tipo || 'principal'
-              });
-            });
-            
-            await batch.commit();
-            console.log(`✅ [SUCURSALES] Espejo creado exitosamente`);
-          }
-        }
+        // Mezclar sucursales que existan solo dentro del tenant.
+        const companySucursalesSnapshot = await db.collection('companies').doc(companyId).collection('sucursales').get();
+        companySucursalesSnapshot.forEach(doc => {
+          agregarSucursal(doc.id, doc.data());
+        });
+
+        const tenantSucursalesSnapshot = await db.collection('tenants').doc(companyId).collection('sucursales').get();
+        tenantSucursalesSnapshot.forEach(doc => {
+          agregarSucursal(doc.id, doc.data());
+        });
       } else {
         // Seguridad multi-tenant: nunca devolver sucursales fuera de un contexto de empresa
         console.warn('⚠️ [SUCURSALES] companyId ausente; retornando lista vacía para evitar fuga de datos');
         return res.json({ success: true, data: [], total: 0, message: 'Sin contexto de empresa' });
       }
+
+      const sucursales = Array.from(sucursalesPorId.values());
       
       console.log(`✅ [SUCURSALES] Sucursales activas encontradas: ${sucursales.length}`);
       
@@ -336,12 +356,18 @@ const sucursalesRoutes = async (req, res, path) => {
         });
         return true;
       }
+
+      const sData = sucursalDoc.data();
+      if (!sucursalPerteneceAEmpresa(sData, companyId)) {
+        res.status(403).json({ success: false, message: 'No autorizado' });
+        return true;
+      }
       
       res.json({
         success: true,
         data: {
           id: sucursalDoc.id,
-          ...sucursalDoc.data()
+          ...sData
         },
         message: 'Sucursal obtenida correctamente'
       });
@@ -371,6 +397,28 @@ const sucursalesRoutes = async (req, res, path) => {
       };
       
       const docRef = await db.collection('sucursales').add(sucursalFirebase);
+
+      if (companyId) {
+        await db
+          .collection('companies')
+          .doc(companyId)
+          .collection('sucursales')
+          .doc(docRef.id)
+          .set(
+            {
+              nombre: sucursalFirebase.nombre,
+              direccion: sucursalFirebase.direccion || '',
+              telefono: sucursalFirebase.telefono || '',
+              email: sucursalFirebase.email || '',
+              tipo: sucursalFirebase.tipo || 'secundaria',
+              activa: sucursalFirebase.activa !== false,
+              orgId: companyId,
+              fechaCreacion: admin.firestore.FieldValue.serverTimestamp(),
+              fechaActualizacion: admin.firestore.FieldValue.serverTimestamp()
+            },
+            { merge: true }
+          );
+      }
       
       res.status(201).json({
         success: true,
@@ -387,11 +435,40 @@ const sucursalesRoutes = async (req, res, path) => {
     else if (path.match(/^\/sucursales\/[^\/]+$/) && req.method === 'PUT') {
       const sucursalId = path.split('/sucursales/')[1];
       const datosActualizacion = req.body;
+
+      const refGlobal = db.collection('sucursales').doc(sucursalId);
+      const snapEx = await refGlobal.get();
+      if (!snapEx.exists) {
+        res.status(404).json({ success: false, message: 'Sucursal no encontrada' });
+        return true;
+      }
+      if (!sucursalPerteneceAEmpresa(snapEx.data(), companyId)) {
+        res.status(403).json({ success: false, message: 'No autorizado' });
+        return true;
+      }
       
       // Agregar timestamp de actualización
       datosActualizacion.fechaActualizacion = admin.firestore.FieldValue.serverTimestamp();
       
-      await db.collection('sucursales').doc(sucursalId).update(datosActualizacion);
+      await refGlobal.update(datosActualizacion);
+
+      if (companyId) {
+        const refCompany = db
+          .collection('companies')
+          .doc(companyId)
+          .collection('sucursales')
+          .doc(sucursalId);
+        const cSnap = await refCompany.get();
+        if (cSnap.exists) {
+          await refCompany.set(
+            {
+              ...datosActualizacion,
+              fechaActualizacion: admin.firestore.FieldValue.serverTimestamp()
+            },
+            { merge: true }
+          );
+        }
+      }
       
       res.json({
         success: true,
@@ -420,8 +497,13 @@ const sucursalesRoutes = async (req, res, path) => {
       }
       
       const sucursal = sucursalDoc.data();
+
+      if (!sucursalPerteneceAEmpresa(sucursal, companyId)) {
+        res.status(403).json({ success: false, message: 'No autorizado' });
+        return true;
+      }
       
-      if (sucursal.tipo === 'principal') {
+      if (esSucursalPrincipal(sucursal)) {
         res.status(400).json({
           success: false,
           message: 'No se puede eliminar la sucursal principal'
@@ -429,14 +511,8 @@ const sucursalesRoutes = async (req, res, path) => {
         return true;
       }
       
-      // Verificar que no tenga stock
-      const stockSnapshot = await db.collection('stock_sucursal')
-        .where('sucursal_id', '==', sucursalId)
-        .where('cantidad', '>', 0)
-        .limit(1)
-        .get();
-      
-      if (!stockSnapshot.empty) {
+      const tieneStock = await sucursalTieneStock(sucursalId, companyId);
+      if (tieneStock) {
         res.status(400).json({
           success: false,
           message: 'No se puede eliminar una sucursal con stock'
@@ -445,6 +521,16 @@ const sucursalesRoutes = async (req, res, path) => {
       }
       
       await db.collection('sucursales').doc(sucursalId).delete();
+
+      if (companyId) {
+        await db
+          .collection('companies')
+          .doc(companyId)
+          .collection('sucursales')
+          .doc(sucursalId)
+          .delete()
+          .catch(() => {});
+      }
       
       res.json({
         success: true,

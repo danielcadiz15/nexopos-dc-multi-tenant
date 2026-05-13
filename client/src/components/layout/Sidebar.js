@@ -22,12 +22,10 @@ import { isSuperAdminEmail } from '../../config/superAdmin';
 
 const Sidebar = ({ isOpen, toggleSidebar }) => {
   const location = useLocation();
-  const { currentUser, hasPermission, orgId } = useAuth();
+  const { currentUser, hasPermission, orgId, companyModules } = useAuth();
   const [expandedMenus, setExpandedMenus] = useState({});
   const [empresaConfig, setEmpresaConfig] = useState(null);
   const [cargandoConfig, setCargandoConfig] = useState(true);
-  const [modulos, setModulos] = useState({});
-
   useEffect(() => {
     const cargarConfiguracion = async () => {
       try {
@@ -50,24 +48,6 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     };
     cargarConfiguracion();
   }, [orgId]);
-
-  useEffect(()=>{
-    const cargarModulos = async ()=>{
-      try{
-        if(!orgId) return;
-        const refCompany = doc(db, `companies/${orgId}/config/modules`);
-        const snap = await getDoc(refCompany);
-        let data = snap.exists()? snap.data(): null;
-        if(!data){
-          const refTenant = doc(db, `tenants/${orgId}/config/modules`);
-          const s2 = await getDoc(refTenant);
-          if(s2.exists()) data = s2.data();
-        }
-        setModulos(data || {});
-      }catch(e){ console.warn('No se pudieron leer módulos:', e.message); }
-    };
-    cargarModulos();
-  },[orgId]);
 
   const nombreEmpresa = empresaConfig?.nombre_fantasia || empresaConfig?.razon_social || 'NexoPOS DC';
 
@@ -93,7 +73,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         { path: '/productos', label: 'Lista de Productos', permission: 'productos.ver' },
         { path: '/productos/nuevo', label: 'Nuevo Producto', permission: 'productos.crear' },
         { path: '/categorias', label: 'Categorías', permission: 'categorias.ver' },
-        { path: '/listas-precios', label: 'Listas de Precios', permission: 'listas_precios.ver' }
+        { path: '/productos/precios', label: 'Gestión de Precios', permission: 'listas_precios.ver' }
       ]
     },
     {
@@ -142,11 +122,8 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     {
       icon: FaMoneyBillWave,
       label: 'Finanzas',
-      permission: null,
-      submenu: [
-        { path: '/caja', label: 'Caja', module: 'caja', permission: null },
-        { path: '/gastos', label: 'Gastos', module: 'gastos', permission: 'gastos.ver' }
-      ]
+      permission: 'caja',
+      submenu: [{ path: '/caja', label: 'Caja', module: 'caja', permission: 'caja.ver' }]
     },
     {
       icon: FaUsers,
@@ -199,10 +176,9 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
   ];
 
   const moduleEnabled = (permOrModule) => {
-    if (!permOrModule) return true; // sin módulo asociado
+    if (!permOrModule) return true;
     const key = permOrModule.includes('.') ? permOrModule.split('.')[0] : permOrModule;
-    if (modulos && Object.prototype.hasOwnProperty.call(modulos, key)) return !!modulos[key];
-    return true; // por defecto habilitado si no hay config
+    return companyModules?.[key] !== false;
   };
 
   const superAdmin = isSuperAdminEmail(currentUser?.email);
@@ -254,23 +230,24 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       {/* Overlay para móvil */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
+          className="fixed inset-0 z-40 bg-slate-900/45 backdrop-blur-sm lg:hidden"
           onClick={toggleSidebar}
+          aria-hidden
         />
       )}
 
       {/* Sidebar */}
       <aside
         className={`
-          fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white
+          fixed inset-y-0 left-0 z-50 w-64 border-r border-slate-800/80 bg-slate-950 text-slate-100 shadow-elevated
           transform transition-transform duration-300 ease-in-out
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
           lg:translate-x-0 lg:static lg:inset-0
         `}
       >
-        <div className="flex flex-col h-full">
-          {/* Header del Sidebar con nombre de empresa */}
-          <div className="flex items-center justify-between h-14 sm:h-16 px-3 sm:px-4 bg-gray-800 border-b border-gray-700">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-400/50 to-transparent" />
+        <div className="flex h-full flex-col">
+          <div className="flex h-14 items-center justify-between border-b border-white/10 bg-gradient-to-br from-slate-900 to-slate-950 px-3 sm:h-16 sm:px-4">
             <div className="flex items-center">
               {empresaConfig?.mostrar_logo && empresaConfig?.logo_url ? (
                 <img 
@@ -284,7 +261,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                   <NexoPOSLogo className="h-6 w-auto sm:h-8" showText={false} />
                 </div>
               )}
-              <span className="text-lg sm:text-xl font-semibold truncate">
+              <span className="truncate text-base font-semibold tracking-tight text-white sm:text-lg">
                 {cargandoConfig ? (
                   <span className="animate-pulse">Cargando...</span>
                 ) : (
@@ -294,14 +271,14 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
             </div>
             <button
               onClick={toggleSidebar}
-              className="lg:hidden text-gray-400 hover:text-white p-1"
+              className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white lg:hidden"
             >
               <FaTimes size={18} className="sm:w-5" />
             </button>
           </div>
 
           {/* Menú de navegación */}
-          <nav className="flex-1 overflow-y-auto py-4">
+          <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-4 scrollbar-thin">
             {filteredMenuItems.map((item, index) => (
               <div key={index}>
                 {item.submenu ? (
@@ -309,9 +286,13 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                     <button
                       onClick={() => toggleSubmenu(item.label)}
                       className={`
-                        w-full flex items-center justify-between px-4 py-2
-                        hover:bg-gray-800 transition-colors duration-200
-                        ${isParentActive(item.submenu) ? 'bg-gray-800 border-l-4 border-indigo-500' : ''}
+                        flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-medium
+                        transition-colors duration-200 hover:bg-white/5
+                        ${
+                          isParentActive(item.submenu)
+                            ? 'bg-gradient-to-r from-indigo-600/35 to-violet-600/25 text-white ring-1 ring-indigo-400/35'
+                            : 'text-slate-200'
+                        }
                       `}
                     >
                       <div className="flex items-center">
@@ -324,15 +305,18 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                       }
                     </button>
                     {expandedMenus[item.label] && (
-                      <div className="bg-gray-800">
+                      <div className="mx-1 mb-1 mt-0.5 space-y-0.5 rounded-xl bg-slate-900/60 py-1 pl-2">
                         {item.submenu.map((subitem, subindex) => (
                           <Link
                             key={subindex}
                             to={subitem.path}
                             className={`
-                              block pl-12 pr-4 py-2 text-sm
-                              hover:bg-gray-700 transition-colors duration-200
-                              ${isActive(subitem.path) ? 'bg-gray-700 text-indigo-400' : 'text-gray-300'}
+                              block rounded-lg py-2 pl-9 pr-3 text-sm transition-colors duration-150
+                              ${
+                                isActive(subitem.path)
+                                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 font-medium text-white shadow-md'
+                                  : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                              }
                             `}
                             onClick={() => window.innerWidth < 1024 && toggleSidebar()}
                           >
@@ -346,9 +330,13 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                   <Link
                     to={item.path}
                     className={`
-                      flex items-center px-4 py-2
-                      hover:bg-gray-800 transition-colors duration-200
-                      ${isActive(item.path) ? 'bg-gray-800 border-l-4 border-indigo-500' : ''}
+                      flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-200
+                      hover:bg-white/5
+                      ${
+                        isActive(item.path)
+                          ? 'bg-gradient-to-r from-indigo-600/35 to-violet-600/25 text-white ring-1 ring-indigo-400/35'
+                          : 'text-slate-200'
+                      }
                     `}
                     onClick={() => window.innerWidth < 1024 && toggleSidebar()}
                   >
@@ -359,13 +347,17 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
               </div>
             ))}
             {superAdmin && (
-              <div className="mt-2">
+              <div className="mt-2 px-0">
                 <Link
                   to="/admin"
                   className={`
-                    flex items-center px-4 py-2
-                    hover:bg-gray-800 transition-colors duration-200
-                    ${location.pathname === '/admin' ? 'bg-gray-800 border-l-4 border-indigo-500' : ''}
+                    flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-200
+                    hover:bg-white/5
+                    ${
+                      location.pathname === '/admin'
+                        ? 'bg-gradient-to-r from-amber-500/25 to-orange-500/20 text-amber-100 ring-1 ring-amber-400/30'
+                        : 'text-slate-200'
+                    }
                   `}
                   onClick={() => window.innerWidth < 1024 && toggleSidebar()}
                 >
@@ -377,8 +369,8 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
           </nav>
 
           {/* Footer del Sidebar */}
-          <div className="p-4 border-t border-gray-700">
-            <div className="text-xs text-gray-400 text-center">
+          <div className="border-t border-white/10 p-4">
+            <div className="text-center text-xs text-slate-500">
               {empresaConfig?.slogan && (
                 <p className="mb-2 italic">{empresaConfig.slogan}</p>
               )}

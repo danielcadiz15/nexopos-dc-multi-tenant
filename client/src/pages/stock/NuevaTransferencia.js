@@ -244,7 +244,7 @@ const NuevaTransferencia = () => {
             <select
               value={sucursalOrigen}
               onChange={(e) => setSucursalOrigen(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              className="nexo-field"
             >
               <option value="">Seleccionar sucursal...</option>
               {sucursalesDisponibles.map(sucursal => (
@@ -262,7 +262,7 @@ const NuevaTransferencia = () => {
             <select
               value={sucursalDestino}
               onChange={(e) => setSucursalDestino(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              className="nexo-field"
               disabled={!sucursalOrigen}
             >
               <option value="">Seleccionar sucursal...</option>
@@ -454,7 +454,7 @@ const NuevaTransferencia = () => {
                 value={motivo}
                 onChange={(e) => setMotivo(e.target.value)}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                className="nexo-field"
                 placeholder="Explique el motivo de esta transferencia..."
               />
             </div>

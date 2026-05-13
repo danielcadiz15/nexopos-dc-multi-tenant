@@ -596,7 +596,7 @@ const RecetaDetalle = () => {
                 min="1"
                 value={cantidadProducir}
                 onChange={(e) => setCantidadProducir(parseInt(e.target.value) || 1)}
-                className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                className="nexo-field sm:text-sm"
               />
             </div>
             

@@ -195,10 +195,10 @@ class ReportesService extends FirebaseService {
       if (filtros.proveedor_id) params.append('proveedor_id', filtros.proveedor_id);
       if (filtros.estado) params.append('estado', filtros.estado);
       
-      const resumen = await this.get(`/compras/resumen?${params.toString()}`);
+      const reporte = await this.get(`/compras?${params.toString()}`);
+      const reporteObj = this.ensureObject(reporte);
       
-      // ✅ CORRECCIÓN: Asegurar que devolvemos un objeto válido
-      return this.ensureObject(resumen);
+      return this.ensureObject(reporteObj.resumen || reporteObj.data?.resumen || {});
       
     } catch (error) {
       console.error('❌ [REPORTES SERVICE] Error al obtener resumen de compras:', error);
@@ -227,6 +227,10 @@ class ReportesService extends FirebaseService {
       if (filtros.fechaFin) params.append('fechaFin', filtros.fechaFin);
       if (filtros.proveedor_id) params.append('proveedor_id', filtros.proveedor_id);
       if (filtros.estado) params.append('estado', filtros.estado);
+      if (filtros.proveedor_id) params.append('proveedor_id', filtros.proveedor_id);
+      if (filtros.estado) params.append('estado', filtros.estado);
+      if (filtros.proveedor_id) params.append('proveedor_id', filtros.proveedor_id);
+      if (filtros.estado) params.append('estado', filtros.estado);
       
       const compras = await this.get(`/compras/por-dia?${params.toString()}`);
       
@@ -249,6 +253,8 @@ class ReportesService extends FirebaseService {
       const params = new URLSearchParams();
       if (filtros.fechaInicio) params.append('fechaInicio', filtros.fechaInicio);
       if (filtros.fechaFin) params.append('fechaFin', filtros.fechaFin);
+      if (filtros.proveedor_id) params.append('proveedor_id', filtros.proveedor_id);
+      if (filtros.estado) params.append('estado', filtros.estado);
       
       const compras = await this.get(`/compras/por-proveedor?${params.toString()}`);
       

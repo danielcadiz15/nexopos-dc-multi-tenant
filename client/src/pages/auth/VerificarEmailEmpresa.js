@@ -7,6 +7,7 @@ import { createTenant, setActiveTenant } from '../../services/firebase.service';
 import { useAuth } from '../../contexts/AuthContext';
 import { getEmailActionCodeSettings } from '../../utils/emailVerification';
 import Button from '../../components/common/Button';
+import { PLAN_IDS, PLAN_DEEP_COPY_ES, planLabel } from '../../utils/planDetails';
 
 const VerificarEmailEmpresa = () => {
   const location = useLocation();
@@ -14,6 +15,8 @@ const VerificarEmailEmpresa = () => {
   const { completeCompanyAfterVerification, orgId, currentUser, refreshAuthSession } = useAuth();
   const empresaFromNav = location.state?.empresaNombre;
   const [empresaNombre, setEmpresaNombre] = useState('');
+  const [codigoAdministrador, setCodigoAdministrador] = useState('');
+  const [chosenPlan, setChosenPlan] = useState(() => sessionStorage.getItem('pendingChosenPlan') || 'basic');
   const [loading, setLoading] = useState(false);
   const [reenviando, setReenviando] = useState(false);
 
@@ -100,23 +103,31 @@ const VerificarEmailEmpresa = () => {
         toast.warning('Indicá el nombre de tu empresa para crearla.');
         return;
       }
+      if (!codigoAdministrador.trim()) {
+        toast.warning('Ingresá el código de habilitación que te envió el administrador para tu correo.');
+        return;
+      }
       const slug = nombre.toLowerCase().replace(/\s+/g, '-');
-      const res = await createTenant(nombre, slug);
+      const res = await createTenant(nombre, slug, codigoAdministrador.trim(), chosenPlan);
       if (!res?.success || !res.orgId) {
         throw new Error('No se pudo crear la empresa');
       }
       await setActiveTenant(res.orgId);
       await completeCompanyAfterVerification();
       sessionStorage.removeItem('pendingEmpresaNombre');
+      sessionStorage.removeItem('pendingChosenPlan');
       sessionStorage.setItem('postVerifyGoConfig', '1');
       navigate('/configuracion/empresa', { replace: true });
     } catch (err) {
       const codigo = err?.code || '';
-      const msg =
-        err?.message ||
-        (codigo === 'functions/failed-precondition'
-          ? 'Tu correo aún no está verificado en el servidor.'
-          : 'No se pudo crear la empresa');
+      let msg = err?.message || 'No se pudo crear la empresa';
+      if (codigo === 'functions/failed-precondition' && /verificar|correo/i.test(msg)) {
+        msg = 'Tu correo aún no está verificado en el servidor.';
+      } else if (codigo === 'functions/permission-denied') {
+        msg = err.message?.includes?.('correo') ? err.message : 'Código de habilitación incorrecto o no válido.';
+      } else if (codigo === 'functions/invalid-argument' && /administrador/i.test(msg)) {
+        msg = err.message;
+      }
       toast.error(msg);
     } finally {
       setLoading(false);
@@ -147,15 +158,61 @@ const VerificarEmailEmpresa = () => {
                 <label className="block text-xs font-semibold text-gray-500 uppercase">Nombre de la empresa</label>
                 <input
                   type="text"
-                  className="w-full border border-gray-300 rounded-md px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="nexo-field py-3"
                   value={empresaNombre}
                   onChange={(e) => setEmpresaNombre(e.target.value)}
                   placeholder="Ej: Mi negocio"
                 />
+                <label className="block text-xs font-semibold text-gray-500 uppercase mt-4">
+                  Código de habilitación (solo para este correo)
+                </label>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  className="nexo-field py-3"
+                  value={codigoAdministrador}
+                  onChange={(e) => setCodigoAdministrador(e.target.value)}
+                  placeholder="Te lo envía el administrador para tu correo — un solo uso"
+                />
+              </div>
+
+              <div className="mt-5">
+                <label className="block text-xs font-semibold text-gray-500 uppercase">
+                  Abono desde el tercer mes
+                </label>
+                <div className="mt-2 grid grid-cols-1 gap-2">
+                  {PLAN_IDS.map((id) => (
+                    <label
+                      key={id}
+                      className={[
+                        'cursor-pointer rounded-xl border p-3 text-sm transition',
+                        chosenPlan === id
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-950 ring-2 ring-indigo-100'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      ].join(' ')}
+                    >
+                      <input
+                        type="radio"
+                        name="chosenPlan"
+                        value={id}
+                        checked={chosenPlan === id}
+                        onChange={(e) => {
+                          setChosenPlan(e.target.value);
+                          sessionStorage.setItem('pendingChosenPlan', e.target.value);
+                        }}
+                        className="mr-2"
+                      />
+                      <strong>{planLabel(id)}</strong>
+                      <span className="ml-2 text-xs text-gray-500">{PLAN_DEEP_COPY_ES[id]?.tagline}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <p className="text-xs text-gray-500 mt-3">
-                Solamente después de confirmar tu correo se puede crear la organización NexoPOS.
+                El administrador debe generar el código asociando <strong>este mismo correo</strong>. Una vez activa la empresa,
+                se cobran dos cuotas de kit inicial de <strong>$250.000</strong> con versión completa. Desde el tercer pago
+                se aplica el abono que elijas acá.
               </p>
             </>
           )}

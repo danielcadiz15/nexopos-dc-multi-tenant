@@ -21,6 +21,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
 import Spinner from '../../components/common/Spinner';
+import PasswordInput from '../../components/common/PasswordInput';
 
 // Iconos
 import { 
@@ -262,7 +263,7 @@ const Perfil = () => {
                         name="nombre"
                         value={formData.nombre}
                         onChange={handleChange}
-                        className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                        className="nexo-field"
                         required
                       />
                     </div>
@@ -276,7 +277,7 @@ const Perfil = () => {
                         name="apellido"
                         value={formData.apellido}
                         onChange={handleChange}
-                        className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                        className="nexo-field"
                         required
                       />
                     </div>
@@ -291,7 +292,7 @@ const Perfil = () => {
                       name="email"
                       value={formData.email}
                       onChange={handleChange}
-                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field"
                       required
                     />
                   </div>
@@ -320,12 +321,11 @@ const Perfil = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Contraseña Actual
                     </label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       name="password_actual"
                       value={passwordData.password_actual}
                       onChange={handlePasswordChange}
-                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field"
                       required
                       autoComplete="current-password"
                     />
@@ -335,12 +335,11 @@ const Perfil = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Nueva Contraseña
                     </label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       name="password_nueva"
                       value={passwordData.password_nueva}
                       onChange={handlePasswordChange}
-                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field"
                       required
                       minLength={6}
                       autoComplete="new-password"
@@ -354,12 +353,11 @@ const Perfil = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Confirmar Contraseña
                     </label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       name="password_confirmacion"
                       value={passwordData.password_confirmacion}
                       onChange={handlePasswordChange}
-                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field"
                       required
                       autoComplete="new-password"
                     />

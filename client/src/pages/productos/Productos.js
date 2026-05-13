@@ -12,9 +12,18 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { 
-  FaPlus, FaSearch, FaEdit, FaTrash, FaEye, 
-  FaBox, FaFilter, FaTags,  FaTimes, FaFileExport, FaFileExcel 
+import {
+  FaPlus,
+  FaSearch,
+  FaEdit,
+  FaTrash,
+  FaEye,
+  FaBox,
+  FaFilter,
+  FaTags,
+  FaTimes,
+  FaFileExport,
+  FaMagic
 } from 'react-icons/fa';
 
 
@@ -32,6 +41,7 @@ import Table from '../../components/common/Table';
 import SearchBar from '../../components/common/SearchBar';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import ImportarExcel from '../../components/modules/productos/ImportarExcel';
+import ProductLoadAssistant from '../../components/modules/productos/ProductLoadAssistant';
 
 
 // Utilidades
@@ -52,6 +62,7 @@ const Productos = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showLoadAssistant, setShowLoadAssistant] = useState(false);
 
   // Estado para diálogo de confirmación de eliminación
   const [confirmDialog, setConfirmDialog] = useState({
@@ -477,39 +488,54 @@ const Productos = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Productos</h1>
-        
-        <div className="flex space-x-2">
-          <Link to="/productos/nuevo">
-            <Button
-              color="primary"
-              icon={<FaPlus />}
-            >
-              Nuevo Producto
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Productos</h1>
+          <p className="mt-1 text-sm text-gray-500">Stock, precios e importación desde un solo lugar.</p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Link to="/productos/precios">
+            <Button color="info" icon={<FaTags />}>
+              Gestión de Precios
             </Button>
           </Link>
-		  <Link to="/productos/precios">
-		  <Button color="info" icon={<FaTags />}>
-			Gestión de Precios
-		  </Button>
-		</Link>
-          <Button
-            color="secondary"
-            icon={<FaFileExport />}
-            onClick={handleExport}
-          >
+          <Button color="secondary" icon={<FaFileExport />} onClick={handleExport}>
             Exportar
           </Button>
         </div>
       </div>
-      <Button
-	  color="success"
-	  icon={<FaFileExcel />}
-	  onClick={() => setShowImportDialog(true)}
-	>
-	  Importar Excel
-	</Button>
+
+      <div className="overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-600 to-sky-600 p-[1px] shadow-lg shadow-indigo-500/15">
+        <div className="flex flex-col gap-4 rounded-2xl bg-white/95 p-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md">
+              <FaMagic className="text-lg" aria-hidden />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900">¿Todavía no cargaste todo el catálogo?</p>
+              <p className="text-sm text-slate-600">
+                Usá el asistente: paso a paso, Excel o formulario clásico.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              color="primary"
+              icon={<FaMagic />}
+              onClick={() => setShowLoadAssistant(true)}
+            >
+              Asistente para cargar productos
+            </Button>
+            <Link to="/productos/nuevo">
+              <Button color="secondary" icon={<FaPlus />}>
+                Nuevo (formulario)
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+
       <Card>
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-grow">
@@ -526,7 +552,7 @@ const Productos = () => {
             <select
               value={categoriaSeleccionada}
               onChange={handleFilterByCategory}
-              className="block w-full bg-white border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              className="nexo-field bg-white"
             >
               <option value="">Todas las categorías</option>
               {categorias.map((categoria) => (
@@ -566,13 +592,13 @@ const Productos = () => {
                     }
                   </p>
                   
-                  <div className="mt-4">
+                  <div className="mt-4 flex flex-wrap justify-center gap-2">
+                    <Button color="primary" icon={<FaMagic />} onClick={() => setShowLoadAssistant(true)}>
+                      Asistente para cargar
+                    </Button>
                     <Link to="/productos/nuevo">
-                      <Button
-                        color="primary"
-                        icon={<FaPlus />}
-                      >
-                        Agregar Producto
+                      <Button color="secondary" icon={<FaPlus />}>
+                        Nuevo producto
                       </Button>
                     </Link>
                   </div>
@@ -597,12 +623,16 @@ const Productos = () => {
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
       />
-	  {/* Modal de importación */}
-		<ImportarExcel
-		  isOpen={showImportDialog}
-		  onClose={() => setShowImportDialog(false)}
-		  onImportSuccess={handleImportSuccess}
-		/>
+      <ProductLoadAssistant
+        isOpen={showLoadAssistant}
+        onClose={() => setShowLoadAssistant(false)}
+        onOpenImport={() => setShowImportDialog(true)}
+      />
+      <ImportarExcel
+        isOpen={showImportDialog}
+        onClose={() => setShowImportDialog(false)}
+        onImportSuccess={handleImportSuccess}
+      />
     </div>
   );
 };

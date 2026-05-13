@@ -268,6 +268,21 @@ class SucursalesService extends FirebaseService {
       return [];
     }
   }
+
+  /**
+   * Elimina una sucursal (no la principal; sin stock).
+   */
+  async eliminar(id) {
+    try {
+      console.log(`🗑️ Eliminando sucursal ${id}`);
+      const resultado = await this.delete(`/${id}`);
+      console.log('✅ Sucursal eliminada:', resultado);
+      return resultado;
+    } catch (error) {
+      console.error(`❌ Error al eliminar sucursal ${id}:`, error);
+      throw error;
+    }
+  }
 }
 
 export default new SucursalesService();

@@ -26,6 +26,10 @@ import TicketVenta from '../../components/modules/ventas/TicketVenta';
 
 // Hooks
 import { useAuth } from '../../contexts/AuthContext';
+import { numberOrZero, numberInputDisplay } from '../../utils/numberInput';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
+import { etiquetaLista, listaPuntoVentaDefaultValida } from '../../utils/listasPreciosLabels';
 
 // Componentes
 import Spinner from '../../components/common/Spinner';
@@ -52,7 +56,11 @@ let isApplyingPromotions = false;
 const PuntoVenta = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser, sucursalSeleccionada, sucursalesDisponibles, hasPermission } = useAuth();
+  const { currentUser, sucursalSeleccionada, sucursalesDisponibles, hasPermission, orgId } =
+    useAuth();
+
+  /** companies/{orgId}/config/empresa (solo campos necesarios para listas PV) */
+  const [empresaConfigPv, setEmpresaConfigPv] = useState(null);
 
   const verificarPermisoEditarPrecios = () => {
 	  if (!currentUser) return false;
@@ -91,19 +99,20 @@ const PuntoVenta = () => {
   const [deudasCliente, setDeudasCliente] = useState([]);
   const [metodoPago, setMetodoPago] = useState('efectivo');
   const [referenciaMercadoPago, setReferenciaMercadoPago] = useState('');
-  const [descuentoGeneral, setDescuentoGeneral] = useState(0);
+  /** null = campo vacío (se puede borrar el 0) */
+  const [descuentoGeneral, setDescuentoGeneral] = useState(null);
   const [descuentoGeneralTipo, setDescuentoGeneralTipo] = useState('porcentaje');
   
   // ✅ CORREGIDO: Estados de pago con valores por defecto correctos
   const [estadoPago, setEstadoPago] = useState('pendiente'); // ← CAMBIO: Valor por defecto correcto
-  const [montoPagado, setMontoPagado] = useState(0); // ← CAMBIO: Inicia en 0, no en total
+  const [montoPagado, setMontoPagado] = useState(null);
   
   // Estado para sucursal
   const [sucursalVenta, setSucursalVenta] = useState(
     sucursalPreseleccionada || sucursalSeleccionada?.id || ''
   );
   
-  // CAMBIO: Lista por defecto ahora es 'interior'
+  /** Hasta cargar empresa, misma lista que siempre usaron los tenants sin config */
   const [listaSeleccionada, setListaSeleccionada] = useState('interior');
   
   // Estado de diálogos
@@ -135,7 +144,31 @@ const PuntoVenta = () => {
     
     return () => clearTimeout(timer);
   }, [sucursalPreseleccionada, sucursalSeleccionada, sucursalesDisponibles]);
-  
+
+  /**
+   * Etiquetas y lista por defecto según empresa (ej. Lista 1 = mayorista).
+   */
+  useEffect(() => {
+    let cancelled = false;
+    async function cargarEmpresaPv() {
+      if (!orgId) return;
+      try {
+        const snap = await getDoc(doc(db, `companies/${orgId}/config/empresa`));
+        if (cancelled) return;
+        const data = snap.exists() ? snap.data() : {};
+        setEmpresaConfigPv(data || null);
+        const def = listaPuntoVentaDefaultValida(data?.lista_precio_punto_venta_default);
+        if (def) setListaSeleccionada(def);
+      } catch {
+        if (!cancelled) setEmpresaConfigPv(null);
+      }
+    }
+    cargarEmpresaPv();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
+
   /**
    * Cambiar lista cuando se selecciona un cliente
    */
@@ -143,8 +176,11 @@ const PuntoVenta = () => {
     // Si el cliente tiene una lista predeterminada, seleccionarla automáticamente
     if (cliente?.lista_precio_default) {
       setListaSeleccionada(cliente.lista_precio_default);
-      toast.info(`Lista cambiada a "${cliente.lista_precio_default}" (predeterminada para este cliente)`);
+      const label = etiquetaLista(empresaConfigPv, cliente.lista_precio_default);
+      toast.info(`Lista cambiada a "${label}" (predeterminada para este cliente)`);
     }
+    // Solo reacciona al cliente seleccionado (no al cargar empresa) para no repetir toasts
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cliente]);
 
   /**
@@ -158,7 +194,7 @@ const PuntoVenta = () => {
       setMontoPagado(totales.total);
     }
     // Si el estado es "pendiente" y el monto pagado es mayor al total, ajustarlo
-    else if (estadoPago === 'pendiente' && montoPagado > totales.total) {
+    else if (estadoPago === 'pendiente' && numberOrZero(montoPagado) > totales.total) {
       setMontoPagado(totales.total);
     }
   }, [carrito, descuentoGeneral, descuentoGeneralTipo, estadoPago, listaSeleccionada]);
@@ -585,6 +621,7 @@ const PuntoVenta = () => {
 		  ? { 
 			  ...item, 
 			  cantidad: nuevaCantidad,
+			  cantidadDraft: undefined,
 			  subtotal: nuevaCantidad * item.precio
 			} 
 		  : item
@@ -635,25 +672,34 @@ const PuntoVenta = () => {
  * @param {number} nuevoPrecio - Nuevo precio
  */
 	const actualizarPrecio = (id, nuevoPrecio) => {
-	  const precio = parseFloat(nuevoPrecio) || 0;
-	  
-	  if (precio < 0) {
-		toast.error('El precio no puede ser negativo');
-		return;
+	  const raw = nuevoPrecio === null || nuevoPrecio === undefined ? '' : String(nuevoPrecio).trim();
+	  if (raw === '' || raw === '.' || raw === '-') {
+	    setCarrito((prev) =>
+	      prev.map((item) => (item.id === id ? { ...item, precioDraft: raw } : item))
+	    );
+	    return;
 	  }
-	  
-	  const carritoActualizado = carrito.map(item => 
-		item.id === id 
-		  ? { 
-			  ...item, 
-			  precio: precio,
-			  precio_editado: true, // Marcar que fue editado manualmente
-			  subtotal: item.cantidad * precio
-			} 
-		  : item
+	  const precio = parseFloat(raw.replace(',', '.'));
+	  if (!Number.isFinite(precio)) return;
+
+	  if (precio < 0) {
+	    toast.error('El precio no puede ser negativo');
+	    return;
+	  }
+
+	  setCarrito((prev) =>
+	    prev.map((item) =>
+	      item.id === id
+	        ? {
+	            ...item,
+	            precio,
+	            precioDraft: undefined,
+	            precio_editado: true,
+	            subtotal: item.cantidad * precio
+	          }
+	        : item
+	    )
 	  );
-	  
-	  setCarrito(carritoActualizado);
 	  toast.success('Precio actualizado');
 	};
   
@@ -687,19 +733,26 @@ const PuntoVenta = () => {
    */
   const handleCantidadInputChange = (id, e) => {
     const valor = e.target.value;
-    
-    // Si el campo está vacío, no hacer nada (permitir que el usuario borre y escriba)
+
     if (valor === '') {
+      setCarrito((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, cantidadDraft: '' } : item))
+      );
       return;
     }
-    
-    // Convertir a número y validar
-    const nuevaCantidad = parseInt(valor) || 0;
-    
-    // Solo actualizar si es un número válido mayor a 0
-    if (nuevaCantidad > 0) {
-      actualizarCantidad(id, nuevaCantidad);
+
+    const nuevaCantidad = parseInt(valor, 10);
+    if (!Number.isFinite(nuevaCantidad) || nuevaCantidad < 1) {
+      setCarrito((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, cantidadDraft: valor } : item))
+      );
+      return;
     }
+
+    setCarrito((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, cantidadDraft: undefined } : item))
+    );
+    actualizarCantidad(id, nuevaCantidad);
   };
 
   /**
@@ -712,10 +765,10 @@ const PuntoVenta = () => {
     const producto = carrito.find(item => item.id === id);
     
     // Si el campo está vacío o es 0, restaurar a 1
-    if (!valor || parseInt(valor) === 0) {
+    if (!valor || parseInt(valor, 10) === 0 || !Number.isFinite(parseInt(valor, 10))) {
       const carritoActualizado = carrito.map(item => 
         item.id === id 
-          ? { ...item, cantidad: 1, subtotal: item.precio } 
+          ? { ...item, cantidad: 1, cantidadDraft: undefined, subtotal: item.precio } 
           : item
       );
       setCarrito(carritoActualizado);
@@ -1158,10 +1211,11 @@ const PuntoVenta = () => {
     
     // Calcular descuento general
     let descuentoGeneralValor = 0;
+    const dg = numberOrZero(descuentoGeneral);
     if (descuentoGeneralTipo === 'porcentaje') {
-      descuentoGeneralValor = (subtotalConPromociones * descuentoGeneral) / 100;
+      descuentoGeneralValor = (subtotalConPromociones * dg) / 100;
     } else {
-      descuentoGeneralValor = Math.min(descuentoGeneral, subtotalConPromociones);
+      descuentoGeneralValor = Math.min(dg, subtotalConPromociones);
     }
     
     // Descuento total (promociones + general)
@@ -1240,8 +1294,8 @@ const PuntoVenta = () => {
       setMontoPagado(totales.total);
     } else if (nuevoEstado === 'pendiente') {
       // Si se marca como pendiente, mantener el monto actual o poner 0 si es mayor al total
-      if (montoPagado > totales.total) {
-        setMontoPagado(0);
+      if (numberOrZero(montoPagado) > totales.total) {
+        setMontoPagado(null);
       }
     }
   };
@@ -1252,11 +1306,18 @@ const PuntoVenta = () => {
    */
   const handleMontoPagadoChange = (nuevoMonto) => {
     const totales = calcularTotales();
-    const monto = parseFloat(nuevoMonto) || 0;
-    
+    const raw = nuevoMonto === null || nuevoMonto === undefined ? '' : String(nuevoMonto).trim();
+    if (raw === '') {
+      setMontoPagado(null);
+      setEstadoPago('pendiente');
+      return;
+    }
+    const monto = parseFloat(raw.replace(',', '.'));
+    if (!Number.isFinite(monto)) return;
+
     // Limitar el monto al total de la venta
     const montoLimitado = Math.min(Math.max(0, monto), totales.total);
-    
+
     setMontoPagado(montoLimitado);
     
     // Actualizar automáticamente el estado según el monto
@@ -1330,7 +1391,7 @@ const PuntoVenta = () => {
 
 		// ✅ CORREGIDO: Cálculo correcto del estado y montos de pago
 		let estadoFinal = estadoPago;
-		let montoPagadoFinal = montoPagado;
+		let montoPagadoFinal = numberOrZero(montoPagado);
 		let saldoPendienteFinal = 0;
 
 		// Validaciones de consistencia
@@ -1495,7 +1556,9 @@ const PuntoVenta = () => {
     setDescuentoGeneralTipo('porcentaje');
     setEstadoPago('pendiente'); // ← VALOR CORRECTO por defecto
     setMontoPagado(0); // ← VALOR CORRECTO por defecto
-    setListaSeleccionada('interior');
+    setListaSeleccionada(
+      listaPuntoVentaDefaultValida(empresaConfigPv?.lista_precio_punto_venta_default) || 'interior'
+    );
     
     // No resetear sucursal para mantenerla entre ventas
     
@@ -1635,7 +1698,7 @@ const PuntoVenta = () => {
 
                   {cliente.lista_precio_default && (
                     <div className="text-blue-600 text-sm mt-1">
-                      Lista predeterminada: {cliente.lista_precio_default}
+                      Lista predeterminada: {etiquetaLista(empresaConfigPv, cliente.lista_precio_default)}
                     </div>
                   )}
 
@@ -1683,14 +1746,14 @@ const PuntoVenta = () => {
                     type="button"
                     onClick={() => cambiarListaPrecios(lista)}
                     className={`
-                      px-3 py-2 rounded-md text-sm font-medium capitalize transition-colors
+                      px-3 py-2 rounded-md text-sm font-medium transition-colors
                       ${listaSeleccionada === lista 
                         ? 'bg-indigo-600 text-white shadow-md' 
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}
                     `}
                     disabled={!sucursalVenta}
                   >
-                    {lista}
+                    {etiquetaLista(empresaConfigPv, lista)}
                   </button>
                 ))}
               </div>
@@ -1700,7 +1763,8 @@ const PuntoVenta = () => {
                 <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-md">
                   <p className="text-xs text-amber-800 flex items-center">
                     <FaExclamationTriangle className="mr-1" />
-                    Cliente tiene lista "{cliente.lista_precio_default}" pero se está usando "{listaSeleccionada}"
+                    Cliente tiene lista "{etiquetaLista(empresaConfigPv, cliente.lista_precio_default)}" pero se
+                    está usando "{etiquetaLista(empresaConfigPv, listaSeleccionada)}"
                   </p>
                 </div>
 
@@ -1797,7 +1861,7 @@ const PuntoVenta = () => {
                   value={referenciaMercadoPago}
                   onChange={(e) => setReferenciaMercadoPago(e.target.value)}
                   placeholder="Ingrese el número de referencia de MercadoPago"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field"
                   required
                 />
               </div>
@@ -1848,7 +1912,7 @@ const PuntoVenta = () => {
               <div className="flex items-center">
                 <input
                   type="number"
-                  value={montoPagado}
+                  value={numberInputDisplay(montoPagado)}
                   onChange={(e) => handleMontoPagadoChange(e.target.value)}
                   min="0"
                   max={totales.total}
@@ -1865,12 +1929,12 @@ const PuntoVenta = () => {
               {/* Indicadores visuales del estado de pago */}
               <div className="mt-2 flex items-center justify-between text-sm">
                 <div className="flex items-center space-x-4">
-                  {montoPagado >= totales.total ? (
+                  {numberOrZero(montoPagado) >= totales.total ? (
                     <span className="flex items-center text-green-600">
                       <FaCheck className="mr-1" size={12} />
                       Pago completo
                     </span>
-                  ) : montoPagado > 0 ? (
+                  ) : numberOrZero(montoPagado) > 0 ? (
                     <span className="flex items-center text-yellow-600">
                       <FaClock className="mr-1" size={12} />
                       Pago parcial
@@ -1886,7 +1950,7 @@ const PuntoVenta = () => {
 
                 
                 <span className="font-medium">
-                  Saldo: {formatMoneda(Math.max(0, totales.total - montoPagado))}
+                  Saldo: {formatMoneda(Math.max(0, totales.total - numberOrZero(montoPagado)))}
                 </span>
               </div>
               
@@ -1927,8 +1991,15 @@ const PuntoVenta = () => {
                 <input
                   type="number"
                   min="0"
-                  value={descuentoGeneral}
-                  onChange={(e) => setDescuentoGeneral(parseFloat(e.target.value) || 0)}
+                  value={numberInputDisplay(descuentoGeneral)}
+                  onChange={(e) => {
+                    const t = e.target.value;
+                    if (t === '') setDescuentoGeneral(null);
+                    else {
+                      const n = parseFloat(t.replace(',', '.'));
+                      setDescuentoGeneral(Number.isFinite(n) ? n : null);
+                    }
+                  }}
                   className="border rounded-l-md px-3 py-2 w-full"
                   disabled={!sucursalVenta}
                 />
@@ -1985,18 +2056,18 @@ const PuntoVenta = () => {
                 {/* ✅ NUEVO: Mostrar estado de pago en el resumen */}
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Monto pagado:</span>
-                  <span className={montoPagado > 0 ? 'text-green-600 font-medium' : 'text-gray-500'}>
-                    {formatMoneda(montoPagado)}
+                  <span className={numberOrZero(montoPagado) > 0 ? 'text-green-600 font-medium' : 'text-gray-500'}>
+                    {formatMoneda(numberOrZero(montoPagado))}
                   </span>
                 </div>
 
 
                 
-                {montoPagado < totales.total && (
+                {numberOrZero(montoPagado) < totales.total && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Saldo pendiente:</span>
                     <span className="text-red-600 font-medium">
-                      {formatMoneda(totales.total - montoPagado)}
+                      {formatMoneda(totales.total - numberOrZero(montoPagado))}
                     </span>
                   </div>
 
@@ -2016,7 +2087,7 @@ const PuntoVenta = () => {
                 className="min-h-[48px] text-base font-medium"
               >
                 {estadoPago === 'completada' ? 'Finalizar Venta' : 
-                 montoPagado > 0 ? 'Venta con Saldo Pendiente' : 'Venta a Crédito'}
+                 numberOrZero(montoPagado) > 0 ? 'Venta con Saldo Pendiente' : 'Venta a Crédito'}
               </Button>
               
               <Button
@@ -2045,7 +2116,7 @@ const PuntoVenta = () => {
                 value={searchTerm}
                 onChange={handleSearchChange}
                 onKeyDown={handleSearchKeyDown}
-                className="w-full px-4 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="nexo-field px-4 py-3 text-base"
                 inputMode="search"
                 disabled={!sucursalVenta}
               />
@@ -2216,13 +2287,19 @@ const PuntoVenta = () => {
 									<span className="mr-1 text-gray-600">$</span>
 									<input
 									  type="number"
-									  value={item.precio}
+									  value={item.precioDraft !== undefined ? item.precioDraft : item.precio}
 									  onChange={(e) => actualizarPrecio(item.id, e.target.value)}
 									  onBlur={(e) => {
-										// Validar al salir del campo
-										if (parseFloat(e.target.value) <= 0) {
+										const v = e.target.value.trim();
+										if (!v || parseFloat(v) <= 0) {
 										  actualizarPrecio(item.id, item.precio_original_backup || item.precio_lista);
 										  toast.warning('Precio restaurado al original');
+										} else {
+										  setCarrito((prev) =>
+										    prev.map((it) =>
+										      it.id === item.id ? { ...it, precioDraft: undefined } : it
+										    )
+										  );
 										}
 									  }}
 									  className="w-20 text-center border rounded px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-400"
@@ -2273,7 +2350,7 @@ const PuntoVenta = () => {
                                   type="number"
                                   min="1"
                                   max={item.stock_disponible}
-                                  value={item.cantidad}
+                                  value={item.cantidadDraft !== undefined ? item.cantidadDraft : item.cantidad}
                                   onChange={(e) => handleCantidadInputChange(item.id, e)}
                                   onBlur={(e) => handleCantidadInputBlur(item.id, e)}
                                   className="mx-1 w-16 text-center text-base border rounded p-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -2372,10 +2449,10 @@ const PuntoVenta = () => {
 
                     
                     {/* Descuento general */}
-                    {descuentoGeneral > 0 && (
+                    {numberOrZero(descuentoGeneral) > 0 && (
                       <div className="flex justify-between">
                         <span className="text-gray-600">
-                          Descuento adicional {descuentoGeneralTipo === 'porcentaje' ? `(${descuentoGeneral}%)` : '(monto fijo)'}:
+                          Descuento adicional {descuentoGeneralTipo === 'porcentaje' ? `(${numberOrZero(descuentoGeneral)}%)` : '(monto fijo)'}:
                         </span>
                         <span className="text-green-600">
                           -{formatMoneda(totales.descuentoGeneralValor)}
@@ -2389,7 +2466,7 @@ const PuntoVenta = () => {
                     {totales.diferenciaListaInterior > 0 && (
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">
-                          Descuento por lista {listaSeleccionada}:
+                          Descuento por lista {etiquetaLista(empresaConfigPv, listaSeleccionada)}:
                         </span>
                         <span className="text-blue-600">
                           -{formatMoneda(totales.diferenciaListaInterior)}
@@ -2476,7 +2553,7 @@ const PuntoVenta = () => {
 
                 <div className="flex justify-between">
                   <span>Lista:</span>
-                  <span className="capitalize">{listaSeleccionada}</span>
+                  <span>{etiquetaLista(empresaConfigPv, listaSeleccionada)}</span>
                 </div>
 
 
@@ -2493,12 +2570,12 @@ const PuntoVenta = () => {
                 <div className="flex justify-between items-center">
                   <span className="font-medium">Estado de Pago:</span>
                   <div className="text-right">
-                    {montoPagado >= totales.total ? (
+                    {numberOrZero(montoPagado) >= totales.total ? (
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                         <FaCheck className="mr-1" size={10} />
                         Pago Completo
                       </span>
-                    ) : montoPagado > 0 ? (
+                    ) : numberOrZero(montoPagado) > 0 ? (
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                         <FaClock className="mr-1" size={10} />
                         Pago Parcial
@@ -2519,14 +2596,14 @@ const PuntoVenta = () => {
                 <div className="grid grid-cols-2 gap-2 mt-1 text-sm">
                   <div className="flex justify-between">
                     <span>Monto pagado:</span>
-                    <span className="font-medium">{formatMoneda(montoPagado)}</span>
+                    <span className="font-medium">{formatMoneda(numberOrZero(montoPagado))}</span>
                   </div>
 
 
-                  {montoPagado < totales.total && (
+                  {numberOrZero(montoPagado) < totales.total && (
                     <div className="flex justify-between">
                       <span>Saldo pendiente:</span>
-                      <span className="font-medium text-red-600">{formatMoneda(totales.total - montoPagado)}</span>
+                      <span className="font-medium text-red-600">{formatMoneda(totales.total - numberOrZero(montoPagado))}</span>
                     </div>
                   )}
                 </div>

@@ -171,7 +171,7 @@ const CargaCombustible = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                 onChange={handleChange}
                 max={new Date().toISOString().split('T')[0]}
                 className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                  errors.fecha ? 'border-red-300' : 'border-gray-300'
+                  errors.fecha ? 'border-red-300' : 'border-slate-200'
                 }`}
               />
               {errors.fecha && (
@@ -192,7 +192,7 @@ const CargaCombustible = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                 onChange={handleChange}
                 min={kmActual + 1}
                 className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                  errors.km_carga ? 'border-red-300' : 'border-gray-300'
+                  errors.km_carga ? 'border-red-300' : 'border-slate-200'
                 }`}
                 placeholder={`Mayor a ${kmActual} km`}
               />
@@ -210,7 +210,7 @@ const CargaCombustible = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                 name="tipo_combustible"
                 value={formData.tipo_combustible}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                className="nexo-field"
               >
                 <option value="nafta">Nafta</option>
                 <option value="diesel">Diesel</option>
@@ -232,7 +232,7 @@ const CargaCombustible = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                   step="0.01"
                   min="0.01"
                   className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                    errors.litros ? 'border-red-300' : 'border-gray-300'
+                    errors.litros ? 'border-red-300' : 'border-slate-200'
                   }`}
                   placeholder="0.00"
                 />
@@ -254,7 +254,7 @@ const CargaCombustible = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                   step="0.01"
                   min="0.01"
                   className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                    errors.monto ? 'border-red-300' : 'border-gray-300'
+                    errors.monto ? 'border-red-300' : 'border-slate-200'
                   }`}
                   placeholder="0.00"
                 />
@@ -284,7 +284,7 @@ const CargaCombustible = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                 name="estacion"
                 value={formData.estacion}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                className="nexo-field"
                 placeholder="YPF, Shell, etc."
               />
             </div>

@@ -191,7 +191,7 @@ const MateriaPrimaForm = () => {
                   name="codigo"
                   value={formData.codigo}
                   onChange={handleChange}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="Código o SKU (opcional)"
                 />
               </div>
@@ -205,7 +205,7 @@ const MateriaPrimaForm = () => {
                   name="nombre"
                   value={formData.nombre}
                   onChange={handleChange}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="Nombre de la materia prima"
                   required
                 />
@@ -220,7 +220,7 @@ const MateriaPrimaForm = () => {
                   value={formData.descripcion}
                   onChange={handleChange}
                   rows={3}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="Descripción opcional"
                 />
               </div>
@@ -233,7 +233,7 @@ const MateriaPrimaForm = () => {
                   name="unidad_medida"
                   value={formData.unidad_medida}
                   onChange={handleChange}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   required
                 >
                   <option value="unidad">Unidad</option>
@@ -252,7 +252,7 @@ const MateriaPrimaForm = () => {
                   name="proveedor_id"
                   value={formData.proveedor_id}
                   onChange={handleChange}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                 >
                   <option value="">Seleccionar proveedor (opcional)</option>
                   {proveedores.map(proveedor => (

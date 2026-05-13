@@ -510,7 +510,7 @@ const TransferenciasStock = () => {
                 <textarea
                   value={motivoRechazo}
                   onChange={(e) => setMotivoRechazo(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field"
                   rows={3}
                   placeholder="Ingrese el motivo..."
                   required

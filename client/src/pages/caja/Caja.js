@@ -16,7 +16,13 @@ const Caja = () => {
   const [resumen, setResumen] = useState({ ingresos: 0, egresos: 0, saldo: 0 });
   const [saldoAcumulado, setSaldoAcumulado] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ tipo: 'ingreso', monto: '', concepto: '', observaciones: '' });
+  const [form, setForm] = useState({
+    tipo: 'ingreso',
+    monto: '',
+    concepto: '',
+    observaciones: '',
+    medio_pago: 'efectivo'
+  });
   const [agregando, setAgregando] = useState(false);
   const [eliminando, setEliminando] = useState(null);
   const [modoVista, setModoVista] = useState('diario'); // 'diario' o 'acumulado'
@@ -83,7 +89,8 @@ const Caja = () => {
     try {
       console.log('💰 [FRONTEND] Cargando movimientos acumulados para orgId:', orgId);
       const token = await getAccessToken();
-      const res = await fetch(`${API_URL}/caja/movimientos-acumulados?orgId=${orgId}`, {
+      const suc = sucursalSeleccionada?.id || 'principal';
+      const res = await fetch(`${API_URL}/caja/movimientos-acumulados?orgId=${orgId}&sucursalId=${encodeURIComponent(suc)}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -115,7 +122,8 @@ const Caja = () => {
     try {
       console.log('💰 [FRONTEND] Cargando saldo acumulado para orgId:', orgId);
       const token = await getAccessToken();
-      const res = await fetch(`${API_URL}/caja/saldo-acumulado?orgId=${orgId}`, {
+      const suc = sucursalSeleccionada?.id || 'principal';
+      const res = await fetch(`${API_URL}/caja/saldo-acumulado?orgId=${orgId}&sucursalId=${encodeURIComponent(suc)}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -146,7 +154,8 @@ const Caja = () => {
       console.log('💰 [FRONTEND] Verificando saldo físico:', saldoFisico);
       
       const token = await getAccessToken();
-      const res = await fetch(`${API_URL}/caja/verificar-saldo?orgId=${orgId}`, {
+      const suc = sucursalSeleccionada?.id || 'principal';
+      const res = await fetch(`${API_URL}/caja/verificar-saldo?orgId=${orgId}&sucursalId=${encodeURIComponent(suc)}`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -233,7 +242,12 @@ const Caja = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ ...form, monto: parseFloat(form.monto), fecha })
+        body: JSON.stringify({
+          ...form,
+          monto: parseFloat(form.monto),
+          fecha,
+          sucursal_id: sucursalSeleccionada?.id || 'principal'
+        })
       });
       
       console.log('💰 [FRONTEND] Respuesta de agregar:', res.status, res.ok);
@@ -244,7 +258,7 @@ const Caja = () => {
       console.log('💰 [FRONTEND] Datos de respuesta:', responseData);
       
       toast.success(`${form.tipo === 'ingreso' ? 'Ingreso' : 'Egreso'} agregado correctamente`);
-      setForm({ tipo: 'ingreso', monto: '', concepto: '', observaciones: '' });
+      setForm({ tipo: 'ingreso', monto: '', concepto: '', observaciones: '', medio_pago: 'efectivo' });
       
       if (modoVista === 'diario') {
         await cargarMovimientos();
@@ -267,7 +281,8 @@ const Caja = () => {
     setEliminando(movimientoId);
     try {
       const token = await getAccessToken();
-      const res = await fetch(`${API_URL}/caja/movimiento/${movimientoId}?orgId=${orgId}`, {
+      const suc = sucursalSeleccionada?.id || 'principal';
+      const res = await fetch(`${API_URL}/caja/movimiento/${movimientoId}?orgId=${orgId}&sucursalId=${encodeURIComponent(suc)}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -482,7 +497,7 @@ const Caja = () => {
           Agregar Movimiento
         </h2>
         
-        <form onSubmit={handleAgregar} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+        <form onSubmit={handleAgregar} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
             <select 
@@ -493,6 +508,21 @@ const Caja = () => {
             >
               <option value="ingreso">Ingreso</option>
               <option value="egreso">Egreso</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Medio</label>
+            <select
+              name="medio_pago"
+              value={form.medio_pago}
+              onChange={handleFormChange}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="efectivo">Efectivo</option>
+              <option value="tarjeta">Tarjeta</option>
+              <option value="transferencia">Transferencia</option>
+              <option value="MercadoPago">MercadoPago / billetera</option>
             </select>
           </div>
           

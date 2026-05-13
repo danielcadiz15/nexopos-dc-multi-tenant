@@ -460,7 +460,7 @@ const Stock = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">
-            Gestión de Inventario
+            {location.pathname === '/stock/ajustes' ? 'Ajustes de Stock' : 'Gestión de Inventario'}
           </h1>
           <p className="text-gray-600 text-sm mt-1">
             <FaStore className="inline mr-1" />
@@ -551,6 +551,13 @@ const Stock = () => {
               icon={<FaBoxOpen />}
             >
               Inicializar Stock
+            </Button>
+            <Button
+              color="primary"
+              onClick={irATransferencias}
+              icon={<FaExchangeAlt />}
+            >
+              Transferir entre sucursales
             </Button>
             <Button color="primary" onClick={onImprimirClick} className="mb-4">
               Imprimir listado

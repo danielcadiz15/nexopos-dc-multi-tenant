@@ -54,11 +54,11 @@ const SucursalSelector = () => {
 
   return (
     <div className="flex items-center">
-      <FaStore className="mr-2 text-gray-500" />
+      <FaStore className="mr-2 text-slate-500" />
       <select
         value={sucursalSeleccionada?.id || ''}
         onChange={(e) => cambiarSucursal(e.target.value)}
-        className="text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+        className="nexo-field max-w-[220px] py-2 text-sm sm:max-w-xs"
         disabled={loadingSucursales}
       >
         <option value="">

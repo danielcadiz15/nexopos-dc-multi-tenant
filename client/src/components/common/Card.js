@@ -27,27 +27,20 @@ const Card = ({
   noPadding = false
 }) => {
   return (
-    <div className="bg-white shadow rounded-lg overflow-hidden">
-      {/* Cabecera con título y acciones */}
+    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-md shadow-slate-900/5 ring-1 ring-slate-900/[0.04]">
       {(title || actions) && (
-        <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-          {/* Título con icono opcional */}
+        <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-slate-50/90 to-white px-4 py-3 sm:px-5">
           {title && (
-            <h3 className="text-lg font-medium text-gray-700 flex items-center">
-              {icon && <span className="mr-2">{icon}</span>}
+            <h3 className="flex items-center text-base font-semibold tracking-tight text-slate-800 sm:text-lg">
+              {icon && <span className="mr-2 text-indigo-500">{icon}</span>}
               {title}
             </h3>
           )}
-          
-          {/* Acciones opcionales */}
-          {actions && <div>{actions}</div>}
+          {actions && <div className="shrink-0">{actions}</div>}
         </div>
       )}
-      
-      {/* Contenido principal */}
-      <div className={noPadding ? '' : 'p-4'}>
-        {children}
-      </div>
+
+      <div className={noPadding ? '' : 'p-4 sm:p-5'}>{children}</div>
     </div>
   );
 };

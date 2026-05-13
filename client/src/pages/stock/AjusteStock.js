@@ -437,7 +437,7 @@ const AjusteStock = () => {
                     onChange={(e) => setCantidad(e.target.value)}
                     min="0.001"
 					step="0.001"
-                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="nexo-field"
                     required
                   />
                   <p className="mt-1 text-sm text-gray-500">
@@ -458,7 +458,7 @@ const AjusteStock = () => {
                     value={cantidadAjuste}
                     onChange={(e) => setCantidadAjuste(e.target.value)}
 					step="any"
-                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="nexo-field"
                     placeholder="Ej: 10 o -5"
                     required
                   />
@@ -477,7 +477,7 @@ const AjusteStock = () => {
                   value={motivo}
                   onChange={(e) => setMotivo(e.target.value)}
                   rows={3}
-                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field"
                   placeholder="Explica el motivo del ajuste..."
                   required
                 />

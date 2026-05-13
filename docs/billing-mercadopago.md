@@ -1,9 +1,9 @@
 # Licencias — Mercado Pago (abono mensual)
 
-Integración server-side para cobrar la **licencia NexoPOS** en **ARS** y **extender automáticamente** el campo `paidUntil` (+1 mes por cada pago **aprobado**). Incluye:
+Integración server-side para cobrar la **licencia NexoPOS** en **ARS** y **extender automáticamente** el campo `paidUntil` (**30 días** por cada pago **aprobado**, anclados a `date_approved` de MP, no un mes calendario). Incluye:
 
-- **Checkout Pro (preferencia)** — pago único por un mes.
-- **Preapproval** — suscripción con débito recurrente mensual; cada cobro aprobado suma un mes vía webhook.
+- **Checkout Pro (preferencia)** — pago único que suma 30 días de vigencia.
+- **Preapproval** — suscripción con débito recurrente; cada cobro aprobado suma 30 días vía webhook.
 - **Webhook** — `POST/GET …/api/billing/mercadopago/webhook` (confirmación consultando `GET /v1/payments/:id`; idempotente con `billingMercadoPago/pay_<id>`).
 
 ## Requisitos
@@ -56,11 +56,24 @@ Hay **tres planes** con precio mensual independiente en **ARS**:
 | `premium` | Premium |
 
 - **Firestore** `platform/billing.planPrices`: objeto `{ basic, intermediate, premium }` (números ≥ 0).
+- **Defaults comerciales** si no hay configuración guardada: Básica `$80.000`, Intermedia `$120.000`, Premium `$180.000`.
 - **Compatibilidad**: si solo existe `monthlyPriceARS` (dato viejo), se usa como precio de **Básica** y se refleja en `planPrices.basic` al guardar desde admin.
 - **Panel super admin** (`/admin`): tarjeta *Licencias — precios por plan* → guarda los tres valores.
 - Variable **`LICENSE_MONTHLY_PRICE_ARS`** en Functions sigue siendo solo **fallback para Básica** si no hay `planPrices.basic` en Firestore.
 
-**Checkout y suscripción** usan el plan de la empresa (`companies/.../config/license.plan`) o el plan elegido en el modal **Configuración → Licencia**, y cobran el monto de `planPrices` correspondiente. Si ese plan tiene precio 0, los botones de pago quedan deshabilitados aunque otro plan sí tenga precio.
+**Checkout y suscripción** usan el plan de la empresa (`companies/.../config/license.plan`) o el plan elegido en el modal **Configuración → Licencia**, y cobran el monto de `planPrices` correspondiente.
+Si ese plan tiene precio 0, los botones de pago quedan deshabilitados aunque otro plan sí tenga precio.
+
+## Flujo nuevas empresas: kit + abono
+
+El modelo comercial para nuevas empresas es:
+
+1. En el alta se elige el abono futuro (`chosenPlan`): Básica, Intermedia o Premium.
+2. Los dos primeros pagos son cuotas fijas del **kit inicial**: `$250.000` cada una (`onboardingInstallmentsTotal = 2`, `onboardingInstallmentAmountARS = 250000`).
+3. Durante esas cuotas, la licencia opera con versión completa (`plan = premium`) para instalación, carga inicial y capacitación.
+4. Desde el tercer pago, Mercado Pago cobra el valor del `chosenPlan` y el webhook aplica el preset de módulos correspondiente.
+
+La empresa no necesita que un superadmin cambie el plan manualmente después del alta; el plan elegido queda persistido en `companies/{orgId}/config/license.chosenPlan` y `licenses/{orgId}.chosenPlan`.
 
 Los valores históricos de plan **`pro`** y **`enterprise`** se normalizan a **Intermedia** y **Premium** al leer/guardar.
 
@@ -76,8 +89,8 @@ Recomendado suscribir notificaciones de **Pagos** (`payment`). El handler acepta
 
 1. **Configuración empresa** → **Licencia** → *Renovar* con Mercado Pago.
 2. El checkout se abre en la **misma ventana** (mejor sesión MP y menos casos de botón «Pagar» deshabilitado por cookies entre pestañas). Con **tarjeta**, en Argentina suele hacer falta elegir **cuotas** y completar **titular y DNI** antes de que se habilite pagar.
-3. Al volver, la app muestra toasts según `?mp=` en la URL.
-4. La extensión de licencia ocurre cuando MP notifica y el pago figura **approved** (puede demorar segundos).
+3. Al volver, MP redirige al **inicio** (`/?mp=approved|failure|pending` o `?mp=sub_return` tras preapproval). Un modal global muestra el resultado y se limpia la query.
+4. La extensión de licencia ocurre cuando MP notifica y el pago figura **approved** (puede demorar segundos); la barra de licencia se refresca al volver y de nuevo a los pocos segundos.
 
 Variable opcional en el build del cliente: `REACT_APP_MERCADOPAGO_SANDBOX=true` para priorizar `sandbox_init_point` cuando probás con credenciales de prueba.
 
@@ -114,6 +127,7 @@ La barra superior de la app muestra siempre **plan**, **estado / días o cuenta 
 - `functions/index.js` — registro de rutas `/billing` y `/admin/platform/billing`.
 - `client/src/utils/planTiers.js` — misma semántica de planes en el front (mantener alineado con Functions).
 - `client/src/services/billing.service.js` — llamadas desde el front.
+- `client/src/components/billing/MercadoPagoReturnHandler.js` — modal de retorno MP (query `?mp=`).
 - `client/src/pages/configuracion/configuracionempresa.js` — modal Licencia.
 - `client/src/pages/admin/AdminPanel.js` — precio mensual.
 
@@ -136,7 +150,7 @@ Para compilar y subir **Hosting + Functions + reglas**, seguí la guía **[Despl
 2. **Redeploy** de `functions:api` tras rotar el secreto (`firebase deploy --only functions:api --project nexopos-dc --force`).
 3. **Precios** `platform/billing.planPrices` (Básica / Intermedia / Premium): al menos uno mayor que cero; **o** solo `monthlyPriceARS` legacy (equivale a Básica); **o** `LICENSE_MONTHLY_PRICE_ARS` en Cloud Run como fallback de Básica.
 4. **Webhook** en [Mercado Pago Developers](https://www.mercadopago.com.ar/developers/panel/app): misma URL de la tabla, eventos de **payment**.
-5. **Prueba manual**: en una empresa, **Configuración → Licencia** → pago de un mes; tras aprobar, revisar `paidUntil` en `companies/{orgId}/config/license` y doc idempotente `billingMercadoPago/pay_<paymentId>`.
+5. **Prueba manual**: en una empresa, **Configuración → Licencia** → pago; tras aprobar, revisar `paidUntil` (≈30 días desde acreditación o apilado sobre vigencia previa) en `companies/{orgId}/config/license` y doc idempotente `billingMercadoPago/pay_<paymentId>`.
 
 ## Verificación automática (smoke tests)
 

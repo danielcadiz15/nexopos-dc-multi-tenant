@@ -6,9 +6,12 @@ import Spinner from '../../common/Spinner';
 import listasPreciosService from '../../../services/listas-precios.service';
 import { formatCurrency } from '../../../utils/format';
 import { useAuth } from '../../../contexts/AuthContext';
+import useEmpresaConfig from '../../../hooks/useEmpresaConfig';
+import { etiquetaLista } from '../../../utils/listasPreciosLabels';
 
 const ListasPreciosModal = ({ isOpen, onClose, producto, onUpdate }) => {
   const { currentUser } = useAuth();
+  const { empresaConfig } = useEmpresaConfig();
   const [loading, setLoading] = useState(false);
   const [mostrarHistorial, setMostrarHistorial] = useState(false);
   const [historial, setHistorial] = useState([]);
@@ -94,27 +97,42 @@ const ListasPreciosModal = ({ isOpen, onClose, producto, onUpdate }) => {
   };
   
   const handleCostoChange = (value) => {
-    const costo = parseFloat(value) || 0;
-    setFormData(prev => ({
+    if (value === '') {
+      setFormData((prev) => ({ ...prev, precio_costo: '' }));
+      return;
+    }
+    const n = parseFloat(String(value).replace(',', '.'));
+    setFormData((prev) => ({
       ...prev,
-      precio_costo: costo
+      precio_costo: Number.isFinite(n) ? n : prev.precio_costo
     }));
   };
   
   const handlePrecioChange = (lista, value) => {
-    const precio = parseFloat(value) || 0;
-    setFormData(prev => ({
+    if (value === '') {
+      setFormData((prev) => ({
+        ...prev,
+        listas_precios: { ...prev.listas_precios, [lista]: '' }
+      }));
+      return;
+    }
+    const precio = parseFloat(String(value).replace(',', '.'));
+    setFormData((prev) => ({
       ...prev,
       listas_precios: {
         ...prev.listas_precios,
-        [lista]: precio
+        [lista]: Number.isFinite(precio) ? precio : prev.listas_precios[lista]
       }
     }));
   };
   
   const handleMargenChange = (lista, margen) => {
+    if (margen === '') {
+      setMargenes((prev) => ({ ...prev, [lista]: '' }));
+      return;
+    }
     const costo = parseFloat(formData.precio_costo) || 0;
-    const margenFloat = parseFloat(margen) || 0;
+    const margenFloat = parseFloat(String(margen).replace(',', '.')) || 0;
     const nuevoPrecio = costo * (1 + margenFloat / 100);
     
     setFormData(prev => ({
@@ -186,11 +204,11 @@ const ListasPreciosModal = ({ isOpen, onClose, producto, onUpdate }) => {
       
       // Preparar datos para enviar
       const datosActualizacion = {
-        precio_costo: parseFloat(formData.precio_costo),
+        precio_costo: parseFloat(formData.precio_costo) || 0,
         listas_precios: {
-          mayorista: parseFloat(formData.listas_precios.mayorista),
-          interior: parseFloat(formData.listas_precios.interior),
-          posadas: parseFloat(formData.listas_precios.posadas)
+          mayorista: parseFloat(formData.listas_precios.mayorista) || 0,
+          interior: parseFloat(formData.listas_precios.interior) || 0,
+          posadas: parseFloat(formData.listas_precios.posadas) || 0
         },
         motivo: formData.motivo,
         usuario_id: currentUser?.uid
@@ -245,7 +263,7 @@ const ListasPreciosModal = ({ isOpen, onClose, producto, onUpdate }) => {
             </div>
             <input
               type="number"
-              value={formData.precio_costo}
+              value={formData.precio_costo === '' ? '' : formData.precio_costo}
               onChange={(e) => handleCostoChange(e.target.value)}
               className="pl-10 w-full border rounded-md px-3 py-2"
               step="0.01"
@@ -282,7 +300,7 @@ const ListasPreciosModal = ({ isOpen, onClose, producto, onUpdate }) => {
           {['mayorista', 'interior', 'posadas'].map(lista => (
             <div key={lista} className="border rounded-lg p-4 bg-gray-50">
               <div className="flex justify-between items-center mb-2">
-                <label className="font-medium capitalize">{lista}</label>
+                <label className="font-medium">{etiquetaLista(empresaConfig, lista)}</label>
                 <span className="text-sm text-gray-600">
                   Margen: {margenes[lista]}%
                 </span>
@@ -295,7 +313,11 @@ const ListasPreciosModal = ({ isOpen, onClose, producto, onUpdate }) => {
                   </div>
                   <input
                     type="number"
-                    value={formData.listas_precios[lista]}
+                    value={
+                      formData.listas_precios[lista] === ''
+                        ? ''
+                        : formData.listas_precios[lista]
+                    }
                     onChange={(e) => handlePrecioChange(lista, e.target.value)}
                     className="pl-10 w-full border rounded-md px-3 py-2"
                     step="0.01"
@@ -310,7 +332,7 @@ const ListasPreciosModal = ({ isOpen, onClose, producto, onUpdate }) => {
                   </div>
                   <input
                     type="number"
-                    value={margenes[lista]}
+                    value={margenes[lista] === '' ? '' : margenes[lista]}
                     onChange={(e) => handleMargenChange(lista, e.target.value)}
                     className="pl-10 w-full border rounded-md px-3 py-2"
                     step="0.01"

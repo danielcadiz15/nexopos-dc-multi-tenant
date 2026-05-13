@@ -6,9 +6,10 @@ import { useNavigate, useLocation } from 'react-router-dom';
 // Servicios
 import configuracionService from '../../services/configuracion.service';
 import { getEmailActionCodeSettings } from '../../utils/emailVerification';
-import { createTenant, joinTenant, setActiveTenant } from '../../services/firebase.service';
+import { createTenant, joinTenant, setActiveTenant, migrateOrgCatalogDefaults } from '../../services/firebase.service';
 import { useAuth } from '../../contexts/AuthContext';
 import { isSuperAdminEmail } from '../../config/superAdmin';
+import { MODULE_KEYS, buildModulosDefaultIntermediate } from '../../config/modulesCatalog';
 
 // Firebase
 import { db, auth } from '../../firebase/config';
@@ -16,18 +17,26 @@ import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getBillingPublicConfig, createLicenseMercadoPagoPreference } from '../../services/billing.service';
 import { normalizeLicensePlan, PLAN_LABELS_ES } from '../../utils/planTiers';
+import {
+  getNextBillingAmountARS,
+  getPreferredCheckoutPlan,
+  isOnboardingPaymentPhase
+} from '../../utils/billingOnboarding';
 import MercadoPagoMark from '../../components/common/MercadoPagoMark';
+import PlanesAbonoExplainerModal from '../../components/configuracion/PlanesAbonoExplainerModal';
+import { PLAN_IDS } from '../../utils/planDetails';
 import { getMercadoPagoCheckoutUrl, goToMercadoPagoCheckout } from '../../utils/mercadopagoCheckout';
 
 // Componentes
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
+import PasswordInput from '../../components/common/PasswordInput';
 
 // Iconos
 import { 
   FaBuilding, FaSave, FaUpload, FaTimes,
   FaPhone, FaMapMarkerAlt, FaFileInvoice,
-  FaImage, FaCog, FaCogs
+  FaImage, FaCog, FaCogs, FaDatabase, FaLayerGroup
 } from 'react-icons/fa';
 
 /** Modal simple */
@@ -53,7 +62,9 @@ function Modal({ open, title, children, onClose }){
  * Permite configurar todos los datos que aparecerán en las facturas
  */
 const ConfiguracionEmpresa = () => {
-  const { orgId, currentUser, refreshAuthSession } = useAuth();
+  const { orgId, currentUser, refreshAuthSession, syncEffectivePermissions } = useAuth();
+  const [migrandoCatalogoSugerido, setMigrandoCatalogoSugerido] = useState(false);
+  const [showPlanesExplainer, setShowPlanesExplainer] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -66,33 +77,34 @@ const ConfiguracionEmpresa = () => {
     } catch { return localStorage.getItem('companyId') || null; }
   }, [orgId]);
 
+  const aplicarCatalogoSugerido = useCallback(async () => {
+    try {
+      setMigrandoCatalogoSugerido(true);
+      const cid = await getCompanyId();
+      if (!cid) {
+        toast.error('No hay empresa activa.');
+        return;
+      }
+      const superA = isSuperAdminEmail(currentUser?.email);
+      const res = await migrateOrgCatalogDefaults(superA ? cid : undefined);
+      const creadas = res?.categoriasCreadas ?? 0;
+      const prov = res?.proveedorCreado ? 'Se creó Proveedor general.' : 'El proveedor general ya existía.';
+      const emp = (res?.empresaCamposAplicados || []).length
+        ? `Configuración de listas: ${(res.empresaCamposAplicados || []).join(', ')}.`
+        : 'Datos de empresa de listas ya estaban definidos.';
+      toast.success(`Catálogo sugerido aplicado. +${creadas} categorías nuevas. ${prov} ${emp}`);
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.message || 'No se pudo aplicar el catálogo sugerido.');
+    } finally {
+      setMigrandoCatalogoSugerido(false);
+    }
+  }, [getCompanyId, currentUser?.email]);
+
   // =================== MÓDULOS ===================
   const [showModulos, setShowModulos] = useState(false);
   const [savingModulos, setSavingModulos] = useState(false);
-  const MODULOS_DEFAULT = {
-    productos: true,
-    categorias: true,
-    clientes: true,
-    proveedores: true,
-    compras: true,
-    ventas: true,
-    punto_venta: true,
-    stock: true,
-    listas_precios: true,
-    transferencias: true,
-    reportes: true,
-    promociones: false,
-    caja: true,
-    gastos: true,
-    devoluciones: true,
-    auditoria: false,
-    vehiculos: false,
-    produccion: false,
-    recetas: false,
-    materias_primas: false,
-    configuracion: true
-  };
-  const [modulos, setModulos] = useState(MODULOS_DEFAULT);
+  const [modulos, setModulos] = useState(() => ({ ...buildModulosDefaultIntermediate() }));
 
   const cargarModulos = useCallback(async ()=>{
     try{
@@ -106,7 +118,7 @@ const ConfiguracionEmpresa = () => {
         const snapTenant = await getDoc(refTenant);
         if (snapTenant.exists()) data = snapTenant.data();
       }
-      setModulos({ ...MODULOS_DEFAULT, ...(data || {}) });
+      setModulos({ ...buildModulosDefaultIntermediate(), ...(data || {}) });
     }catch(e){ console.warn('No se pudieron cargar módulos:', e.message); }
   },[getCompanyId]);
 
@@ -120,6 +132,7 @@ const ConfiguracionEmpresa = () => {
       await setDoc(doc(db, `tenants/${cid}/config/modules`), payload, { merge: true });
       toast.success('Módulos guardados');
       setShowModulos(false);
+      await syncEffectivePermissions();
     }catch(e){ console.error('Error guardando módulos:', e); toast.error('No se pudieron guardar los módulos'); }
     finally{ setSavingModulos(false); }
   };
@@ -149,10 +162,16 @@ const ConfiguracionEmpresa = () => {
   }, [showLic]);
 
   const abrirPagoMercadoPagoMes = async () => {
+    const plan = getPreferredCheckoutPlan(lic);
+    const precio = getNextBillingAmountARS(lic, billingMp);
+    if (!billingMp?.mercadoPagoTokenPresent || precio <= 0) {
+      toast.warning('El cobro con Mercado Pago no está disponible o falta configurar el monto.');
+      return;
+    }
     setBillingMpLoading(true);
     try {
       const { data, status } = await createLicenseMercadoPagoPreference({
-        plan: normalizeLicensePlan(lic.plan)
+        plan
       });
       const url = getMercadoPagoCheckoutUrl(data);
       if (status === 200 && data?.success && url) {
@@ -183,8 +202,17 @@ const ConfiguracionEmpresa = () => {
         const s2 = await getDoc(ref2);
         if(s2.exists()) data = s2.data();
       }
-      const merged = { paidUntil: '', blocked: false, reason: '', plan: 'basic', pagoBilleteraUrl: '', ...(data||{}) };
+      const merged = {
+        paidUntil: '',
+        blocked: false,
+        reason: '',
+        plan: 'basic',
+        chosenPlan: 'basic',
+        pagoBilleteraUrl: '',
+        ...(data || {})
+      };
       merged.plan = normalizeLicensePlan(merged.plan);
+      merged.chosenPlan = normalizeLicensePlan(merged.chosenPlan || merged.plan);
       setLic(merged);
       // calcular días restantes
       if (merged.paidUntil) {
@@ -193,33 +221,6 @@ const ConfiguracionEmpresa = () => {
       } else { setLicDaysLeft(null); }
     }catch(e){ console.warn('No se pudo cargar licencia:', e.message); }
   },[getCompanyId]);
-
-  /** Retorno Checkout Pro / suscripción MP (después de cargarLicencia) */
-  useEffect(() => {
-    const q = new URLSearchParams(location.search || '');
-    const mp = q.get('mp');
-    if (!mp) return;
-
-    if (mp === 'approved') {
-      toast.success(
-        'Mercado Pago aprobó el pago. Tu licencia se extiende automáticamente en unos segundos — si no ves la nueva fecha, recargá la página.',
-        { autoClose: 8000 }
-      );
-      cargarLicencia();
-    } else if (mp === 'failure') {
-      toast.error('El pago no se completó. Podés reintentar desde el botón de pago en Licencia.');
-    } else if (mp === 'pending') {
-      toast.warning(
-        'Pago pendiente. Cuando Mercado Pago lo acredite, sumamos un mes a la licencia (recibís aviso por la app).',
-        { autoClose: 8000 }
-      );
-    } else if (mp === 'sub_return') {
-      toast.info('Volviste desde Mercado Pago. Si cerraste el pago, esperá la actualización automática de la vigencia.', {
-        autoClose: 7000
-      });
-    }
-    navigate({ pathname: location.pathname, search: '' }, { replace: true });
-  }, [location.search, location.pathname, navigate, cargarLicencia]);
 
   useEffect(() => {
     const q = new URLSearchParams(location.search || '');
@@ -289,6 +290,8 @@ const ConfiguracionEmpresa = () => {
   const [subiendoLogo, setSubiendoLogo] = useState(false);
   const [empresaNombre, setEmpresaNombre] = useState('');
   const [empresaSlug, setEmpresaSlug] = useState('');
+  const [codigoAdministrador, setCodigoAdministrador] = useState('');
+  const [empresaChosenPlan, setEmpresaChosenPlan] = useState(() => sessionStorage.getItem('pendingChosenPlan') || 'basic');
   const [joinCode, setJoinCode] = useState('');
   const [creandoOrg, setCreandoOrg] = useState(false);
   const [uniendoOrg, setUniendoOrg] = useState(false);
@@ -300,6 +303,7 @@ const ConfiguracionEmpresa = () => {
   const [regPass, setRegPass] = useState('');
   const [regPass2, setRegPass2] = useState('');
   const [regEmpresa, setRegEmpresa] = useState('');
+  const [regChosenPlan, setRegChosenPlan] = useState('basic');
   const [creandoCuentaEmpresa, setCreandoCuentaEmpresa] = useState(false);
 
   const handleRegistroYCreacion = async (e) => {
@@ -316,6 +320,7 @@ const ConfiguracionEmpresa = () => {
       await sendEmailVerification(cred.user, getEmailActionCodeSettings());
       const empresaTrim = regEmpresa.trim();
       sessionStorage.setItem('pendingEmpresaNombre', empresaTrim);
+      sessionStorage.setItem('pendingChosenPlan', regChosenPlan);
       toast.success(
         'Correo enviado: revisá tu bandeja para «Verificación de correo electrónico», tocá el enlace y si no ves el mensaje, revisá spam. Volvé a la pantalla «Verificá tu correo» del sistema para crear la empresa.',
         { autoClose: 7000 }
@@ -346,6 +351,10 @@ const ConfiguracionEmpresa = () => {
   const handleCrearEmpresa = async (e) => {
     e?.preventDefault?.();
     if (!empresaNombre.trim()) { toast.error('Nombre de empresa requerido'); return; }
+    if (!codigoAdministrador.trim()) {
+      toast.error('Ingresá el código de habilitación que tu administrador generó para tu correo.');
+      return;
+    }
     try {
       const { emailVerified } = await refreshAuthSession();
       if (!emailVerified) {
@@ -356,13 +365,22 @@ const ConfiguracionEmpresa = () => {
         return;
       }
       setCreandoOrg(true);
-      const res = await createTenant(empresaNombre.trim(), empresaSlug.trim() || null);
+      const selectedPlan = empresaChosenPlan || sessionStorage.getItem('pendingChosenPlan') || 'basic';
+      const res = await createTenant(empresaNombre.trim(), empresaSlug.trim() || null, codigoAdministrador.trim(), selectedPlan);
+      if (!res?.success || !res.orgId) {
+        throw new Error(res?.message || 'No se pudo crear la empresa');
+      }
       await setActiveTenant(res.orgId);
       toast.success('Empresa creada y activada');
       await postOnboardingRedirect();
     } catch (err) {
       console.error('Error creando empresa:', err);
-      toast.error(err.message || 'Error creando empresa');
+      const c = err?.code || '';
+      let m = err?.message || 'Error creando empresa';
+      if (c === 'functions/permission-denied') {
+        m = err.message?.includes?.('correo') ? err.message : 'Código de habilitación incorrecto o no válido.';
+      }
+      toast.error(m);
     } finally { setCreandoOrg(false); }
   };
 
@@ -438,11 +456,8 @@ const ConfiguracionEmpresa = () => {
       try { const configExistente = await configuracionService.obtener(); if (configExistente && configExistente.razon_social) { await configuracionService.actualizar(datosCompletos); } else { await configuracionService.guardar(datosCompletos); } }
       catch { await configuracionService.guardar(datosCompletos); }
       toast.success('Configuración guardada correctamente'); setLogoUrl(logoUrlFinal); setLogoFile(null); setLogoPreview(null);
-      if (wizardMode && orgId) {
-        navigate('/', { replace: true });
-        return;
-      }
       setWizardMode(false);
+      navigate('/', { replace: true });
     } catch (error) { console.error('Error al guardar configuración:', error); toast.error('Error al guardar la configuración'); }
     finally { setGuardando(false); }
   };
@@ -506,12 +521,37 @@ const ConfiguracionEmpresa = () => {
     <div className="space-y-6">
       {!auth.currentUser && (
         <Card>
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Crear cuenta y empresa (Demo 7 días)</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Crear cuenta y empresa</h3>
+          <p className="mb-4 text-sm text-gray-600">
+            Alta con kit inicial: dos pagos de <strong>$250.000</strong> con sistema completo. Desde el tercer mes se cobra
+            el abono que elijas.
+          </p>
           <form onSubmit={handleRegistroYCreacion} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <input className="input" type="email" placeholder="tu@correo.com" value={regEmail} onChange={e=>setRegEmail(e.target.value)} />
             <input className="input" type="text" placeholder="Nombre de empresa (Ej: Mi kiosco SRL)" value={regEmpresa} onChange={e=>setRegEmpresa(e.target.value)} />
-            <input className="input" type="password" placeholder="Contraseña" value={regPass} onChange={e=>setRegPass(e.target.value)} />
-            <input className="input" type="password" placeholder="Confirmar contraseña" value={regPass2} onChange={e=>setRegPass2(e.target.value)} />
+            <PasswordInput className="input" name="regPass" placeholder="Contraseña" value={regPass} onChange={(e) => setRegPass(e.target.value)} autoComplete="new-password" />
+            <PasswordInput className="input" name="regPass2" placeholder="Confirmar contraseña" value={regPass2} onChange={(e) => setRegPass2(e.target.value)} autoComplete="new-password" />
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Abono desde el tercer mes</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {PLAN_IDS.map((id) => (
+                  <label
+                    key={id}
+                    className={`rounded-lg border p-3 text-sm cursor-pointer ${regChosenPlan === id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white'}`}
+                  >
+                    <input
+                      type="radio"
+                      name="regChosenPlan"
+                      value={id}
+                      checked={regChosenPlan === id}
+                      onChange={(e) => setRegChosenPlan(e.target.value)}
+                      className="mr-2"
+                    />
+                    <strong>{PLAN_LABELS_ES[id]}</strong>
+                  </label>
+                ))}
+              </div>
+            </div>
             <div className="md:col-span-2">
               <Button type="submit" disabled={creandoCuentaEmpresa}>{creandoCuentaEmpresa ? 'Creando...' : 'Crear cuenta y empresa'}</Button>
             </div>
@@ -573,6 +613,44 @@ const ConfiguracionEmpresa = () => {
                 placeholder="Slug corto opcional para URL personalizada"
                 value={empresaSlug}
                 onChange={e=>setEmpresaSlug(e.target.value)}
+              />
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">
+                  Abono desde el tercer mes
+                </label>
+                <div className="grid grid-cols-1 gap-2">
+                  {PLAN_IDS.map((id) => (
+                    <label
+                      key={id}
+                      className={`rounded-lg border p-3 text-sm cursor-pointer ${empresaChosenPlan === id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white'}`}
+                    >
+                      <input
+                        type="radio"
+                        name="empresaChosenPlan"
+                        value={id}
+                        checked={empresaChosenPlan === id}
+                        onChange={(e) => {
+                          setEmpresaChosenPlan(e.target.value);
+                          sessionStorage.setItem('pendingChosenPlan', e.target.value);
+                        }}
+                        className="mr-2"
+                      />
+                      <strong>{PLAN_LABELS_ES[id]}</strong>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  Primero se cobran 2 cuotas de kit de $250.000; después este abono.
+                </p>
+              </div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase">Código de habilitación (tu correo)</label>
+              <input
+                type="password"
+                autoComplete="off"
+                className="input"
+                placeholder="Te lo pasan desde el panel admin, vinculado a este correo."
+                value={codigoAdministrador}
+                onChange={e => setCodigoAdministrador(e.target.value)}
               />
               <Button type="submit" disabled={creandoOrg}>{creandoOrg ? 'Creando...' : 'Crear'}</Button>
             </form>
@@ -652,7 +730,7 @@ const ConfiguracionEmpresa = () => {
                     name="razon_social"
                     value={formData.razon_social}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Nombre legal registrado ante AFIP"
                   />
                 </div>
@@ -663,7 +741,7 @@ const ConfiguracionEmpresa = () => {
                     name="nombre_fantasia"
                     value={formData.nombre_fantasia}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Ej: Almacén del Centro"
                   />
                 </div>
@@ -674,7 +752,7 @@ const ConfiguracionEmpresa = () => {
                     value={formData.slogan}
                     onChange={handleInputChange}
                     rows={2}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Ej: Calidad y precio desde 1998"
                   />
                 </div>
@@ -690,7 +768,7 @@ const ConfiguracionEmpresa = () => {
                     name="cuit"
                     value={formData.cuit}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="20-12345678-9"
                   />
                 </div>
@@ -700,7 +778,7 @@ const ConfiguracionEmpresa = () => {
                     name="condicion_iva"
                     value={formData.condicion_iva}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                   >
                     <option value="Responsable Inscripto">Responsable Inscripto</option>
                     <option value="Monotributo">Monotributo</option>
@@ -715,7 +793,7 @@ const ConfiguracionEmpresa = () => {
                     name="ingresos_brutos"
                     value={formData.ingresos_brutos}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Número o exención provincial (si aplica)"
                   />
                 </div>
@@ -726,7 +804,7 @@ const ConfiguracionEmpresa = () => {
                     name="punto_venta"
                     value={formData.punto_venta}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="0001"
                   />
                 </div>
@@ -742,7 +820,7 @@ const ConfiguracionEmpresa = () => {
                     name="direccion_calle"
                     value={formData.direccion_calle}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Av. Principal 123"
                   />
                 </div>
@@ -753,7 +831,7 @@ const ConfiguracionEmpresa = () => {
                     name="direccion_localidad"
                     value={formData.direccion_localidad}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Ej: Rosario"
                   />
                 </div>
@@ -764,7 +842,7 @@ const ConfiguracionEmpresa = () => {
                     name="direccion_provincia"
                     value={formData.direccion_provincia}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Ej: Santa Fe"
                   />
                 </div>
@@ -775,7 +853,7 @@ const ConfiguracionEmpresa = () => {
                     name="telefono_principal"
                     value={formData.telefono_principal}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="+54 376 123-4567"
                   />
                 </div>
@@ -786,7 +864,7 @@ const ConfiguracionEmpresa = () => {
                     name="email"
                     value={formData.email}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="contacto@empresa.com"
                   />
                 </div>
@@ -801,7 +879,7 @@ const ConfiguracionEmpresa = () => {
                     name="formato_predeterminado"
                     value={formData.formato_predeterminado}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                   >
                     <option value="termico">Térmico (80mm)</option>
                     <option value="a4">A4</option>
@@ -813,7 +891,7 @@ const ConfiguracionEmpresa = () => {
                     name="serie_actual"
                     value={formData.serie_actual}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                   >
                     <option value="A">A</option>
                     <option value="B">B</option>
@@ -829,7 +907,7 @@ const ConfiguracionEmpresa = () => {
                     name="numeracion_inicial"
                     value={formData.numeracion_inicial}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                   />
                 </div>
                 <div className="flex items-center rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 mt-6">
@@ -838,7 +916,7 @@ const ConfiguracionEmpresa = () => {
                     name="imprimir_ticket_automaticamente"
                     checked={formData.imprimir_ticket_automaticamente}
                     onChange={handleInputChange}
-                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500/30"
                   />
                   <label className="ml-2 text-sm text-gray-800">Imprimir automáticamente al cerrar venta</label>
                 </div>
@@ -849,7 +927,7 @@ const ConfiguracionEmpresa = () => {
                     type="file"
                     accept="image/jpeg,image/png,image/svg+xml"
                     onChange={handleLogoChange}
-                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    className="nexo-field text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
                   />
                   <p className="text-xs text-gray-500 mt-1">PNG, JPG o SVG de hasta 2MB.</p>
                 </div>
@@ -859,7 +937,7 @@ const ConfiguracionEmpresa = () => {
             <div className="flex items-center justify-between pt-2 border-t border-gray-100">
               <button
                 type="button"
-                className="px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 disabled:opacity-50"
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
                 onClick={() => setWizardStep(prev => Math.max(prev - 1, 0))}
                 disabled={wizardStep === 0}
               >
@@ -925,7 +1003,7 @@ const ConfiguracionEmpresa = () => {
                   name="razon_social"
                   value={formData.razon_social}
                   onChange={handleInputChange}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="Nombre legal registrado ante AFIP"
                 />
               </div>
@@ -940,7 +1018,7 @@ const ConfiguracionEmpresa = () => {
                   name="nombre_fantasia"
                   value={formData.nombre_fantasia}
                   onChange={handleInputChange}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="Ej: Almacén del Centro"
                 />
               </div>
@@ -955,7 +1033,7 @@ const ConfiguracionEmpresa = () => {
                   value={formData.slogan}
                   onChange={handleInputChange}
                   rows={2}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="Ej: Calidad y precio desde 1998"
                 />
               </div>
@@ -979,7 +1057,7 @@ const ConfiguracionEmpresa = () => {
                   name="cuit"
                   value={formData.cuit}
                   onChange={handleInputChange}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="20-12345678-9"
                 />
               </div>
@@ -992,7 +1070,7 @@ const ConfiguracionEmpresa = () => {
                   name="condicion_iva"
                   value={formData.condicion_iva}
                   onChange={handleInputChange}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                 >
                   <option value="Responsable Inscripto">Responsable Inscripto</option>
                   <option value="Monotributo">Monotributo</option>
@@ -1010,7 +1088,7 @@ const ConfiguracionEmpresa = () => {
                   name="ingresos_brutos"
                   value={formData.ingresos_brutos}
                   onChange={handleInputChange}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="Número o exención provincial (si aplica)"
                 />
               </div>
@@ -1024,7 +1102,7 @@ const ConfiguracionEmpresa = () => {
                   name="punto_venta"
                   value={formData.punto_venta}
                   onChange={handleInputChange}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="0001"
                 />
               </div>
@@ -1049,7 +1127,7 @@ const ConfiguracionEmpresa = () => {
                     <img
                       src={logoPreview || logoUrl}
                       alt="Logo preview"
-                      className="h-24 w-24 object-contain border-2 border-gray-300 rounded-lg"
+                      className="h-24 w-24 rounded-xl border-2 border-slate-200 object-contain"
                     />
                     <button
                       type="button"
@@ -1067,11 +1145,11 @@ const ConfiguracionEmpresa = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Subir Logo
                 </label>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+                <div className="mt-1 flex justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 px-6 pb-6 pt-5">
                   <div className="space-y-1 text-center">
-                    <FaUpload className="mx-auto h-12 w-12 text-gray-400" />
-                    <div className="flex text-sm text-gray-600">
-                      <label className="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none">
+                    <FaUpload className="mx-auto h-12 w-12 text-slate-400" />
+                    <div className="flex text-sm text-slate-600">
+                      <label className="relative cursor-pointer rounded-lg bg-white font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none">
                         <span>Subir archivo</span>
                         <input
                           id="logo-upload"
@@ -1097,7 +1175,7 @@ const ConfiguracionEmpresa = () => {
                     name="tamaño_logo"
                     value={formData.tamaño_logo}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                   >
                     <option value="pequeño">Pequeño</option>
                     <option value="mediano">Mediano</option>
@@ -1113,7 +1191,7 @@ const ConfiguracionEmpresa = () => {
                     name="posicion_logo"
                     value={formData.posicion_logo}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                   >
                     <option value="izquierda">Izquierda</option>
                     <option value="centro">Centro</option>
@@ -1128,7 +1206,7 @@ const ConfiguracionEmpresa = () => {
                   name="mostrar_logo"
                   checked={formData.mostrar_logo}
                   onChange={handleInputChange}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500/30"
                 />
                 <label className="ml-2 block text-sm text-gray-900">
                   Mostrar logo en las facturas
@@ -1154,7 +1232,7 @@ const ConfiguracionEmpresa = () => {
                   name="direccion_calle"
                   value={formData.direccion_calle}
                   onChange={handleInputChange}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="Av. Principal 123"
                 />
               </div>
@@ -1169,7 +1247,7 @@ const ConfiguracionEmpresa = () => {
                     name="direccion_localidad"
                     value={formData.direccion_localidad}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Ej: Rosario"
                   />
                 </div>
@@ -1183,7 +1261,7 @@ const ConfiguracionEmpresa = () => {
                     name="direccion_provincia"
                     value={formData.direccion_provincia}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Ej: Santa Fe"
                   />
                 </div>
@@ -1199,7 +1277,7 @@ const ConfiguracionEmpresa = () => {
                     name="direccion_codigo_postal"
                     value={formData.direccion_codigo_postal}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Ej: S2000"
                   />
                 </div>
@@ -1213,7 +1291,7 @@ const ConfiguracionEmpresa = () => {
                     name="direccion_pais"
                     value={formData.direccion_pais}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Ej: Argentina"
                   />
                 </div>
@@ -1239,7 +1317,7 @@ const ConfiguracionEmpresa = () => {
                     name="telefono_principal"
                     value={formData.telefono_principal}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="+54 376 123-4567"
                   />
                 </div>
@@ -1253,7 +1331,7 @@ const ConfiguracionEmpresa = () => {
                     name="telefono_secundario"
                     value={formData.telefono_secundario}
                     onChange={handleInputChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="WhatsApp u otro teléfono (opcional)"
                   />
                 </div>
@@ -1268,7 +1346,7 @@ const ConfiguracionEmpresa = () => {
                   name="email"
                   value={formData.email}
                   onChange={handleInputChange}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="contacto@empresa.com"
                 />
               </div>
@@ -1282,7 +1360,7 @@ const ConfiguracionEmpresa = () => {
                   name="website"
                   value={formData.website}
                   onChange={handleInputChange}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  className="nexo-field sm:text-sm"
                   placeholder="www.empresa.com"
                 />
               </div>
@@ -1290,6 +1368,28 @@ const ConfiguracionEmpresa = () => {
           </Card>
         </div>
       </div>
+
+      <Card>
+        <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
+          <FaDatabase className="mr-2 text-indigo-600" />
+          Catálogo y listas (empresas anteriores)
+        </h3>
+        <p className="mb-4 text-sm text-gray-600">
+          Si tu empresa se creó antes de las mejoras por defecto, podés crear de un solo uso lo que falte: categorías
+          Bebidas, Comestibles, Limpieza, Accesorios y Otros; el proveedor <strong>Proveedor general</strong>; y en
+          datos de empresa las etiquetas <strong>Lista 1 / 2 / 3</strong> y la lista por defecto del punto de venta. No se
+          borra nada ni se duplica: solo se agrega lo ausente.
+        </p>
+        <Button
+          type="button"
+          color="secondary"
+          onClick={aplicarCatalogoSugerido}
+          disabled={migrandoCatalogoSugerido}
+          icon={migrandoCatalogoSugerido ? undefined : <FaCogs />}
+        >
+          {migrandoCatalogoSugerido ? 'Aplicando…' : 'Aplicar catálogo sugerido'}
+        </Button>
+      </Card>
 
       {/* Configuración de Facturas */}
       <Card>
@@ -1312,7 +1412,7 @@ const ConfiguracionEmpresa = () => {
               value={formData.numeracion_inicial}
               onChange={handleInputChange}
               min="1"
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="nexo-field sm:text-sm"
             />
           </div>
 
@@ -1324,7 +1424,7 @@ const ConfiguracionEmpresa = () => {
               name="serie_actual"
               value={formData.serie_actual}
               onChange={handleInputChange}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="nexo-field sm:text-sm"
             >
               <option value="A">A</option>
               <option value="B">B</option>
@@ -1341,7 +1441,7 @@ const ConfiguracionEmpresa = () => {
               name="formato_predeterminado"
               value={formData.formato_predeterminado}
               onChange={handleInputChange}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="nexo-field sm:text-sm"
             >
               <option value="termico">Térmico (80mm)</option>
               <option value="a4">A4</option>
@@ -1355,7 +1455,7 @@ const ConfiguracionEmpresa = () => {
                 name="imprimir_ticket_automaticamente"
                 checked={formData.imprimir_ticket_automaticamente}
                 onChange={handleInputChange}
-                className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500/30"
               />
               <span>
                 Imprimir automáticamente al cerrar venta
@@ -1396,7 +1496,7 @@ const ConfiguracionEmpresa = () => {
             placeholder="https://…"
             value={formData.caja_apk_url || ''}
             onChange={handleInputChange}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+            className="nexo-field mt-1"
           />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1411,7 +1511,7 @@ const ConfiguracionEmpresa = () => {
                 type="checkbox"
                 checked={formData.caja_modulos?.[key] !== false}
                 onChange={(event) => handleCajaModuloChange(key, event.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500/30"
               />
               <span>
                 <span className="font-semibold text-gray-800">{label}</span>
@@ -1451,7 +1551,7 @@ const ConfiguracionEmpresa = () => {
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:ring-offset-2"
         >
           Cancelar
         </button>
@@ -1481,7 +1581,7 @@ const ConfiguracionEmpresa = () => {
       {/* Modal Gestión de Módulos */}
       <Modal open={showModulos} title="Gestionar Módulos" onClose={()=> setShowModulos(false)}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {Object.keys(MODULOS_DEFAULT).map(key=> (
+          {MODULE_KEYS.map(key=> (
             <label key={key} className="flex items-center gap-2 p-2 rounded border">
               <input type="checkbox" checked={!!modulos[key]} onChange={e=> setModulos(prev=> ({ ...prev, [key]: e.target.checked }))} />
               <span className="capitalize">{key.replaceAll('_',' ')}</span>
@@ -1505,6 +1605,22 @@ const ConfiguracionEmpresa = () => {
         }
         onClose={()=> setShowLic(false)}
       >
+        <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50/90 via-white to-violet-50/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Tipos de planes</p>
+            <p className="mt-0.5 text-xs text-slate-600">
+              Compará módulos y ventajas de Básica, Intermedia y Premium en una guía visual.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPlanesExplainer(true)}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-indigo-700"
+          >
+            <FaLayerGroup className="h-4 w-4" />
+            Guía de planes
+          </button>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {isSuperAdminEmail(currentUser?.email) ? (
             <>
@@ -1513,7 +1629,10 @@ const ConfiguracionEmpresa = () => {
                 <select
                   className="input"
                   value={lic.plan}
-                  onChange={(e) => setLic((prev) => ({ ...prev, plan: e.target.value }))}
+                  onChange={(e) => {
+                    const p = normalizeLicensePlan(e.target.value);
+                    setLic((prev) => ({ ...prev, plan: p, chosenPlan: p }));
+                  }}
                 >
                   <option value="basic">{PLAN_LABELS_ES.basic}</option>
                   <option value="intermediate">{PLAN_LABELS_ES.intermediate}</option>
@@ -1570,7 +1689,9 @@ const ConfiguracionEmpresa = () => {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Plan contratado</label>
                 <div className="input bg-gray-50 text-gray-800">
-                  {PLAN_LABELS_ES[normalizeLicensePlan(lic.plan)]}
+                  {isOnboardingPaymentPhase(lic, billingMp)
+                    ? `Kit inicial activo · luego ${PLAN_LABELS_ES[normalizeLicensePlan(lic.chosenPlan || lic.plan)]}`
+                    : PLAN_LABELS_ES[normalizeLicensePlan(lic.plan)]}
                 </div>
               </div>
               <div>
@@ -1590,8 +1711,9 @@ const ConfiguracionEmpresa = () => {
                 <span className="inline-flex align-middle mx-0.5">
                   <MercadoPagoMark className="h-4 w-auto" />
                 </span>{' '}
-                Mercado Pago, el sistema suma automáticamente <strong>un mes</strong> de uso desde la fecha en que MP
-                confirma el cobro.
+                Mercado Pago, el sistema suma <strong>30 días</strong> de uso desde la fecha en que MP confirma el
+                cobro. Las primeras cuotas de instalación pueden ser a monto fijo; después corre el precio del plan
+                elegido.
               </div>
             </>
           )}
@@ -1602,21 +1724,33 @@ const ConfiguracionEmpresa = () => {
             </div>
             {(() => {
               const planKey = normalizeLicensePlan(lic.plan);
-              const arsPlan = Number(billingMp?.planPrices?.[planKey] ?? billingMp?.monthlyPriceARS ?? 0);
+              const prefPlan = getPreferredCheckoutPlan(lic);
+              const onboarding = isOnboardingPaymentPhase(lic, billingMp);
+              const slots = Number(billingMp?.onboardingInstallmentsTotal ?? 2);
+              const paidObs = Number(lic.onboardingInstallmentsPaid ?? 0);
+              const arsNext = getNextBillingAmountARS(lic, billingMp);
               const tokenOk = billingMp?.mercadoPagoTokenPresent;
-              const puedeEstePlan = tokenOk && arsPlan > 0;
+              const puedeEstePlan = tokenOk && arsNext > 0;
               return (
                 <>
                   {billingMp?.mercadoPagoConfigured ? (
                     <div className="mt-2 space-y-1 text-sm text-gray-800">
-                      <p>
-                        Renovación mensual (<strong>{PLAN_LABELS_ES[planKey]}</strong>):{' '}
-                        <strong>${arsPlan.toLocaleString('es-AR')} ARS</strong>{' '}
-                        <span className="text-gray-600">por periodo cobrado y acreditado</span>.
-                      </p>
+                      {onboarding ? (
+                        <p>
+                          <strong>Cuota instalación</strong> ({paidObs + 1}/{slots}) — versión completa:{' '}
+                          <strong>${arsNext.toLocaleString('es-AR')} ARS</strong>. Plan que quedará después:{' '}
+                          <strong>{PLAN_LABELS_ES[normalizeLicensePlan(prefPlan)]}</strong>.
+                        </p>
+                      ) : (
+                        <p>
+                          Abono según plan elegido (<strong>{PLAN_LABELS_ES[planKey]}</strong>):{' '}
+                          <strong>${arsNext.toLocaleString('es-AR')} ARS</strong>{' '}
+                          <span className="text-gray-600">cada 30 días al acreditarse en MP</span>.
+                        </p>
+                      )}
                       {!puedeEstePlan && tokenOk ? (
                         <p className="text-xs text-amber-800">
-                          Tu plan no tiene un valor de cobro disponible por ahora.
+                          Falta monto de instalación o precio de plan en la plataforma. Contactá al administrador.
                         </p>
                       ) : null}
                       {isSuperAdminEmail(currentUser?.email) ? (
@@ -1650,7 +1784,7 @@ const ConfiguracionEmpresa = () => {
                       {billingMpLoading
                         ? 'Abriendo…'
                         : puedeEstePlan
-                          ? `Renovar (${arsPlan.toLocaleString('es-AR')} ARS)`
+                          ? `${onboarding ? 'Cuota instalación' : 'Pagar / Renovar'} (${arsNext.toLocaleString('es-AR')} ARS)`
                           : 'Abrir cobro Mercado Pago'}
                     </button>
                   </div>
@@ -1673,6 +1807,16 @@ const ConfiguracionEmpresa = () => {
           ) : null}
         </div>
       </Modal>
+
+      <PlanesAbonoExplainerModal
+        open={showPlanesExplainer}
+        onClose={() => setShowPlanesExplainer(false)}
+        initialPlan={
+          PLAN_IDS.includes(normalizeLicensePlan(lic?.plan))
+            ? normalizeLicensePlan(lic.plan)
+            : 'intermediate'
+        }
+      />
     </div>
   );
 };

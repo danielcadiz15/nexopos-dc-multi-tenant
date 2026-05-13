@@ -6,8 +6,8 @@
  * @requires react, react-router-dom, react-toastify
  */
 
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FaSave, FaArrowLeft, FaSpinner } from 'react-icons/fa';
 
@@ -15,16 +15,24 @@ import { FaSave, FaArrowLeft, FaSpinner } from 'react-icons/fa';
 import productosService from '../../services/productos.service';
 import categoriasService from '../../services/categorias.service';
 import proveedoresService from '../../services/proveedores.service';
+import {
+  buscarCadenaExternaConCache,
+  normalizarGtin
+} from '../../services/barcodeLookup.service';
+import { contribuirCatalogoComunidad } from '../../services/barcodeCatalog.service';
 
 // Componentes
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
 import Spinner from '../../components/common/Spinner';
+import ProductoFormWizard from '../../components/modules/productos/ProductoFormWizard';
 
 const ProductoForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isEditing = !!id;
+  const modoAsistente = !isEditing && searchParams.get('modo') === 'asistente';
   
   // Estados
   const [formData, setFormData] = useState({
@@ -49,15 +57,21 @@ const ProductoForm = () => {
   const [loadError, setLoadError] = useState(null);
   const [margenGanancia, setMargenGanancia] = useState(0);
   const [modoCalculo, setModoCalculo] = useState('manual'); // 'manual' o 'porcentaje'
+  const [wizardStep, setWizardStep] = useState(1);
+  const [barcodeLookupLoading, setBarcodeLookupLoading] = useState(false);
+  /** true si en esta sesión hubo datos desde caché/OFF/UPC (no contribuir al catálogo global como “manual”) */
+  const sesionAltaDesdeFuenteExternaRef = useRef(false);
+
+  useEffect(() => {
+    if (!id) {
+      sesionAltaDesdeFuenteExternaRef.current = false;
+    }
+  }, [id]);
   
   // Datos de respaldo para cuando fallan las APIs
   const CATEGORIAS_RESPALDO = [];
   
-  const PROVEEDORES_RESPALDO = [
-    { id: 1, nombre: 'Proveedor General' },
-    { id: 2, nombre: 'Distribuidora Alimentos' },
-    { id: 3, nombre: 'Limpieza Industrial' }
-  ];
+  const PROVEEDORES_RESPALDO = [];
   
   // Calcular margen de ganancia cuando cambian los precios
   const calcularMargen = (costo, venta) => {
@@ -142,8 +156,8 @@ const ProductoForm = () => {
         } catch (provError) {
           console.error('Error al cargar proveedores:', provError);
           // Usar datos de respaldo
-          proveedoresData = PROVEEDORES_RESPALDO;
-          toast.warning('Usando datos de proveedores de respaldo');
+            proveedoresData = PROVEEDORES_RESPALDO;
+          toast.warning('No se cargaron proveedores; podés crear uno en Compras → Proveedores');
         }
         
         setProveedores(proveedoresData);
@@ -185,6 +199,29 @@ const ProductoForm = () => {
     
     cargarDatos();
   }, [id, isEditing]);
+
+  useEffect(() => {
+    if (isEditing || loading) return;
+    setFormData((prev) => {
+      if (prev.categoria_id && prev.proveedor_id) return prev;
+      const cat = categorias.find(
+        (c) => String(c.nombre || '').toLowerCase().trim() === 'bebidas'
+      );
+      const prov = proveedores.find(
+        (p) => String(p.nombre || '').toLowerCase().trim() === 'proveedor general'
+      );
+      if (!cat && !prov) return prev;
+      return {
+        ...prev,
+        categoria_id: prev.categoria_id || (cat ? String(cat.id) : ''),
+        proveedor_id: prev.proveedor_id || (prov ? String(prov.id) : '')
+      };
+    });
+  }, [isEditing, loading, categorias, proveedores]);
+
+  useEffect(() => {
+    setWizardStep(1);
+  }, [modoAsistente, id]);
   
   // Manejar cambios en el formulario
   const handleChange = (e) => {
@@ -194,50 +231,202 @@ const ProductoForm = () => {
       [name]: type === 'checkbox' ? checked : value
     });
   };
+
+  /**
+   * Carga por código: duplicado en Firebase (empresa) → catálogo comunitario → caché → OFF → UPCitemdb.
+   * Alta nueva: guarda el producto automáticamente si hay datos externos. Edición: solo sugiere campos vacíos.
+   */
+  const handleCodigoBlur = useCallback(
+    async (e) => {
+      const raw = String(e?.target?.value ?? '').trim();
+      const digits = normalizarGtin(raw);
+      if (!digits) return;
+
+      setBarcodeLookupLoading(true);
+      try {
+        const dup = await productosService.verificarRegistradoPorCodigo(digits);
+        if (dup.registrado && dup.productoId) {
+          if (!isEditing) {
+            toast.info('Este código ya está registrado en tu catálogo (Firebase). Abrimos la ficha para que la edites.');
+            navigate(`/productos/editar/${dup.productoId}`);
+            return;
+          }
+          if (isEditing && id && String(dup.productoId) !== String(id)) {
+            toast.warning('Ya existe otro producto con este código en tu empresa.');
+            return;
+          }
+          if (isEditing && id && String(dup.productoId) === String(id)) {
+            return;
+          }
+        }
+
+        const ext = await buscarCadenaExternaConCache(digits);
+        if (!ext.ok) {
+          if (ext.motivo === 'not_found') {
+            toast.info(
+              'No encontramos el código en tu catálogo, en el catálogo comunitario NexoPOS, ni en Open Food Facts ni en UPCitemdb. Podés cargar los datos a mano.'
+            );
+          }
+          return;
+        }
+
+        sesionAltaDesdeFuenteExternaRef.current = true;
+
+        const labelFuente =
+          ext.fuente === 'cache'
+            ? 'caché local (resultado previo de catálogo público o comunitario)'
+            : ext.fuente === 'nexopos_comunidad'
+              ? 'catálogo comunitario NexoPOS (otras empresas)'
+              : ext.fuente === 'openfoodfacts'
+                ? 'Open Food Facts'
+                : 'UPCitemdb';
+
+        if (!isEditing) {
+          try {
+            const payload = {
+              codigo: digits,
+              codigo_barras: digits,
+              nombre: ext.nombre,
+              descripcion: ext.descripcion || '',
+              precio_costo: 0,
+              precio_venta: 0,
+              stock_minimo: parseInt(formData.stock_minimo || 5, 10) || 5,
+              categoria_id: formData.categoria_id || '',
+              proveedor_id: formData.proveedor_id || '',
+              activo: true,
+              origen_carga_codigo: ext.fuente === 'cache' ? ext.fuenteReal || 'externo' : ext.fuente
+            };
+            const created = await productosService.crear(payload);
+            const newId = created?.id || created?.data?.id;
+            const fuenteContrib =
+              ext.fuente === 'cache'
+                ? ext.fuenteReal || 'externo'
+                : ext.fuente === 'nexopos_comunidad'
+                  ? 'nexopos_comunidad'
+                  : ext.fuente === 'openfoodfacts'
+                    ? 'openfoodfacts'
+                    : 'upcitemdb';
+            try {
+              await contribuirCatalogoComunidad({
+                gtin: digits,
+                nombre: ext.nombre,
+                descripcion: ext.descripcion || '',
+                fuente: fuenteContrib
+              });
+            } catch (ce) {
+              console.warn('[catalogo comunitario]', ce?.message || ce);
+            }
+            toast.success(
+              `Producto creado desde ${labelFuente}. Revisá costo y venta en la ficha; podés afinar las listas en Gestión de precios.`
+            );
+            if (newId) {
+              navigate(`/productos/editar/${newId}`, { replace: true });
+            }
+          } catch (err) {
+            console.error(err);
+            toast.error(
+              'No se pudo guardar automáticamente. Los datos se dejaron en el formulario; revisá precios y guardá a mano.'
+            );
+            setFormData((prev) => ({
+              ...prev,
+              codigo: digits,
+              nombre: ext.nombre || prev.nombre,
+              descripcion: ext.descripcion || prev.descripcion
+            }));
+          }
+          return;
+        }
+
+        let aplicoNombre = false;
+        let aplicoDesc = false;
+        setFormData((prev) => {
+          const next = { ...prev };
+          if (!String(prev.nombre || '').trim() && ext.nombre) {
+            next.nombre = ext.nombre;
+            aplicoNombre = true;
+          }
+          if (!String(prev.descripcion || '').trim() && ext.descripcion) {
+            next.descripcion = ext.descripcion;
+            aplicoDesc = true;
+          }
+          return next;
+        });
+
+        if (aplicoNombre || aplicoDesc) {
+          toast.success(`Datos sugeridos desde ${labelFuente}. Revisá y ajustá si hace falta.`);
+        } else if (ext.nombre) {
+          toast.info(
+            `Hay datos en ${labelFuente}, pero el nombre o la descripción ya estaban cargados; no los modificamos.`
+          );
+        }
+      } finally {
+        setBarcodeLookupLoading(false);
+      }
+    },
+    [isEditing, id, navigate, formData.stock_minimo, formData.categoria_id, formData.proveedor_id]
+  );
   
-  // Manejar envío del formulario
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const guardarProducto = async () => {
     if (submitting) {
       console.log('Formulario ya está siendo enviado, ignorando clic adicional');
       return;
     }
     try {
       setSubmitting(true);
-      
-      // Validaciones básicas
+
       if (!formData.nombre || !formData.codigo) {
         toast.error('Nombre y código son obligatorios');
         return;
       }
-      
-      if (isNaN(parseFloat(formData.precio_costo)) || isNaN(parseFloat(formData.precio_venta))) {
+
+      const costoNum = parseFloat(String(formData.precio_costo ?? '').replace(',', '.'));
+      const ventaNum = parseFloat(String(formData.precio_venta ?? '').replace(',', '.'));
+      if (Number.isNaN(costoNum) || Number.isNaN(ventaNum)) {
         toast.error('Los precios deben ser valores numéricos');
         return;
       }
-      
-      // Crear objeto producto para enviar
+
+      const ventaRounded = ventaNum;
       const productoData = {
         ...formData,
-        precio_costo: parseFloat(formData.precio_costo),
-        precio_venta: parseFloat(formData.precio_venta),
-        stock_minimo: parseInt(formData.stock_minimo || 5)
+        precio_costo: costoNum,
+        precio_venta: ventaRounded,
+        stock_minimo: parseInt(formData.stock_minimo || 5, 10)
       };
-      
+      /** En alta inicial las tres listas = precio de venta; en edición no pisamos listas ya diferenciadas */
+      if (!isEditing) {
+        productoData.listas_precios = {
+          mayorista: ventaRounded,
+          interior: ventaRounded,
+          posadas: ventaRounded
+        };
+      }
+
       if (isEditing) {
-        // Actualizar producto existente
         await productosService.actualizar(id, productoData);
         toast.success('Producto actualizado correctamente');
       } else {
-        // Crear nuevo producto
-        const response = await productosService.crear(productoData);
-        toast.success('Producto creado correctamente');
-        console.log('Producto creado:', response.data);
+        await productosService.crear(productoData);
+        toast.success(
+          'Producto creado correctamente. Las listas de precio están alineadas al precio de venta hasta que los ajustes en Gestión de precios.'
+        );
       }
-      
-      // Redireccionar con estado para forzar recarga
+
+      const gtin = normalizarGtin(formData.codigo);
+      if (gtin && String(formData.nombre || '').trim()) {
+        try {
+          await contribuirCatalogoComunidad({
+            gtin,
+            nombre: String(formData.nombre || '').trim(),
+            descripcion: String(formData.descripcion || '').trim(),
+            fuente: sesionAltaDesdeFuenteExternaRef.current ? 'empresa_tras_externo' : 'empresa'
+          });
+        } catch (e) {
+          console.warn('[catalogo comunitario NexoPOS]', e?.message || e);
+        }
+      }
+
       navigate('/productos', { state: { reload: true } });
-      
     } catch (error) {
       console.error('Error al guardar producto:', error);
       toast.error('Error al guardar el producto');
@@ -245,7 +434,43 @@ const ProductoForm = () => {
       setSubmitting(false);
     }
   };
-  
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await guardarProducto();
+  };
+
+  const avanzarWizard = () => {
+    if (wizardStep === 1) {
+      if (!String(formData.nombre || '').trim()) {
+        toast.error('Ingresá el nombre del producto');
+        return;
+      }
+      let cod = String(formData.codigo || '').trim();
+      if (!cod) {
+        cod = `P-${Date.now().toString(36).toUpperCase()}`;
+        setFormData((prev) => ({ ...prev, codigo: cod }));
+      }
+      setWizardStep(2);
+      return;
+    }
+    if (wizardStep === 2) {
+      const c = parseFloat(String(formData.precio_costo ?? '').replace(',', '.'));
+      const v = parseFloat(String(formData.precio_venta ?? '').replace(',', '.'));
+      if (Number.isNaN(c) || Number.isNaN(v)) {
+        toast.error('Ingresá precios de costo y venta válidos');
+        return;
+      }
+      setWizardStep(3);
+      return;
+    }
+    if (wizardStep === 3) {
+      setWizardStep(4);
+    }
+  };
+
+  const retrocederWizard = () => setWizardStep((s) => Math.max(1, s - 1));
+
   // Si hay error de carga, mostrar mensaje de error
   if (loadError && !loading) {
     return (
@@ -277,19 +502,61 @@ const ProductoForm = () => {
       </div>
     );
   }
-  
+
+  if (modoAsistente) {
+    if (loading) {
+      return (
+        <div className="overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200">
+          <div className="flex flex-col items-center justify-center py-16">
+            <Spinner size="lg" />
+            <p className="mt-4 text-slate-600">Preparando el asistente…</p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <ProductoFormWizard
+        wizardStep={wizardStep}
+        avanzarWizard={avanzarWizard}
+        retrocederWizard={retrocederWizard}
+        formData={formData}
+        producto={producto}
+        handleChange={handleChange}
+        categorias={categorias}
+        proveedores={proveedores}
+        modoCalculo={modoCalculo}
+        setModoCalculo={setModoCalculo}
+        margenGanancia={margenGanancia}
+        handlePrecioChange={handlePrecioChange}
+        handleMargenChange={handleMargenChange}
+        guardarProducto={guardarProducto}
+        submitting={submitting}
+        navigate={navigate}
+        onCodigoBlur={handleCodigoBlur}
+        barcodeLookupLoading={barcodeLookupLoading}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">
-          {isEditing ? 'Editar Producto' : 'Nuevo Producto'}
-        </h1>
-        
-        <Button
-          color="secondary"
-          onClick={() => navigate('/productos')}
-          icon={<FaArrowLeft />}
-        >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">
+            {isEditing ? 'Editar Producto' : 'Nuevo Producto'}
+          </h1>
+          {!isEditing && (
+            <button
+              type="button"
+              onClick={() => navigate('/productos/nuevo?modo=asistente')}
+              className="mt-1 text-sm font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
+            >
+              Preferís el asistente paso a paso
+            </button>
+          )}
+        </div>
+
+        <Button color="secondary" onClick={() => navigate('/productos')} icon={<FaArrowLeft />}>
           Volver
         </Button>
       </div>
@@ -317,9 +584,22 @@ const ProductoForm = () => {
                     name="codigo"
                     value={producto.codigo}
                     onChange={handleChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    onBlur={handleCodigoBlur}
+                    className="nexo-field"
                     required
+                    autoComplete="off"
                   />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Con 8 a 14 dígitos (GTIN/EAN), al salir: comprobamos si el código ya está en{' '}
+                    <span className="font-medium">Firebase (tu empresa)</span>, luego el{' '}
+                    <span className="font-medium">catálogo comunitario NexoPOS</span> (otros clientes), caché local,{' '}
+                    <span className="font-medium">Open Food Facts</span> y <span className="font-medium">UPCitemdb</span>.
+                    En producto nuevo, si hay datos de catálogo se crea el ítem; podés cargar costo y venta en esta misma ficha y afinar listas en Productos →
+                    Gestión de precios. Las ventas siguen usando solo tus productos.
+                  </p>
+                  {barcodeLookupLoading && (
+                    <p className="mt-1 text-xs font-medium text-indigo-600">Buscando código en catálogos…</p>
+                  )}
                 </div>
                 
                 {/* Nombre */}
@@ -332,7 +612,7 @@ const ProductoForm = () => {
                     name="nombre"
                     value={producto.nombre}
                     onChange={handleChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    className="nexo-field"
                     required
                   />
                 </div>
@@ -347,7 +627,7 @@ const ProductoForm = () => {
                     value={producto.descripcion}
                     onChange={handleChange}
                     rows="3"
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    className="nexo-field"
                   />
                 </div>
                 
@@ -356,14 +636,22 @@ const ProductoForm = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Categoría
                   </label>
-                  <input
-                    type="text"
+                  <select
                     name="categoria_id"
                     value={producto.categoria_id}
                     onChange={handleChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                    placeholder="Escriba la categoría (se creará si no existe)"
-                  />
+                    className="nexo-field"
+                  >
+                    <option value="">Seleccionar categoría</option>
+                    {categorias.map((categoria) => (
+                      <option key={categoria.id} value={categoria.id}>
+                        {categoria.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Podés crear categorías adicionales en Productos → Categorías.
+                  </p>
                 </div>
                 
                 {/* Proveedor */}
@@ -375,7 +663,7 @@ const ProductoForm = () => {
                     name="proveedor_id"
                     value={producto.proveedor_id}
                     onChange={handleChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    className="nexo-field"
                   >
                     <option value="">Seleccionar proveedor</option>
                     {proveedores.map(proveedor => (
@@ -388,10 +676,13 @@ const ProductoForm = () => {
               </div>
             </Card>
             
-            {/* Precios y stock */}
             <Card title="Precios y Stock">
+              {!isEditing && (
+                <p className="mb-4 text-sm text-gray-600">
+                  Las tres listas de precio se guardan igual al precio de venta hasta que los diferencies en Gestión de precios.
+                </p>
+              )}
               <div className="space-y-4">
-                {/* Precio de costo */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Precio de costo *
@@ -405,7 +696,7 @@ const ProductoForm = () => {
                       name="precio_costo"
                       value={producto.precio_costo}
                       onChange={handlePrecioChange}
-                      className="block w-full rounded-md border-gray-300 pl-7 pr-12 focus:border-indigo-500 focus:ring-indigo-500"
+                      className="nexo-field pl-7 pr-12"
                       placeholder="0.00"
                       step="0.01"
                       min="0"
@@ -414,7 +705,6 @@ const ProductoForm = () => {
                   </div>
                 </div>
                 
-                {/* Selector de Modo de Cálculo */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Modo de Cálculo
@@ -445,7 +735,6 @@ const ProductoForm = () => {
                   </div>
                 </div>
                 
-                {/* Precio de venta */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Precio de venta *
@@ -459,7 +748,7 @@ const ProductoForm = () => {
                       name="precio_venta"
                       value={producto.precio_venta}
                       onChange={handlePrecioChange}
-                      className={`block w-full rounded-md border-gray-300 pl-7 pr-12 focus:border-indigo-500 focus:ring-indigo-500 ${
+                      className={`nexo-field pl-7 pr-12 ${
                         modoCalculo === 'porcentaje' ? 'bg-gray-100' : ''
                       }`}
                       placeholder="0.00"
@@ -471,7 +760,6 @@ const ProductoForm = () => {
                   </div>
                 </div>
                 
-                {/* Margen de Ganancia */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Margen de Ganancia (%)
@@ -482,7 +770,7 @@ const ProductoForm = () => {
                       value={margenGanancia}
                       onChange={handleMargenChange}
                       step="0.01"
-                      className={`block w-full rounded-md border-gray-300 pr-8 focus:border-indigo-500 focus:ring-indigo-500 ${
+                      className={`nexo-field pr-8 ${
                         modoCalculo === 'manual' ? 'bg-gray-100' : ''
                       } ${
                         margenGanancia < 0 ? 'text-red-600' : margenGanancia > 0 ? 'text-green-600' : ''
@@ -506,7 +794,6 @@ const ProductoForm = () => {
                   )}
                 </div>
                 
-                {/* Stock mínimo */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Stock mínimo
@@ -516,12 +803,11 @@ const ProductoForm = () => {
                     name="stock_minimo"
                     value={producto.stock_minimo}
                     onChange={handleChange}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    className="nexo-field"
                     min="0"
                   />
                 </div>
                 
-                {/* Activo */}
                 <div className="mt-4">
                   <div className="flex items-center">
                     <input
@@ -529,7 +815,7 @@ const ProductoForm = () => {
                       name="activo"
                       checked={producto.activo}
                       onChange={handleChange}
-                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500/30"
                     />
                     <label className="ml-2 block text-sm text-gray-700">
                       Producto activo

@@ -53,7 +53,7 @@ const MobileNavigation = () => {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 safe-area-inset-bottom">
+    <nav className="safe-area-inset-bottom fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/90 bg-white/95 shadow-[0_-4px_24px_-8px_rgba(15,23,42,0.12)] backdrop-blur-md">
       <div className="flex justify-around items-center h-16">
         {navItems.map(item => {
           const isActive = item.exact 
@@ -67,9 +67,9 @@ const MobileNavigation = () => {
               className={`
                 flex flex-col items-center justify-center py-2 px-3 flex-1
                 transition-colors duration-200 relative
-                ${isActive 
-                  ? 'text-indigo-600' 
-                  : 'text-gray-500 hover:text-gray-700'
+                ${isActive
+                  ? 'text-indigo-600'
+                  : 'text-slate-500 hover:text-slate-800'
                 }
               `}
             >
@@ -81,7 +81,7 @@ const MobileNavigation = () => {
               
               {/* Indicador activo */}
               {isActive && (
-                <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-indigo-600 rounded-b-full" />
+                <div className="absolute left-1/2 top-0 h-0.5 w-10 -translate-x-1/2 rounded-b-full bg-gradient-to-r from-indigo-600 to-violet-600" />
               )}
             </NavLink>
           );

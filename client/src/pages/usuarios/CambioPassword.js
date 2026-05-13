@@ -23,6 +23,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
 import Spinner from '../../components/common/Spinner';
+import PasswordInput from '../../components/common/PasswordInput';
 
 // Iconos
 import { 
@@ -249,19 +250,17 @@ const CambioPassword = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Contraseña Actual *
               </label>
-              <div className="relative">
-                <FaKey className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <input
-                  type="password"
-                  name="password_actual"
-                  value={formData.password_actual}
-                  onChange={handleChange}
-                  className={`block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                    errores.password_actual ? 'border-red-500' : ''
-                  }`}
-                  placeholder="Ingresa tu contraseña actual"
-                />
-              </div>
+              <PasswordInput
+                name="password_actual"
+                value={formData.password_actual}
+                onChange={handleChange}
+                className={`nexo-field sm:text-sm ${
+                  errores.password_actual ? 'border-red-500' : ''
+                }`}
+                placeholder="Ingresa tu contraseña actual"
+                autoComplete="current-password"
+                leftSlot={<FaKey className="h-5 w-5 text-slate-400" />}
+              />
               {errores.password_actual && (
                 <p className="mt-1 text-sm text-red-600">{errores.password_actual}</p>
               )}
@@ -273,19 +272,17 @@ const CambioPassword = () => {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Nueva Contraseña *
             </label>
-            <div className="relative">
-              <FaKey className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="password"
-                name="password_nueva"
-                value={formData.password_nueva}
-                onChange={handleChange}
-                className={`block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                  errores.password_nueva ? 'border-red-500' : ''
-                }`}
-                placeholder="Ingresa la nueva contraseña"
-              />
-            </div>
+            <PasswordInput
+              name="password_nueva"
+              value={formData.password_nueva}
+              onChange={handleChange}
+              className={`nexo-field sm:text-sm ${
+                errores.password_nueva ? 'border-red-500' : ''
+              }`}
+              placeholder="Ingresa la nueva contraseña"
+              autoComplete="new-password"
+              leftSlot={<FaKey className="h-5 w-5 text-slate-400" />}
+            />
             {errores.password_nueva && (
               <p className="mt-1 text-sm text-red-600">{errores.password_nueva}</p>
             )}
@@ -296,19 +293,17 @@ const CambioPassword = () => {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Confirmar Nueva Contraseña *
             </label>
-            <div className="relative">
-              <FaKey className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="password"
-                name="confirmar_password"
-                value={formData.confirmar_password}
-                onChange={handleChange}
-                className={`block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                  errores.confirmar_password ? 'border-red-500' : ''
-                }`}
-                placeholder="Confirma la nueva contraseña"
-              />
-            </div>
+            <PasswordInput
+              name="confirmar_password"
+              value={formData.confirmar_password}
+              onChange={handleChange}
+              className={`nexo-field sm:text-sm ${
+                errores.confirmar_password ? 'border-red-500' : ''
+              }`}
+              placeholder="Confirma la nueva contraseña"
+              autoComplete="new-password"
+              leftSlot={<FaKey className="h-5 w-5 text-slate-400" />}
+            />
             {errores.confirmar_password && (
               <p className="mt-1 text-sm text-red-600">{errores.confirmar_password}</p>
             )}

@@ -17,7 +17,7 @@ const Footer = () => {
   const currentYear = new Date().getFullYear();
   
   return (
-    <footer className="py-3 px-4 bg-white border-t border-gray-200 text-center text-gray-500 text-sm">
+    <footer className="border-t border-slate-200/90 bg-white/90 px-4 py-3 text-center text-sm text-slate-500 backdrop-blur-sm">
       <p>
         &copy; {currentYear} Sistema de Gestión para Despensa. Todos los derechos reservados.
       </p>

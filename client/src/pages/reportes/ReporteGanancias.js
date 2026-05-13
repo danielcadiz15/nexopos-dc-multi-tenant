@@ -47,8 +47,8 @@ const ReporteGanancias = () => {
   const navigate = useNavigate();
   
   // Estado para fechas
-  const [fechaInicio, setFechaInicio] = useState('2025-05-01');
-  const [fechaFin, setFechaFin] = useState('2025-05-31');
+  const [fechaInicio, setFechaInicio] = useState(getFechaInicioMes());
+  const [fechaFin, setFechaFin] = useState(getFechaFinMes());
   const [agrupacion, setAgrupacion] = useState('dia');
   
   // Estado para datos
@@ -285,16 +285,6 @@ const ReporteGanancias = () => {
 				className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded"
 			  >
 				Este Mes
-			  </button>
-			  <button
-				onClick={() => {
-				  // Mayo 2025 - donde están tus ventas
-				  setFechaInicio('2025-05-01');
-				  setFechaFin('2025-05-31');
-				}}
-				className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded"
-			  >
-				Mayo 2025
 			  </button>
 			</div>
 			

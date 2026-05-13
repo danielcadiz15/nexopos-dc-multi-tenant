@@ -142,14 +142,14 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
   const showDemo = licDaysLeft !== null && licDaysLeft >= 0;
   const showLicChip = Boolean(orgId && licChip);
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200">
+    <header className="border-b border-slate-200/90 bg-white/85 shadow-sm shadow-slate-900/5 backdrop-blur-md">
       <div className="px-2 sm:px-4 lg:px-8">
-        <div className="flex items-center justify-between h-14 sm:h-16">
+        <div className="flex h-14 items-center justify-between sm:h-16">
           {/* Botón de menú y logo/nombre */}
           <div className="flex items-center">
             <button
               onClick={toggleSidebar}
-              className="p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500 lg:hidden"
+              className="rounded-xl p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500/40 lg:hidden"
             >
               {isSidebarOpen ? <FaTimes size={20} className="sm:w-6" /> : <FaBars size={20} className="sm:w-6" />}
             </button>
@@ -169,7 +169,7 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
               
               {/* Nombre de la empresa */}
               <Link to="/" className="flex items-center">
-				<span className="text-lg sm:text-xl font-semibold text-gray-800 truncate max-w-[150px] sm:max-w-none">
+				<span className="max-w-[150px] truncate text-lg font-semibold tracking-tight text-slate-900 sm:max-w-none sm:text-xl">
                   {cargandoConfig ? (
                     <span className="animate-pulse">Cargando...</span>
                   ) : (
@@ -185,10 +185,10 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
 			  {showLicChip && (
 				<Link
 				  to="/configuracion/empresa?licencia=1"
-				  className={`hidden sm:inline-flex text-xs px-2 py-1 rounded border max-w-[220px] truncate ${
+				  className={`hidden max-w-[220px] truncate rounded-full border px-2.5 py-1 text-xs font-medium backdrop-blur-sm sm:inline-flex ${
 				    showDemo
-				      ? 'text-yellow-900 bg-yellow-100 border-yellow-300 hover:bg-yellow-200'
-				      : 'text-indigo-900 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+				      ? 'border-amber-300/80 bg-amber-50/95 text-amber-950 hover:bg-amber-100'
+				      : 'border-indigo-200/80 bg-indigo-50/95 text-indigo-950 hover:bg-indigo-100'
 				  }`}
 				  title="Ver licencia y pagar"
 				>
@@ -196,7 +196,7 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
 				</Link>
 			  )}
               {blockedMsg && (
-                <div className="hidden sm:block text-xs text-red-800 bg-red-100 border border-red-300 px-2 py-1 rounded">
+                <div className="hidden rounded-full border border-red-200/90 bg-red-50/95 px-2.5 py-1 text-xs font-medium text-red-900 backdrop-blur-sm sm:block">
                   {blockedMsg}
                 </div>
               )}
@@ -207,26 +207,26 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
             <div className="relative">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                className="flex items-center rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:ring-offset-2"
               >
-                <div className="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center text-white">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 text-sm font-semibold text-white shadow-md shadow-indigo-500/25">
                   {currentUser?.nombre ? currentUser.nombre[0].toUpperCase() : 'U'}
                 </div>
-                <span className="hidden ml-3 text-gray-700 text-sm font-medium lg:block">
+                <span className="ml-3 hidden text-sm font-medium text-slate-700 lg:block">
                   {currentUser?.nombre || currentUser?.email}
                 </span>
               </button>
 
               {/* Dropdown del usuario */}
               {showUserMenu && (
-                <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 z-50">
-                  <div className="px-4 py-2 text-xs text-gray-500 border-b">
+                <div className="absolute right-0 z-50 mt-2 w-52 origin-top-right overflow-hidden rounded-xl border border-slate-200/90 bg-white/95 py-1 shadow-elevated backdrop-blur-md ring-1 ring-slate-900/5">
+                  <div className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
                     {currentUser?.email}
                   </div>
                   
                   <Link
                     to="/perfil"
-                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                     onClick={() => setShowUserMenu(false)}
                   >
                     <FaUser className="inline mr-2" />
@@ -235,7 +235,7 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
                   
                   <Link
                     to="/configuracion/empresa"
-                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                     onClick={() => setShowUserMenu(false)}
                   >
                     <FaCog className="inline mr-2" />
@@ -244,7 +244,7 @@ const Header = ({ toggleSidebar, isSidebarOpen }) => {
                   
                   <button
                     onClick={handleLogout}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
                   >
                     <FaSignOutAlt className="inline mr-2" />
                     Cerrar Sesión

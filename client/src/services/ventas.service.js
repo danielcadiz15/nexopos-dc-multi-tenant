@@ -941,34 +941,20 @@ async buscarPorNumero(numeroVenta) {
     try {
       console.log('🔄 Actualizando venta:', ventaId, ventaActualizada);
       
-      // PASO 1: Obtener la venta original para comparar cambios
+      // Obtener la venta original para validar estado. El ajuste de stock se hace
+      // en el backend dentro de la misma transacción que actualiza la venta.
       const ventaOriginal = await this.obtenerPorId(ventaId);
       if (!ventaOriginal) {
         throw new Error('Venta no encontrada');
       }
       
-      // PASO 2: Validar que la venta no esté cancelada o entregada
       if (ventaOriginal.estado === 'cancelada' || ventaOriginal.estado === 'entregada') {
         throw new Error('No se puede editar una venta cancelada o entregada');
       }
       
-      // PASO 3: Calcular diferencias en productos para actualizar stock
-      const cambiosStock = this.calcularCambiosStock(ventaOriginal.detalles, ventaActualizada.detalles);
-      
-      // PASO 4: Validar stock disponible para los cambios
-      await this.validarStockDisponible(cambiosStock, ventaOriginal.sucursal_id, ventaOriginal);
-      
-      // PASO 5: Actualizar stock en la base de datos
-      await this.actualizarStockProductos(cambiosStock, ventaOriginal.sucursal_id);
-      
-      // PASO 6: Actualizar la venta en Firestore
       const response = await this.put(`/${ventaId}`, ventaActualizada);
       
       console.log('✅ Venta actualizada correctamente:', response);
-      
-      // PASO 7: Registrar el historial de cambios
-      await this.registrarHistorialCambios(ventaId, ventaOriginal, ventaActualizada);
-      
       return response;
       
     } catch (error) {

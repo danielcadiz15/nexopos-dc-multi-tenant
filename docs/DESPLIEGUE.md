@@ -4,11 +4,11 @@ Proyecto Firebase: **`nexopos-dc`**. Este documento describe cómo compilar y pu
 
 ## Requisitos previos
 
-1. [Firebase CLI](https://firebase.google.com/docs/cli) instalado (`firebase --version`).
-2. Sesión iniciada con una cuenta que tenga permisos en el proyecto:
+1. **Firebase CLI** como dependencia del repo (`firebase-tools` en `package.json` de la raíz y de `functions/`). Después de `npm install`, el comando `npx firebase` usa esa versión (reproducible; no depende de un `firebase` global). Opcional: CLI global según [instalación oficial](https://firebase.google.com/docs/cli).
+2. Sesión iniciada con una cuenta que tenga permisos en el proyecto (desde la **raíz** del repo, para usar el CLI del `node_modules`):
 
    ```powershell
-   firebase login
+   npx firebase login
    ```
 
 3. Dependencias instaladas en raíz, `functions/` y `client/`:
@@ -16,6 +16,14 @@ Proyecto Firebase: **`nexopos-dc`**. Este documento describe cómo compilar y pu
    ```powershell
    npm run install-all
    ```
+
+### PowerShell en Windows: `PSSecurityException` al ejecutar `firebase`
+
+Si al escribir `firebase` en PowerShell aparece *no se puede cargar el archivo …\firebase.ps1* (ejecución de scripts deshabilitada), **no es un fallo del proyecto**: Windows prioriza el *shim* `firebase.ps1` de npm y la política de ejecución lo bloquea. No hace falta tocar el sistema con riesgo; usá una de estas opciones (recomendado de arriba a abajo):
+
+- **Desde la raíz del repo:** `npm run deploy` o `npx firebase deploy --project nexopos-dc` (evita el `.ps1` y usa el `firebase-tools` del proyecto).
+- **Ruta al `.cmd`:** `.\node_modules\.bin\firebase.cmd deploy --project nexopos-dc` (en la raíz; `cmd` no usa el script bloqueado).
+- **Solo si querés que `firebase` funcione escrito a mano en PowerShell:** en una consola *como administrador*, `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` (evaluá el impacto de seguridad en tu organización).
 
 ## Qué se publica (`firebase.json`)
 
@@ -59,8 +67,10 @@ Si el login falla **solo** desde ciertos dominios (p. ej. custom domain o URL di
 Desde la raíz del repo, con el proyecto por defecto ya en `.firebaserc` (`nexopos-dc`):
 
 ```powershell
-firebase deploy --project nexopos-dc
+npm run deploy
 ```
+
+Equivalente manual (mismo CLI que el proyecto): `npx firebase deploy --project nexopos-dc`.
 
 Publica Hosting, Functions, reglas de Firestore y Storage, e índices de Firestore si hubo cambios. La primera vez o tras cambios grandes de índices, Firestore puede tardar hasta que los índices queden **en servicio** en la consola.
 
@@ -69,13 +79,13 @@ Publica Hosting, Functions, reglas de Firestore y Storage, e índices de Firesto
 Solo front y API (caso típico tras cambios de código):
 
 ```powershell
-firebase deploy --project nexopos-dc --only "hosting,functions"
+npx firebase deploy --project nexopos-dc --only "hosting,functions"
 ```
 
 Solo la función `api` (por ejemplo tras rotar el secreto `MERCADOPAGO_ACCESS_TOKEN`):
 
 ```powershell
-firebase deploy --project nexopos-dc --only functions:api --force
+npx firebase deploy --project nexopos-dc --only functions:api --force
 ```
 
 ## Secretos y billing

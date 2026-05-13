@@ -126,19 +126,29 @@ class ComprasService extends FirebaseService {
   async recibirCompra(id, datos = {}) {
     try {
       console.log(`📦 Recibiendo compra ${id}`);
-      
+
       const resultado = await this.put(`/${id}`, {
         estado: 'completada',
         fecha_recepcion: new Date().toISOString(),
         ...datos
       });
-      
+
       console.log('✅ Compra recibida:', resultado);
       return resultado;
     } catch (error) {
       console.error(`❌ Error al recibir compra ${id}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Aplica precio de costo en la ficha del producto según el valor unitario de esta compra (ya recibida).
+   */
+  async aplicarCostosProductos(compraId, producto_ids) {
+    if (!compraId || !Array.isArray(producto_ids) || producto_ids.length === 0) {
+      throw new Error('compraId y producto_ids son requeridos');
+    }
+    return this.patch(`/${compraId}/aplicar-costos-productos`, { producto_ids });
   }
 
   /**

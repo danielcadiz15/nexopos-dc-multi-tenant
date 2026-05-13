@@ -22,6 +22,7 @@ import proveedoresService from '../../services/proveedores.service';
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
 import Spinner from '../../components/common/Spinner';
+import CompraProductoRapidoModal from '../../components/compras/CompraProductoRapidoModal';
 
 // Iconos
 import { 
@@ -68,6 +69,13 @@ const CompraForm = () => {
   const [indiceSugerenciaActiva, setIndiceSugerenciaActiva] = useState(-1);
   const [filaActivaBusqueda, setFilaActivaBusqueda] = useState(-1);
 
+  const [quickModal, setQuickModal] = useState({
+    open: false,
+    rowIndex: 0,
+    nombreHint: '',
+    precioHint: ''
+  });
+
   /**
    * Carga datos iniciales
    */
@@ -105,7 +113,7 @@ const CompraForm = () => {
     const terminoLower = termino.toLowerCase();
     const resultados = productos
       .filter(producto => 
-        producto.activo &&
+        producto.activo !== false &&
         (producto.nombre.toLowerCase().includes(terminoLower) ||
          producto.codigo.toLowerCase().includes(terminoLower) ||
          (producto.codigo_barras && producto.codigo_barras.toLowerCase().includes(terminoLower)))
@@ -241,6 +249,42 @@ const CompraForm = () => {
     calcularTotal(nuevosDetalles);
     setBusquedaProductos('');
     setMostrandoSugerencias(false);
+  };
+
+  const abrirAltaRapida = (index) => {
+    if (!formData.proveedor_id) {
+      toast.warning('Elegí un proveedor primero y seguimos.');
+      return;
+    }
+    const hintNombre =
+      filaActivaBusqueda === index ? busquedaProductos.trim() : '';
+    const precioLinea = detalles[index]?.precio_unitario;
+    setQuickModal({
+      open: true,
+      rowIndex: index,
+      nombreHint: hintNombre,
+      precioHint: precioLinea !== '' && precioLinea != null ? String(precioLinea) : ''
+    });
+  };
+
+  const handleProductoRapidoCreado = async (payload) => {
+    try {
+      const resultado = await productosService.crear(payload);
+      const raw = resultado?.data ?? resultado;
+      const newId = raw?.id;
+      if (!newId) {
+        throw new Error('El servidor no devolvió el id del producto');
+      }
+      const lista = await productosService.obtenerTodos();
+      setProductos(lista);
+      const nuevo = lista.find((p) => p.id === newId) || { ...payload, id: newId };
+      await seleccionarProducto(nuevo, quickModal.rowIndex);
+      setQuickModal((s) => ({ ...s, open: false }));
+      toast.success(`Listo: «${payload.nombre}» ya está en esta compra.`, { autoClose: 4000 });
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err?.message || 'No se pudo crear el producto');
+      throw err;
+    }
   };
 
   /**
@@ -406,27 +450,41 @@ const CompraForm = () => {
       
       toast.success('Compra registrada correctamente');
       const compraId = response.data?.id || response.id || response;
-
-      // Si el backend no ejecutó el pago (por ejemplo, por validación), hacer POST /compras/:id/pagos
-      if (pagoOrigen) {
-        try {
-          await comprasService.pagar(compraId, {
-            origen: pagoOrigen,
-            medio_pago: pagoOrigen === 'caja' ? pagoMedio : undefined,
-            monto: total,
-            permitir_negativo: permitirNegativo
-          });
-        } catch (pagoErr) {
-          // Si el backend respondió con saldo insuficiente, mostrar y no bloquear navegación
-          console.warn('Pago diferido/pendiente:', pagoErr?.message);
-        }
-      }
       navigate(`/compras/${compraId}`);
     } catch (error) {
       console.error('Error al crear compra:', error);
+
+      const data = error.response?.data;
+      if (data?.requiere_confirmacion && pagoOrigen === 'caja' && !permitirNegativo) {
+        const saldoActual = parseFloat(data.saldo_actual ?? data.saldo_medio ?? 0).toFixed(2);
+        const mensaje = `${data.message || 'Saldo insuficiente para cubrir la compra'}.\n\nSaldo disponible: $${saldoActual}\nTotal compra: $${total.toFixed(2)}\n\n¿Querés realizar la operación de todas maneras y generar saldo negativo?`;
+        if (window.confirm(mensaje)) {
+          setPermitirNegativo(true);
+          try {
+            const responseConfirmada = await comprasService.crear({
+              ...compra,
+              pago: {
+                ...compra.pago,
+                permitir_negativo: true
+              }
+            }, detallesLimpios);
+
+            toast.success('Compra registrada correctamente con saldo negativo');
+            const compraId = responseConfirmada.data?.id || responseConfirmada.id || responseConfirmada;
+            navigate(`/compras/${compraId}`);
+            return;
+          } catch (retryError) {
+            console.error('Error al crear compra con saldo negativo confirmado:', retryError);
+            toast.error(retryError.response?.data?.message || retryError.message || 'No se pudo registrar la compra confirmada');
+            return;
+          }
+        }
+        toast.info('Operación cancelada. No se registró la compra.');
+        return;
+      }
       
-      if (error.response && error.response.data && error.response.data.message) {
-        toast.error(error.response.data.message);
+      if (data?.message) {
+        toast.error(data.message);
       } else if (error.message) {
         toast.error(error.message);
       } else {
@@ -491,7 +549,7 @@ const CompraForm = () => {
                       name="proveedor_id"
                       value={formData.proveedor_id}
                       onChange={handleCompraChange}
-                      className="block w-full pl-10 pr-3 py-2 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      className="nexo-field pl-10 pr-3 sm:text-sm"
                       required
                     >
                       <option value="">Selecciona un proveedor</option>
@@ -514,7 +572,7 @@ const CompraForm = () => {
                     value={formData.notas}
                     onChange={handleCompraChange}
                     rows={3}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="nexo-field sm:text-sm"
                     placeholder="Observaciones o detalles adicionales..."
                   />
                 </div>
@@ -601,7 +659,7 @@ const CompraForm = () => {
                                     onChange={(e) => handleBusquedaChange(e, index)}
                                     onKeyDown={(e) => handleBusquedaKeyDown(e, index)}
                                     onFocus={() => setFilaActivaBusqueda(index)}
-                                    className="block w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                                    className="nexo-field pl-9 pr-3"
                                   />
                                 </div>
                                 
@@ -638,6 +696,23 @@ const CompraForm = () => {
                                     ))}
                                   </div>
                                 )}
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirAltaRapida(index)}
+                                    className="inline-flex items-center rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:from-indigo-700 hover:to-violet-700"
+                                  >
+                                    <FaPlus className="mr-1 h-3 w-3" /> Alta rápida
+                                  </button>
+                                  {mostrandoSugerencias &&
+                                    filaActivaBusqueda === index &&
+                                    busquedaProductos.trim().length >= 2 &&
+                                    productosSugeridos.length === 0 && (
+                                      <span className="rounded-lg bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-100">
+                                        Sin coincidencias — podés crear el producto con el botón
+                                      </span>
+                                    )}
+                                </div>
                               </div>
                             )}
                           </div>
@@ -650,7 +725,7 @@ const CompraForm = () => {
                               name="cantidad"
                               value={detalle.cantidad}
                               onChange={(e) => handleDetalleChange(e, index)}
-                              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 text-center"
+                              className="nexo-field py-2.5 text-center text-sm"
                               min="0.01"
                               step="0.01"
                               required
@@ -666,7 +741,7 @@ const CompraForm = () => {
                               name="precio_unitario"
                               value={detalle.precio_unitario}
                               onChange={(e) => handleDetalleChange(e, index)}
-                              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 text-center"
+                              className="nexo-field py-2.5 text-center text-sm"
                               min="0.01"
                               step="0.01"
                               required
@@ -752,6 +827,7 @@ const CompraForm = () => {
                   >
                     <option value="efectivo">Efectivo</option>
                     <option value="transferencia">Transferencia</option>
+                    <option value="mercadopago">MercadoPago / billetera</option>
                     <option value="tarjeta">Tarjeta</option>
                   </select>
                   <label className="inline-flex items-center gap-1 text-sm text-gray-700">
@@ -782,6 +858,15 @@ const CompraForm = () => {
           </Button>
         </div>
       </form>
+
+      <CompraProductoRapidoModal
+        open={quickModal.open}
+        onClose={() => setQuickModal((s) => ({ ...s, open: false }))}
+        onCreated={handleProductoRapidoCreado}
+        proveedorId={formData.proveedor_id}
+        nombreInicial={quickModal.nombreHint}
+        precioCostoInicial={quickModal.precioHint}
+      />
     </div>
   );
 };

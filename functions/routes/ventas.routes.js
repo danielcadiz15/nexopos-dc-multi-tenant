@@ -1,6 +1,9 @@
 // functions/routes/ventas.routes.js
 const admin = require('firebase-admin');
 const db = admin.firestore();
+const { normalizeMedioPagoCaja } = require('../utils/cajaMedios');
+const { incrementarSaldoSucursal } = require('../utils/cajaSaldo');
+const { safeAudit } = require('../utils/auditLogger');
 
 const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
   try {
@@ -351,6 +354,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		let montoTotal = 0;
 		let totalEfectivo = 0;
 		let totalTarjeta = 0;
+		let totalMercadoPago = 0;
 		let totalTransferencia = 0;
 		let totalCredito = 0;
 		let totalPagado = 0;
@@ -370,20 +374,16 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 			ventasConSaldoPendiente++;
 		  }
 		  
-		  // Contar por método de pago
-		  switch (venta.metodo_pago) {
-			case 'efectivo':
-			  totalEfectivo += parseFloat(venta.total || 0);
-			  break;
-			case 'tarjeta':
-			  totalTarjeta += parseFloat(venta.total || 0);
-			  break;
-			case 'transferencia':
-			  totalTransferencia += parseFloat(venta.total || 0);
-			  break;
-			case 'credito':
-			  totalCredito += parseFloat(venta.total || 0);
-			  break;
+		  // Contar por método de pago (normalizado: MP/billetera → mercadopago)
+		  const tVenta = parseFloat(venta.total || 0);
+		  const mp = normalizeMedioPagoCaja(venta.metodo_pago);
+		  if (mp === 'efectivo') totalEfectivo += tVenta;
+		  else if (mp === 'tarjeta') totalTarjeta += tVenta;
+		  else if (mp === 'mercadopago') totalMercadoPago += tVenta;
+		  else if (mp === 'transferencia') totalTransferencia += tVenta;
+		  else if (mp === 'credito') totalCredito += tVenta;
+		  else {
+		    totalTarjeta += tVenta;
 		  }
 		  
 		  // Contar clientes únicos
@@ -397,6 +397,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		  monto_total: montoTotal,
 		  efectivo: totalEfectivo,
 		  tarjeta: totalTarjeta,
+		  mercadopago: totalMercadoPago,
 		  transferencia: totalTransferencia,
 		  credito: totalCredito,
 		  clientes_atendidos: clientesUnicos.size,
@@ -498,6 +499,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		let montoTotal = 0;
 		let totalEfectivo = 0;
 		let totalTarjeta = 0;
+		let totalMercadoPago = 0;
 		let totalTransferencia = 0;
 		let totalCredito = 0;
 		let totalPagado = 0;
@@ -520,22 +522,14 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 			  ventasConSaldoPendiente++;
 			}
 			
-			// Contar por método de pago
 			const totalVenta = parseFloat(venta.total || 0);
-			switch (venta.metodo_pago) {
-			  case 'efectivo':
-				totalEfectivo += totalVenta;
-				break;
-			  case 'tarjeta':
-				totalTarjeta += totalVenta;
-				break;
-			  case 'transferencia':
-				totalTransferencia += totalVenta;
-				break;
-			  case 'credito':
-				totalCredito += totalVenta;
-				break;
-			}
+			const mp = normalizeMedioPagoCaja(venta.metodo_pago);
+			if (mp === 'efectivo') totalEfectivo += totalVenta;
+			else if (mp === 'tarjeta') totalTarjeta += totalVenta;
+			else if (mp === 'mercadopago') totalMercadoPago += totalVenta;
+			else if (mp === 'transferencia') totalTransferencia += totalVenta;
+			else if (mp === 'credito') totalCredito += totalVenta;
+			else totalTarjeta += totalVenta;
 			
 			// Contar clientes únicos
 			if (venta.cliente_id) {
@@ -570,6 +564,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
 		  // Métodos de pago
 		  efectivo: totalEfectivo,
 		  tarjeta: totalTarjeta,
+		  mercadopago: totalMercadoPago,
 		  transferencia: totalTransferencia,
 		  credito: totalCredito,
 		  
@@ -985,7 +980,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
           if (montoPagado > 0) {
             const fechaISO = new Date().toISOString();
             const fechaDia = fechaISO.split('T')[0];
-            const medio = venta.metodo_pago || 'efectivo';
+            const medio = normalizeMedioPagoCaja(venta.metodo_pago || ventaFirebase.metodo_pago);
             await db.collection('companies').doc(companyId).collection('caja')
               .doc(venta.sucursal_id).collection('movimientos').add({
                 tipo: 'ingreso',
@@ -1004,12 +999,31 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
                 fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
               });
             console.log('💰 [CAJA] Ingreso registrado por venta:', { id: resultado, monto: montoPagado, medio });
+            await incrementarSaldoSucursal(db, companyId, venta.sucursal_id, montoPagado);
           } else {
             console.log('💰 [CAJA] Venta a crédito - no registra ingreso inicial');
           }
         } catch (e) {
           console.warn('⚠️ [CAJA] No se pudo registrar ingreso por venta:', e.message);
         }
+
+        await safeAudit(db, companyId, req, {
+          accion: 'crear',
+          modulo: 'ventas',
+          entidad: 'venta',
+          entidad_id: resultado,
+          titulo: `Venta creada ${ventaFirebase.numero || resultado}`,
+          descripcion: `Total: ${ventaFirebase.total || 0} · Pagado: ${ventaFirebase.total_pagado || 0}`,
+          severidad: 'info',
+          sucursal_id: ventaFirebase.sucursal_id,
+          monto: ventaFirebase.total,
+          metadata: {
+            estado: ventaFirebase.estado,
+            estado_pago: ventaFirebase.estado_pago,
+            metodo_pago: ventaFirebase.metodo_pago,
+            items: Array.isArray(detalles) ? detalles.length : 0
+          }
+        });
 		
 		res.status(201).json({
 		  success: true,
@@ -1156,6 +1170,23 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
         console.log('🔍 [ESTADO VENTA] Verificación post-actualización:', {
           estadoActual: datosActualizados.estado,
           fechaActualizacion: datosActualizados.fechaActualizacion
+        });
+
+        await safeAudit(db, companyId, req, {
+          accion: 'cambiar_estado',
+          modulo: 'ventas',
+          entidad: 'venta',
+          entidad_id: ventaId,
+          titulo: `Estado de venta cambiado a ${estado}`,
+          descripcion: motivo || `Venta ${ventaId}`,
+          severidad: estado === 'cancelada' || estado === 'devuelta' ? 'warning' : 'info',
+          sucursal_id: datosActualizados.sucursal_id,
+          monto: datosActualizados.total,
+          metadata: {
+            estado_anterior: ventaData?.estado || null,
+            estado_nuevo: estado,
+            con_transporte: con_transporte ?? null
+          }
         });
         
         res.json({
@@ -1322,7 +1353,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
               .collection('ventas').doc(ventaId).collection('pagos').get();
             pagosSnap.forEach(docP => {
               const p = docP.data();
-              const medio = p.medio_pago || p.metodo_pago || ventaData.metodo_pago || 'efectivo';
+              const medio = normalizeMedioPagoCaja(p.medio_pago || p.metodo_pago || ventaData.metodo_pago);
               const monto = parseFloat(p.monto || 0) || 0;
               sumaPagosPorMedio[medio] = (sumaPagosPorMedio[medio] || 0) + monto;
               sumaPagosTotal += monto;
@@ -1332,7 +1363,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
             const totalPagadoVenta = parseFloat(ventaData.total_pagado || 0) || 0;
             const restanteInicial = totalPagadoVenta - sumaPagosTotal;
             if (restanteInicial > 0) {
-              const medioInicial = ventaData.metodo_pago || 'efectivo';
+              const medioInicial = normalizeMedioPagoCaja(ventaData.metodo_pago);
               sumaPagosPorMedio[medioInicial] = (sumaPagosPorMedio[medioInicial] || 0) + restanteInicial;
             }
 
@@ -1356,6 +1387,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
                   sucursal_id: sucursalId,
                   fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
                 });
+                await incrementarSaldoSucursal(db, companyId, sucursalId, -monto);
               }
             }
 
@@ -1378,6 +1410,24 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
         }
         
         console.log(`✅ Venta ${ventaId} eliminada correctamente`);
+
+        await safeAudit(db, companyId, req, {
+          accion: 'eliminar',
+          modulo: 'ventas',
+          entidad: 'venta',
+          entidad_id: ventaId,
+          titulo: `Venta eliminada ${ventaData.numero || ventaId}`,
+          descripcion: motivo,
+          severidad: 'critical',
+          sucursal_id: ventaData.sucursal_id,
+          monto: ventaData.total,
+          metadata: {
+            estado: ventaData.estado,
+            estado_pago: ventaData.estado_pago,
+            cliente_id: ventaData.cliente_id || null,
+            items: Array.isArray(ventaData.detalles) ? ventaData.detalles.length : 0
+          }
+        });
         
         res.json({
           success: true,
@@ -1407,14 +1457,19 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
       const datos = req.body;
 
       try {
+        if (!companyId) {
+          return res.status(400).json({ success:false, message:'CompanyId requerido' });
+        }
         console.log(`✏️ Actualizando venta ${ventaId} con datos:`, datos);
         console.log(`🔍 Propiedades de modificación recibidas:`);
         console.log(`  - modificada:`, datos.modificada);
         console.log(`  - fecha_modificacion:`, datos.fecha_modificacion);
         console.log(`  - modificado_por:`, datos.modificado_por);
 
+        const ventaRef = db.collection('companies').doc(companyId).collection('ventas').doc(ventaId);
+
         // Validar que la venta existe
-        const ventaDoc = await db.collection('ventas').doc(ventaId).get();
+        const ventaDoc = await ventaRef.get();
         if (!ventaDoc.exists) {
           res.status(404).json({
             success: false,
@@ -1484,16 +1539,46 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
               
               if (diferenciaStock !== 0) {
                 // Buscar stock en la sucursal
-                const stockQuery = await db.collection('stock_sucursal')
+                const stockQuery = await db.collection('companies').doc(companyId).collection('stock_sucursal')
                   .where('producto_id', '==', productoId)
                   .where('sucursal_id', '==', ventaActual.sucursal_id)
                   .limit(1)
                   .get();
                 
-                if (!stockQuery.empty) {
+                if (stockQuery.empty) {
+                  if (diferenciaStock > 0) {
+                    throw new Error(`Stock no encontrado para editar producto ${productoId} en la sucursal`);
+                  }
+                  const nuevoStockRef = db.collection('companies').doc(companyId).collection('stock_sucursal').doc();
+                  const cantidadDevuelta = Math.abs(diferenciaStock);
+                  transaction.set(nuevoStockRef, {
+                    producto_id: productoId,
+                    sucursal_id: ventaActual.sucursal_id,
+                    cantidad: cantidadDevuelta,
+                    stock_minimo: 5,
+                    ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp()
+                  });
+                  const movimientoRef = db.collection('companies').doc(companyId).collection('movimientos_stock').doc();
+                  transaction.set(movimientoRef, {
+                    sucursal_id: ventaActual.sucursal_id,
+                    producto_id: productoId,
+                    tipo: 'entrada',
+                    cantidad: cantidadDevuelta,
+                    stock_anterior: 0,
+                    stock_nuevo: cantidadDevuelta,
+                    motivo: 'Edición de venta',
+                    referencia_tipo: 'venta',
+                    referencia_id: ventaId,
+                    fecha: admin.firestore.FieldValue.serverTimestamp(),
+                    usuario_id: datos.modificado_por || 'sistema'
+                  });
+                } else {
                   const stockDoc = stockQuery.docs[0];
                   const stockActual = parseInt(stockDoc.data().cantidad || 0);
-                  const nuevoStock = Math.max(0, stockActual - diferenciaStock);
+                  const nuevoStock = stockActual - diferenciaStock;
+                  if (nuevoStock < 0) {
+                    throw new Error(`Stock insuficiente para editar producto ${productoId}. Disponible: ${stockActual}, adicional requerido: ${diferenciaStock}`);
+                  }
                   
                   console.log(`  🔄 Ajustando stock: ${stockActual} - ${diferenciaStock} = ${nuevoStock}`);
                   
@@ -1504,7 +1589,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
                   });
                   
                   // Registrar movimiento
-                  const movimientoRef = db.collection('movimientos_stock').doc();
+                  const movimientoRef = db.collection('companies').doc(companyId).collection('movimientos_stock').doc();
                   transaction.set(movimientoRef, {
                     sucursal_id: ventaActual.sucursal_id,
                     producto_id: productoId,
@@ -1521,40 +1606,65 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
                 }
               }
             }
+            
+            transaction.update(ventaRef, {
+              ...Object.fromEntries(Object.entries(datos).filter(([campo]) => [
+                'detalles', 'cliente_info', 'metodo_pago', 'notas', 'total', 'subtotal', 'descuento', 'impuestos', 'total_pagado', 'saldo_pendiente', 'estado_pago',
+                'modificada', 'fecha_modificacion', 'modificado_por', 'cambios_realizados'
+              ].includes(campo))),
+              fechaActualizacion: admin.firestore.FieldValue.serverTimestamp()
+            });
           });
           
           console.log('✅ Stock ajustado correctamente por edición de venta');
+        } else {
+          const camposPermitidos = [
+            'detalles', 'cliente_info', 'metodo_pago', 'notas', 'total', 'subtotal', 'descuento', 'impuestos', 'total_pagado', 'saldo_pendiente', 'estado_pago',
+            'modificada', 'fecha_modificacion', 'modificado_por', 'cambios_realizados'
+          ];
+          const actualizacion = {};
+          camposPermitidos.forEach(campo => {
+            if (datos[campo] !== undefined) {
+              actualizacion[campo] = datos[campo];
+            }
+          });
+          actualizacion.fechaActualizacion = admin.firestore.FieldValue.serverTimestamp();
+          await ventaRef.update(actualizacion);
         }
-
-        // Actualizar los campos permitidos
-        const camposPermitidos = [
-          'detalles', 'cliente_info', 'metodo_pago', 'notas', 'total', 'subtotal', 'descuento', 'impuestos', 'total_pagado', 'saldo_pendiente', 'estado_pago',
-          'modificada', 'fecha_modificacion', 'modificado_por', 'cambios_realizados'
-        ];
-        const actualizacion = {};
-        camposPermitidos.forEach(campo => {
-          if (datos[campo] !== undefined) {
-            actualizacion[campo] = datos[campo];
-          }
-        });
-        actualizacion.fechaActualizacion = admin.firestore.FieldValue.serverTimestamp();
-
-        await db.collection('ventas').doc(ventaId).update(actualizacion);
 
         console.log(`✅ Venta ${ventaId} actualizada correctamente`);
         
         // Log temporal para verificar que se guardaron las propiedades de modificación
-        const ventaActualizada = await db.collection('ventas').doc(ventaId).get();
+        const ventaActualizada = await ventaRef.get();
         const datosActualizados = ventaActualizada.data();
         console.log(`🔍 Verificando propiedades guardadas:`);
         console.log(`  - modificada:`, datosActualizados.modificada);
         console.log(`  - fecha_modificacion:`, datosActualizados.fecha_modificacion);
         console.log(`  - modificado_por:`, datosActualizados.modificado_por);
+
+        await safeAudit(db, companyId, req, {
+          accion: 'editar',
+          modulo: 'ventas',
+          entidad: 'venta',
+          entidad_id: ventaId,
+          titulo: `Venta editada ${datosActualizados.numero || ventaId}`,
+          descripcion: datos.cambios_realizados || 'Actualización de venta',
+          severidad: 'warning',
+          sucursal_id: datosActualizados.sucursal_id,
+          monto: datosActualizados.total,
+          metadata: {
+            campos_actualizados: Object.keys(datos || {}).filter((k) => k !== 'detalles').slice(0, 20),
+            items: Array.isArray(datosActualizados.detalles) ? datosActualizados.detalles.length : 0
+          }
+        });
         
         res.json({
           success: true,
           message: 'Venta actualizada correctamente',
-          data: actualizacion
+          data: {
+            id: ventaId,
+            ...datosActualizados
+          }
         });
       } catch (error) {
         console.error('❌ Error al actualizar venta:', error);
@@ -1639,7 +1749,7 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
               .doc(resultadoTx.sucursalId).collection('movimientos').add({
                 tipo: 'ingreso',
                 monto: resultadoTx.pagoAplicable,
-                medio_pago: resultadoTx.medio_pago,
+                medio_pago: normalizeMedioPagoCaja(resultadoTx.medio_pago),
                 concepto: `Pago venta ${resultadoTx.numero || ventaId}`,
                 usuario: req.user?.email || req.user?.uid || 'sistema',
                 observaciones: '',
@@ -1653,12 +1763,27 @@ const ventasRoutes = async (req, res, path, enriquecerVentasConClientes) => {
                 fechaCreacion: admin.firestore.FieldValue.serverTimestamp()
               });
             console.log('💰 [CAJA] Ingreso registrado por pago de venta:', { id: ventaId, monto: resultadoTx.pagoAplicable });
+            await incrementarSaldoSucursal(db, companyId, resultadoTx.sucursalId, resultadoTx.pagoAplicable);
           }
         } catch (cajaErr) {
           console.warn('⚠️ [CAJA] No se pudo registrar ingreso por pago:', cajaErr.message);
         }
         
         console.log(`✅ Pago registrado correctamente para venta ${ventaId}`);
+        await safeAudit(db, companyId, req, {
+          accion: 'registrar_pago',
+          modulo: 'ventas',
+          entidad: 'venta',
+          entidad_id: ventaId,
+          titulo: `Pago registrado en venta ${ventaId}`,
+          descripcion: `Monto aplicado: ${resultadoTx.pagoAplicable}`,
+          severidad: 'info',
+          sucursal_id: resultadoTx.sucursalId,
+          monto: resultadoTx.pagoAplicable,
+          metadata: {
+            medio_pago: pagoData.medio_pago || pagoData.metodo_pago || null
+          }
+        });
         res.json({ success: true, message: 'Pago registrado correctamente' });
         
       } catch (error) {

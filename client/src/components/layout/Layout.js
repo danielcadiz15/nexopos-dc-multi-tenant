@@ -12,6 +12,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import ModuleOutletGuard from '../common/ModuleOutletGuard';
 
 // Componentes
 import Sidebar from './Sidebar';
@@ -69,12 +70,13 @@ const Layout = () => {
   };
 
   return (
-    <div className="flex h-full min-h-0 max-h-full w-full flex-shrink-0 bg-gray-100 relative">
+    <div className="relative flex h-full min-h-0 max-h-full w-full flex-shrink-0 bg-slate-100">
       {/* Overlay para móvil cuando sidebar está abierta */}
       {isMobile && sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden"
+        <div
+          className="fixed inset-0 z-20 bg-slate-900/50 backdrop-blur-sm lg:hidden"
           onClick={handleOverlayClick}
+          aria-hidden
         />
       )}
       
@@ -111,12 +113,16 @@ const Layout = () => {
         <LicenseBanner />
         
         {/* Contenido de la página */}
-        <main className={`
-          flex-1 overflow-y-auto bg-gray-100
-          ${isMobile ? 'p-2 pb-20' : 'p-4 pb-4'}
-        `}>
+        <main
+          className={`
+          flex-1 overflow-y-auto bg-slate-50 bg-nexo-mesh
+          ${isMobile ? 'p-2 pb-20' : 'p-4 pb-6'}
+        `}
+        >
           <div className="container mx-auto max-w-7xl">
-            <Outlet />
+            <ModuleOutletGuard>
+              <Outlet />
+            </ModuleOutletGuard>
           </div>
         </main>
         

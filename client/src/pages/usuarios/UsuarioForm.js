@@ -16,6 +16,7 @@ import sucursalesService from '../../services/sucursales.service';
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
 import Spinner from '../../components/common/Spinner';
+import PasswordInput from '../../components/common/PasswordInput';
 
 // Iconos
 import { 
@@ -365,7 +366,7 @@ const UsuarioForm = () => {
                 name="nombre"
                 value={formData.nombre}
                 onChange={handleChange}
-                className={`block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                className={`nexo-field sm:text-sm ${
                   errores.nombre ? 'border-red-500' : ''
                 }`}
                 placeholder="Nombre del usuario"
@@ -384,7 +385,7 @@ const UsuarioForm = () => {
                 name="apellido"
                 value={formData.apellido}
                 onChange={handleChange}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="nexo-field sm:text-sm"
                 placeholder="Apellido del usuario"
               />
             </div>
@@ -398,7 +399,7 @@ const UsuarioForm = () => {
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
-                className={`block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                className={`nexo-field sm:text-sm ${
                   errores.email ? 'border-red-500' : ''
                 }`}
                 placeholder="correo@ejemplo.com"
@@ -418,7 +419,7 @@ const UsuarioForm = () => {
                   name="rol_id"
                   value={formData.rol_id}
                   onChange={handleChange}
-                  className={`block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                  className={`nexo-field pl-10 sm:text-sm ${
                     errores.rol_id ? 'border-red-500' : ''
                   }`}
                 >
@@ -444,19 +445,17 @@ const UsuarioForm = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {esEdicion ? 'Contraseña (dejar en blanco para mantener)' : 'Contraseña *'}
               </label>
-              <div className="relative">
-                <FaKey className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  className={`block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                    errores.password ? 'border-red-500' : ''
-                  }`}
-                  placeholder="Contraseña"
-                />
-              </div>
+              <PasswordInput
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                className={`nexo-field sm:text-sm ${
+                  errores.password ? 'border-red-500' : ''
+                }`}
+                placeholder="Contraseña"
+                autoComplete="new-password"
+                leftSlot={<FaKey className="h-5 w-5 text-slate-400" />}
+              />
               {errores.password && (
                 <p className="mt-1 text-sm text-red-600">{errores.password}</p>
               )}
@@ -466,19 +465,17 @@ const UsuarioForm = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Confirmar Contraseña
               </label>
-              <div className="relative">
-                <FaKey className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <input
-                  type="password"
-                  name="confirmar_password"
-                  value={formData.confirmar_password}
-                  onChange={handleChange}
-                  className={`block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                    errores.confirmar_password ? 'border-red-500' : ''
-                  }`}
-                  placeholder="Confirmar contraseña"
-                />
-              </div>
+              <PasswordInput
+                name="confirmar_password"
+                value={formData.confirmar_password}
+                onChange={handleChange}
+                className={`nexo-field sm:text-sm ${
+                  errores.confirmar_password ? 'border-red-500' : ''
+                }`}
+                placeholder="Confirmar contraseña"
+                autoComplete="new-password"
+                leftSlot={<FaKey className="h-5 w-5 text-slate-400" />}
+              />
               {errores.confirmar_password && (
                 <p className="mt-1 text-sm text-red-600">{errores.confirmar_password}</p>
               )}
@@ -493,7 +490,7 @@ const UsuarioForm = () => {
                   name="activo"
                   checked={formData.activo}
                   onChange={handleChange}
-                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500/30"
                 />
                 <span className="ml-2 text-sm text-gray-700">Usuario activo</span>
               </label>
@@ -511,7 +508,7 @@ const UsuarioForm = () => {
                   id={`sucursal-${sucursal.id}`}
                   checked={formData.sucursales.includes(sucursal.id)}
                   onChange={(e) => handleSucursalChange(sucursal.id, e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500/30"
                 />
                 <label htmlFor={`sucursal-${sucursal.id}`} className="flex-1 cursor-pointer">
                   <div className="font-medium text-sm">{sucursal.nombre}</div>
@@ -590,7 +587,7 @@ const UsuarioForm = () => {
                               type="checkbox"
                               checked={tienePermiso}
                               onChange={(e) => handlePermisoChange(moduloId, accionId, e.target.checked)}
-                              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500/30"
                             />
                             <span className="text-sm text-gray-700">{accionNombre}</span>
                           </label>

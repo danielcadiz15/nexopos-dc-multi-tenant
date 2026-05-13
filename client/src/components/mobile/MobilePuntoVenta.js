@@ -24,7 +24,7 @@ import configuracionService from '../../services/configuracion.service';
 import productosService from '../../services/productos.service';
 import ventasService from '../../services/ventas.service';
 import useViewport from '../../hooks/useViewport';
-import { printHtmlDocument } from '../../utils/print.utils';
+import TicketVenta from '../modules/ventas/TicketVenta';
 
 const formatMoneda = (value) => `$${(parseFloat(value || 0)).toFixed(2)}`;
 const OFFLINE_SALES_KEY = 'mobile_pos_offline_sales_v1';
@@ -51,13 +51,6 @@ const obtenerStockSucursal = (producto) => (
     0
   ) || 0
 );
-
-const escapeHtml = (value) => String(value ?? '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#039;');
 
 const CONSUMIDOR_FINAL = {
   id: null,
@@ -128,6 +121,8 @@ const MobilePuntoVenta = () => {
   const [ultimaVenta, setUltimaVenta] = useState(null);
   const [configTicket, setConfigTicket] = useState(null);
   const [ticketPendiente, setTicketPendiente] = useState(null);
+  /** Unifica impresión con TicketVenta (58mm en caja). null | { venta, autoPrint } */
+  const [ticketVentaPayload, setTicketVentaPayload] = useState(null);
   const [mostrarCarritoCompleto, setMostrarCarritoCompleto] = useState(false);
   const [clienteSeleccionado, setClienteSeleccionado] = useState(CONSUMIDOR_FINAL);
   const [mostrarClientes, setMostrarClientes] = useState(false);
@@ -377,86 +372,34 @@ const MobilePuntoVenta = () => {
     ? Math.max(0, montoRecibidoNum - total)
     : 0;
 
-  const imprimirTicket = (ticket) => {
-    if (!ticket) return;
+  const normalizeVentaForTicket = useCallback((ticket) => {
+    if (!ticket) return null;
+    const vendedorLabel = currentUser?.email || currentUser?.displayName || 'Cajero';
+    const detalles = (ticket.detalles || []).map((d) => ({
+      ...d,
+      producto_info: d.producto_info || (d.nombre ? { nombre: d.nombre, codigo: d.codigo } : { nombre: 'Producto' }),
+      nombre_producto: d.nombre_producto || d.nombre,
+      precio_unitario: d.precio_unitario != null ? d.precio_unitario : d.precio,
+      precio_total: d.precio_total != null ? d.precio_total : (d.precio || d.precio_unitario || 0) * (d.cantidad || 0)
+    }));
+    return {
+      ...ticket,
+      detalles,
+      usuario_nombre: ticket.usuario_nombre || vendedorLabel,
+      vendedor: ticket.vendedor || vendedorLabel,
+      fecha: ticket.fecha || new Date().toISOString(),
+      metodo_pago: ticket.metodo_pago || metodoPago || 'efectivo',
+      estado: ticket.estado || 'completada',
+      subtotal: ticket.subtotal != null ? ticket.subtotal : ticket.total,
+      descuento: ticket.descuento != null ? ticket.descuento : 0
+    };
+  }, [currentUser, metodoPago]);
 
-    const config = configTicket || {};
-    const empresa = config.nombre_fantasia || config.razon_social || 'NexoPOS DC';
-    const fecha = new Date(ticket.fecha || new Date());
-    const detallesHtml = (ticket.detalles || []).map((detalle) => `
-      <tr>
-        <td colspan="3" class="producto">${escapeHtml(detalle.nombre)}</td>
-      </tr>
-      <tr>
-        <td>${detalle.cantidad} x ${formatMoneda(detalle.precio_unitario)}</td>
-        <td></td>
-        <td class="right">${formatMoneda(detalle.precio_total)}</td>
-      </tr>
-    `).join('');
-
-    const html = `
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Ticket</title>
-          <style>
-            @page { size: 80mm auto; margin: 0; }
-            * { box-sizing: border-box; color: #000; }
-            body {
-              margin: 0;
-              padding: 5mm;
-              width: 80mm;
-              font-family: Consolas, "Courier New", monospace;
-              font-size: 13px;
-              font-weight: 700;
-              background: #fff;
-            }
-            .center { text-align: center; }
-            .right { text-align: right; }
-            .empresa { font-size: 18px; font-weight: 900; text-transform: uppercase; }
-            .muted { font-size: 11px; font-weight: 600; }
-            hr { border: 0; border-top: 1px dashed #000; margin: 8px 0; }
-            table { width: 100%; border-collapse: collapse; }
-            td { padding: 2px 0; vertical-align: top; }
-            .producto { padding-top: 6px; font-weight: 900; }
-            .total { font-size: 18px; font-weight: 900; }
-          </style>
-        </head>
-        <body>
-          <div class="center">
-            <div class="empresa">${escapeHtml(empresa)}</div>
-            ${config.cuit ? `<div class="muted">CUIT: ${escapeHtml(config.cuit)}</div>` : ''}
-            ${config.direccion_calle ? `<div class="muted">${escapeHtml(config.direccion_calle)}</div>` : ''}
-            ${config.telefono_principal ? `<div class="muted">Tel: ${escapeHtml(config.telefono_principal)}</div>` : ''}
-          </div>
-          <hr />
-          <div>Ticket: ${escapeHtml(ticket.numero || ticket.id || 's/n')}</div>
-          <div>Fecha: ${fecha.toLocaleDateString('es-AR')} ${fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
-          <div>Cajero: ${escapeHtml(currentUser?.email || 'Cajero')}</div>
-          <hr />
-          <table>${detallesHtml}</table>
-          <hr />
-          <table>
-            <tr><td>Subtotal</td><td class="right">${formatMoneda(ticket.subtotal)}</td></tr>
-            <tr><td class="total">TOTAL</td><td class="right total">${formatMoneda(ticket.total)}</td></tr>
-            <tr><td>Pago</td><td class="right">${escapeHtml(ticket.metodo_pago)}</td></tr>
-            <tr><td>Recibido</td><td class="right">${formatMoneda(ticket.monto_recibido)}</td></tr>
-            <tr><td>Vuelto</td><td class="right">${formatMoneda(ticket.vuelto)}</td></tr>
-          </table>
-          <hr />
-          <div class="center">GRACIAS POR SU COMPRA</div>
-        </body>
-      </html>
-    `;
-
-    try {
-      printHtmlDocument({ title: 'Ticket', bodyHtml: html });
-    } catch (error) {
-      console.error('[MOBILE POS] Error imprimiendo ticket:', error);
-      toast.error('No se pudo abrir la impresión del ticket');
-    }
-  };
+  const abrirTicketVenta = useCallback((ticket, autoPrint) => {
+    const normalized = normalizeVentaForTicket(ticket);
+    if (!normalized) return;
+    setTicketVentaPayload({ venta: normalized, autoPrint: !!autoPrint });
+  }, [normalizeVentaForTicket]);
 
   const buscarProductos = async (termino) => {
     const texto = termino.trim();
@@ -756,7 +699,7 @@ const MobilePuntoVenta = () => {
       });
       toast.success('Venta registrada correctamente');
       if (configTicket?.imprimir_ticket_automaticamente) {
-        imprimirTicket(ticket);
+        abrirTicketVenta(ticket, true);
       } else {
         setTicketPendiente(ticket);
       }
@@ -782,7 +725,7 @@ const MobilePuntoVenta = () => {
         };
         enqueueOfflineSale({ venta, detalles, sucursalVenta });
         setUltimaVenta({ id: offlineTicket.id, total, vuelto, metodoPago });
-        if (configTicket?.imprimir_ticket_automaticamente) imprimirTicket(offlineTicket);
+        if (configTicket?.imprimir_ticket_automaticamente) abrirTicketVenta(offlineTicket, true);
         else setTicketPendiente(offlineTicket);
         limpiarVenta();
         toast.warning('Sin conexión: venta guardada como pendiente. Se sincronizará automáticamente al reconectar.');
@@ -1114,7 +1057,7 @@ const MobilePuntoVenta = () => {
 
   return (
     <>
-      <div className="flex h-full min-h-0 w-full flex-col gap-1.5 overflow-hidden sm:gap-2">
+      <div className="scrollbar-thin flex h-full min-h-0 w-full flex-col gap-1.5 overflow-y-auto overscroll-y-contain sm:gap-2">
         <div
           className={`shrink-0 rounded-2xl bg-gradient-to-r from-blue-700 to-indigo-700 text-white shadow-lg ${compact ? 'p-2' : 'p-4'}`}
         >
@@ -1255,7 +1198,7 @@ const MobilePuntoVenta = () => {
       </div>
 
       {landscapeTablet ? (
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain">
           <section
             aria-label="Resultados de búsqueda"
             className={`scrollbar-thin min-h-0 overflow-y-auto overscroll-y-contain pr-0.5 ${mostrarResultados ? 'flex-1' : 'hidden'}`}
@@ -1263,7 +1206,7 @@ const MobilePuntoVenta = () => {
             {resultadosSolo}
           </section>
 
-          <div className={`flex min-h-0 flex-1 flex-row items-stretch gap-2 overflow-hidden ${mostrarResultados ? 'border-t border-gray-200 pt-2' : ''} sm:gap-3`}>
+          <div className={`flex min-h-0 flex-1 flex-row items-stretch gap-2 overflow-x-auto overflow-y-hidden ${mostrarResultados ? 'border-t border-gray-200 pt-2' : ''} sm:gap-3`}>
             <section
               aria-label="Productos del carrito"
               className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pr-2"
@@ -1272,7 +1215,7 @@ const MobilePuntoVenta = () => {
             </section>
             <section
               aria-label="Medios de pago y cobro"
-              className="flex min-h-0 w-[clamp(17rem,min(360px,35vw),24rem)] min-w-[15rem] max-w-[40vw] shrink-0 flex-col overflow-hidden border-l border-gray-200 pl-3"
+              className="scrollbar-thin flex min-h-0 w-[clamp(17rem,min(360px,35vw),24rem)] min-w-[15rem] max-w-[40vw] shrink-0 flex-col overflow-y-auto overscroll-y-contain border-l border-gray-200 pl-3"
             >
               {panelCobroResumen}
             </section>
@@ -1617,7 +1560,7 @@ const MobilePuntoVenta = () => {
               <button
                 type="button"
                 onClick={() => {
-                  imprimirTicket(ticketPendiente);
+                  abrirTicketVenta(ticketPendiente, false);
                   setTicketPendiente(null);
                 }}
                 className="min-h-[52px] rounded-2xl bg-blue-600 text-base font-black text-white"
@@ -1627,6 +1570,16 @@ const MobilePuntoVenta = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {ticketVentaPayload?.venta && (
+        <TicketVenta
+          venta={ticketVentaPayload.venta}
+          thermalRollWidth="58mm"
+          autoPrintAfterLoad={ticketVentaPayload.autoPrint}
+          hidePdfButton
+          onClose={() => setTicketVentaPayload(null)}
+        />
       )}
     </>
   );

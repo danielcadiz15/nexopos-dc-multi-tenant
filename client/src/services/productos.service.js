@@ -238,6 +238,27 @@ class ProductosService extends FirebaseService {
     }
   }
 
+  /**
+   * Verifica en Firebase si la empresa ya tiene un producto con ese código o código de barras (GTIN normalizado).
+   * @returns {Promise<{ registrado: boolean, productoId: string|null }>}
+   */
+  async verificarRegistradoPorCodigo(codigo) {
+    try {
+      const c = String(codigo || '').trim();
+      if (!c) return { registrado: false, productoId: null };
+      const endpoint = `/registrado-por-codigo/${encodeURIComponent(c)}`;
+      const response = await this.api.get(endpoint, this.getOrgQuery());
+      const payload = response?.data?.data ?? response?.data;
+      if (payload && typeof payload.registrado === 'boolean') {
+        return { registrado: payload.registrado, productoId: payload.productoId || null };
+      }
+      return { registrado: false, productoId: null };
+    } catch (error) {
+      console.warn('[PRODUCTOS] verificarRegistradoPorCodigo:', error?.message || error);
+      return { registrado: false, productoId: null };
+    }
+  }
+
   async crear(producto) {
     try {
       const productoFormateado = {
@@ -268,7 +289,7 @@ class ProductosService extends FirebaseService {
       if (producto.precio_venta !== undefined) productoFormateado.precio_venta = parseFloat(producto.precio_venta || 0);
       if (producto.stock_actual !== undefined) productoFormateado.stock_actual = parseInt(producto.stock_actual || 0);
       if (producto.stock_minimo !== undefined) productoFormateado.stock_minimo = parseInt(producto.stock_minimo || 5);
-      const resultado = await this.post(`/update/${id}`, this.getOrgQuery(productoFormateado));
+      const resultado = await this.put(`/${id}`, this.getOrgQuery(productoFormateado));
       return resultado;
     } catch (error) {
       console.error(`❌ Error al actualizar producto ${id}:`, error);
@@ -278,7 +299,7 @@ class ProductosService extends FirebaseService {
 
   async eliminar(id) {
     try {
-      const resultado = await this.post(`/delete/${id}`, this.getOrgQuery());
+      const resultado = await this.delete(`/${id}`);
       return resultado;
     } catch (error) {
       console.error(`❌ Error al eliminar producto ${id}:`, error);

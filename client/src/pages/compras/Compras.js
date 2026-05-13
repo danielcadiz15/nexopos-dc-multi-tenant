@@ -15,6 +15,7 @@ import { toast } from 'react-toastify';
 
 // Servicios
 import comprasService from '../../services/compras.service';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Componentes
 import Card from '../../components/common/Card';
@@ -23,6 +24,7 @@ import Spinner from '../../components/common/Spinner';
 import Table from '../../components/common/Table';
 import SearchBar from '../../components/common/SearchBar';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
+import CompraCostosCambioModal from '../../components/compras/CompraCostosCambioModal';
 
 // Iconos
 import { 
@@ -36,13 +38,20 @@ import {
  */
 const Compras = () => {
   const navigate = useNavigate();
-  
+  const { currentUser } = useAuth();
+
   // Estado
   const [compras, setCompras] = useState([]);
   const [loading, setLoading] = useState(true);
   const [compraProcesando, setCompraProcesando] = useState(null);
   const [accion, setAccion] = useState('');
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [costosModal, setCostosModal] = useState({
+    open: false,
+    compraId: null,
+    cambios: [],
+    applying: false
+  });
   
   /**
    * Carga inicial de datos
@@ -96,16 +105,50 @@ const Compras = () => {
     setShowConfirmDialog(true);
   };
   
+  const aplicarCostosSeleccionLista = async (producto_ids) => {
+    const cid = costosModal.compraId;
+    if (!cid) return;
+    setCostosModal((s) => ({ ...s, applying: true }));
+    try {
+      await comprasService.aplicarCostosProductos(cid, producto_ids);
+      toast.success(`Costo actualizado en ${producto_ids.length} producto(s).`, {
+        autoClose: 3600,
+        className: '!bg-gradient-to-r !from-emerald-600 !to-teal-600 !text-white'
+      });
+      setCostosModal({ open: false, compraId: null, cambios: [], applying: false });
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err?.message || 'No se pudieron actualizar los costos');
+    } finally {
+      setCostosModal((s) => ({ ...s, applying: false }));
+    }
+  };
+
   /**
    * Confirma la acción sobre la compra
    */
   const confirmarAccion = async () => {
     try {
       if (accion === 'recibir') {
-        await comprasService.recibirCompra(compraProcesando.id, {
-          actualizar_precios: true // Opcional: actualizar precios de productos
+        const compraIdRecibir = compraProcesando.id;
+        const data = await comprasService.recibirCompra(compraIdRecibir, {
+          usuario_id: currentUser?.id || currentUser?.email || ''
         });
-        toast.success('Compra recibida correctamente');
+        const resolved = data?.cambios_costo != null ? data : data?.data || {};
+        const cambios = Array.isArray(resolved.cambios_costo) ? resolved.cambios_costo : [];
+        toast.success(
+          cambios.length > 0
+            ? 'Compra recibida. Stock listo — podés alinear costos en ficha.'
+            : 'Compra recibida. Stock actualizado.',
+          { autoClose: 4000 }
+        );
+        if (cambios.length > 0) {
+          setCostosModal({
+            open: true,
+            compraId: compraIdRecibir,
+            cambios,
+            applying: false
+          });
+        }
       } else if (accion === 'cancelar') {
         await comprasService.cancelarCompra(compraProcesando.id);
         toast.success('Compra cancelada correctamente');
@@ -344,6 +387,14 @@ const Compras = () => {
         cancelText="Volver"
         onConfirm={confirmarAccion}
         onCancel={cancelarAccion}
+      />
+
+      <CompraCostosCambioModal
+        open={costosModal.open}
+        cambios={costosModal.cambios}
+        applying={costosModal.applying}
+        onClose={() => setCostosModal({ open: false, compraId: null, cambios: [], applying: false })}
+        onApply={aplicarCostosSeleccionLista}
       />
     </div>
   );

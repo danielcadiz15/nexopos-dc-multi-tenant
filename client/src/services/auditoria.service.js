@@ -1,10 +1,9 @@
-// src/services/auditoria.service.js
-import FirebaseService from './firebase.service';
+import ApiService from './api.service';
 
 /**
  * Servicio para registro de auditoría
  */
-class AuditoriaService extends FirebaseService {
+class AuditoriaService extends ApiService {
   constructor() {
     super('/auditoria');
   }
@@ -17,26 +16,19 @@ class AuditoriaService extends FirebaseService {
    */
   async registrarActividad(accion, modulo, detalles = {}) {
     try {
-      // Obtener usuario actual del localStorage
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-      const sucursalId = localStorage.getItem('sucursalSeleccionada');
-      
       const registro = {
         accion,
         modulo,
-        usuario_id: currentUser.id || 'sistema',
-        usuario_nombre: currentUser.nombre || 'Sistema',
-        usuario_email: currentUser.email || '',
-        sucursal_id: sucursalId,
-        fecha: new Date().toISOString(),
-        ip: 'web', // En producción podrías obtener la IP real
+        sucursal_id: detalles.sucursal_id || detalles.sucursalId || null,
+        severidad: detalles.severidad || detalles.severity || 'info',
+        titulo: detalles.titulo || `${accion} en ${modulo}`,
+        descripcion: detalles.descripcion || '',
         detalles: {
           ...detalles,
           user_agent: navigator.userAgent
         }
       };
 
-      // Enviar al backend
       await this.post('', registro);
       
       console.log('📝 Actividad registrada:', accion, modulo);
@@ -52,24 +44,21 @@ class AuditoriaService extends FirebaseService {
    */
   async obtenerHistorial(filtros = {}) {
     try {
-      const params = new URLSearchParams();
-      
-      if (filtros.usuario_id) params.append('usuario_id', filtros.usuario_id);
-      if (filtros.modulo) params.append('modulo', filtros.modulo);
-      if (filtros.accion) params.append('accion', filtros.accion);
-      if (filtros.fecha_inicio) params.append('fecha_inicio', filtros.fecha_inicio);
-      if (filtros.fecha_fin) params.append('fecha_fin', filtros.fecha_fin);
-      if (filtros.sucursal_id) params.append('sucursal_id', filtros.sucursal_id);
-      
-      const queryString = params.toString();
-      const actividades = await this.get(queryString ? `?${queryString}` : '');
-      
-      return this.ensureArray(actividades);
+      const { data, status } = await this.get('', filtros);
+      if (status !== 200 || !data?.success) {
+        return { eventos: [], resumen: null };
+      }
+      return {
+        eventos: Array.isArray(data.data) ? data.data : [],
+        resumen: data.resumen || null
+      };
     } catch (error) {
       console.error('Error al obtener historial:', error);
-      return [];
+      return { eventos: [], resumen: null };
     }
   }
 }
 
-export default new AuditoriaService();
+const auditoriaService = new AuditoriaService();
+
+export default auditoriaService;

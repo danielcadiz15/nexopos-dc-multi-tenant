@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
+import { MODULE_KEYS, MODULE_LABELS_ES } from '../../config/modulesCatalog';
 
 // Servicios
 import usuariosService from '../../services/usuarios.service';
@@ -16,33 +17,37 @@ import {
   FaCheck, FaTimes, FaSave, FaEdit, FaUserCog
 } from 'react-icons/fa';
 
-/**
- * Lista completa de módulos del sistema
- */
-const MODULOS_SISTEMA = [
-  // Módulos existentes
-  { id: 'productos', nombre: 'Productos', icono: 'FaBox' },
-  { id: 'categorias', nombre: 'Categorías', icono: 'FaTag' },
-  { id: 'compras', nombre: 'Compras', icono: 'FaShoppingCart' },
-  { id: 'ventas', nombre: 'Ventas', icono: 'FaShoppingBag' },
-  { id: 'stock', nombre: 'Stock', icono: 'FaWarehouse' },
-  { id: 'reportes', nombre: 'Reportes', icono: 'FaChartBar' },
-  { id: 'promociones', nombre: 'Promociones', icono: 'FaPercent' },
-  { id: 'usuarios', nombre: 'Usuarios', icono: 'FaUsers' },
-  { id: 'sucursales', nombre: 'Sucursales', icono: 'FaStore' },
-  
-  // Módulos nuevos agregados
-  { id: 'clientes', nombre: 'Clientes', icono: 'FaUserTie' },
-  { id: 'materias_primas', nombre: 'Materias Primas', icono: 'FaCubes' },
-  { id: 'recetas', nombre: 'Recetas', icono: 'FaClipboardList' },
-  { id: 'produccion', nombre: 'Producción', icono: 'FaIndustry' },
-  { id: 'caja', nombre: 'Caja', icono: 'FaCashRegister' },
-  { id: 'gastos', nombre: 'Gastos', icono: 'FaMoneyBillWave' },
-  { id: 'devoluciones', nombre: 'Devoluciones', icono: 'FaUndo' },
-  { id: 'listas_precios', nombre: 'Listas de Precios', icono: 'FaTags' },
-  { id: 'transferencias', nombre: 'Transferencias', icono: 'FaExchangeAlt' },
-  { id: 'auditoria', nombre: 'Auditoría', icono: 'FaHistory' }
-];
+const MODULO_ICONO_POR_ID = {
+  productos: 'FaBox',
+  categorias: 'FaTag',
+  proveedores: 'FaTruck',
+  punto_venta: 'FaCashRegister',
+  compras: 'FaShoppingCart',
+  ventas: 'FaShoppingBag',
+  stock: 'FaWarehouse',
+  reportes: 'FaChartBar',
+  promociones: 'FaPercent',
+  usuarios: 'FaUsers',
+  sucursales: 'FaStore',
+  clientes: 'FaUserTie',
+  materias_primas: 'FaCubes',
+  recetas: 'FaClipboardList',
+  produccion: 'FaIndustry',
+  vehiculos: 'FaCar',
+  caja: 'FaCashRegister',
+  gastos: 'FaMoneyBillWave',
+  devoluciones: 'FaUndo',
+  listas_precios: 'FaTags',
+  transferencias: 'FaExchangeAlt',
+  auditoria: 'FaHistory',
+  configuracion: 'FaCog'
+};
+
+const MODULOS_SISTEMA = MODULE_KEYS.map((id) => ({
+  id,
+  nombre: MODULE_LABELS_ES[id] || id,
+  icono: MODULO_ICONO_POR_ID[id] || 'FaCube'
+}));
 
 /**
  * Acciones disponibles por módulo

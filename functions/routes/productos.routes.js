@@ -27,6 +27,24 @@ async function obtenerProductosEmpresa(companyId) {
   return Array.from(productosPorId.values());
 }
 
+/**
+ * ¿Este código ya está usado en la empresa? (codigo o codigo_barras, incl. GTIN normalizado)
+ */
+function productoCoincideCodigo(producto, codigoConsulta) {
+  const raw = String(codigoConsulta || '').trim();
+  if (!raw) return false;
+  const digitsQ = raw.replace(/\D/g, '');
+  const c = String(producto.codigo ?? '').trim();
+  const b = String(producto.codigo_barras ?? '').trim();
+  if (c === raw || b === raw) return true;
+  if (digitsQ.length >= 8 && digitsQ.length <= 14) {
+    const cD = c.replace(/\D/g, '');
+    const bD = b.replace(/\D/g, '');
+    if (cD === digitsQ || bD === digitsQ) return true;
+  }
+  return false;
+}
+
 async function obtenerProductoEmpresa(companyId, productId) {
   if (companyId) {
     const tenantDoc = await db.collection('companies').doc(companyId).collection('productos').doc(productId).get();
@@ -531,6 +549,46 @@ const productosRoutes = async (req, res, path) => {
         return true;
       }
     }
+
+    // GET /productos/registrado-por-codigo/:codigo — duplicado en Firebase para la empresa (tenant + productos orgId)
+    else if (path.match(/^\/productos\/registrado-por-codigo\/[^/]+$/) && req.method === 'GET') {
+      try {
+        const codigoConsulta = decodeURIComponent(path.split('/').pop() || '').trim();
+        if (!codigoConsulta) {
+          res.status(400).json({ success: false, message: 'Código requerido' });
+          return true;
+        }
+        if (!companyId) {
+          res.status(400).json({
+            success: false,
+            message: 'Se requiere empresa (orgId) para verificar duplicados'
+          });
+          return true;
+        }
+
+        const lista = await obtenerProductosEmpresa(companyId);
+        const encontrado = lista.find(
+          (p) => p.activo !== false && productoCoincideCodigo(p, codigoConsulta)
+        );
+
+        res.json({
+          success: true,
+          data: {
+            registrado: !!encontrado,
+            productoId: encontrado ? encontrado.id : null
+          }
+        });
+        return true;
+      } catch (error) {
+        console.error('❌ [PRODUCTOS] registrado-por-codigo:', error);
+        res.status(500).json({
+          success: false,
+          message: 'Error al verificar código',
+          error: error.message
+        });
+        return true;
+      }
+    }
     
     // PRODUCTO - GET por ID
     else if (path.startsWith('/productos/') && req.method === 'GET') {
@@ -539,6 +597,7 @@ const productosRoutes = async (req, res, path) => {
       // Verificar si es una subconsulta especial
       if (productId === 'stock-bajo' || productId === 'activos' || productId === 'buscar' || 
           productId.includes('buscar-con-stock') || productId.includes('codigo') || 
+          productId.startsWith('registrado-por-codigo/') ||
           productId === 'importar-masivo') {
         // Estas rutas ya se manejan arriba
         return false;

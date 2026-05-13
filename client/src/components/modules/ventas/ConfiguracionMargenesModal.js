@@ -25,9 +25,14 @@ const ConfiguracionMargenesModal = ({ isOpen, onClose, onSave }) => {
   }, [isOpen]);
   
   const handleMargenChange = (lista, valor) => {
-    setMargenes(prev => ({
+    if (valor === '') {
+      setMargenes((prev) => ({ ...prev, [lista]: '' }));
+      return;
+    }
+    const n = parseFloat(String(valor).replace(',', '.'));
+    setMargenes((prev) => ({
       ...prev,
-      [lista]: parseFloat(valor) || 0
+      [lista]: Number.isFinite(n) ? n : prev[lista]
     }));
   };
   
@@ -38,11 +43,14 @@ const ConfiguracionMargenesModal = ({ isOpen, onClose, onSave }) => {
       setLoading(true);
       
       // Guardar en localStorage
-      localStorage.setItem('margenes_listas', JSON.stringify(margenes));
+      const margenesParaGuardar = Object.fromEntries(
+        Object.entries(margenes).map(([k, v]) => [k, v === '' ? 0 : parseFloat(v) || 0])
+      );
+      localStorage.setItem('margenes_listas', JSON.stringify(margenesParaGuardar));
       
       // Llamar callback con los márgenes
       if (onSave) {
-        await onSave(margenes);
+        await onSave(margenesParaGuardar);
       }
       
       toast.success('Márgenes configurados correctamente');
@@ -85,7 +93,7 @@ const ConfiguracionMargenesModal = ({ isOpen, onClose, onSave }) => {
                 <div className="flex items-center">
                   <input
                     type="number"
-                    value={margen}
+                    value={margen === '' ? '' : margen}
                     onChange={(e) => handleMargenChange(lista, e.target.value)}
                     className="w-20 border rounded px-2 py-1 text-right"
                     step="0.1"
@@ -94,7 +102,7 @@ const ConfiguracionMargenesModal = ({ isOpen, onClose, onSave }) => {
                   <span className="ml-1">%</span>
                 </div>
                 <div className="text-sm text-gray-500 ml-4">
-                  {`(x${(1 + margen/100).toFixed(2)})`}
+                  {`(x${(1 + (parseFloat(margen) || 0) / 100).toFixed(2)})`}
                 </div>
               </div>
             ))}

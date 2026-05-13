@@ -135,68 +135,68 @@ const DateRangePicker = ({
       {/* Botón para mostrar el selector */}
       <button
         type="button"
-        className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        className="inline-flex items-center rounded-xl border border-slate-200 bg-white/90 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-900/5 backdrop-blur-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <FaCalendarAlt className="mr-2 text-gray-500" />
+        <FaCalendarAlt className="mr-2 text-slate-500" />
         <span>{formatDate(startDate)} - {formatDate(endDate)}</span>
-        <FaChevronDown className="ml-2 text-gray-500" />
+        <FaChevronDown className="ml-2 text-slate-500" />
       </button>
       
       {/* Dropdown del selector */}
       {isOpen && (
-        <div className="origin-top-right absolute right-0 mt-2 w-72 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
+        <div className="absolute right-0 z-10 mt-2 w-72 origin-top-right rounded-2xl border border-slate-200/80 bg-white/95 py-1 shadow-elevated ring-1 ring-slate-900/5 backdrop-blur-sm focus:outline-none">
           <div className="py-2 px-3">
             {/* Rangos predefinidos */}
             {showPresets && (
               <div className="mb-3 border-b pb-2">
-                <div className="text-xs font-medium text-gray-500 mb-1">Rangos rápidos</div>
+                <div className="mb-1 text-xs font-medium text-slate-500">Rangos rápidos</div>
                 <div className="grid grid-cols-2 gap-1">
                   <button
                     type="button"
-                    className="text-xs text-left px-2 py-1 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 rounded"
+                    className="rounded-lg px-2 py-1 text-left text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
                     onClick={() => setPresetRange('today')}
                   >
                     Hoy
                   </button>
                   <button
                     type="button"
-                    className="text-xs text-left px-2 py-1 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 rounded"
+                    className="rounded-lg px-2 py-1 text-left text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
                     onClick={() => setPresetRange('yesterday')}
                   >
                     Ayer
                   </button>
                   <button
                     type="button"
-                    className="text-xs text-left px-2 py-1 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 rounded"
+                    className="rounded-lg px-2 py-1 text-left text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
                     onClick={() => setPresetRange('last7Days')}
                   >
                     Últimos 7 días
                   </button>
                   <button
                     type="button"
-                    className="text-xs text-left px-2 py-1 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 rounded"
+                    className="rounded-lg px-2 py-1 text-left text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
                     onClick={() => setPresetRange('last30Days')}
                   >
                     Últimos 30 días
                   </button>
                   <button
                     type="button"
-                    className="text-xs text-left px-2 py-1 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 rounded"
+                    className="rounded-lg px-2 py-1 text-left text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
                     onClick={() => setPresetRange('thisMonth')}
                   >
                     Este mes
                   </button>
                   <button
                     type="button"
-                    className="text-xs text-left px-2 py-1 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 rounded"
+                    className="rounded-lg px-2 py-1 text-left text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
                     onClick={() => setPresetRange('lastMonth')}
                   >
                     Mes anterior
                   </button>
                   <button
                     type="button"
-                    className="text-xs text-left px-2 py-1 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 rounded"
+                    className="rounded-lg px-2 py-1 text-left text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
                     onClick={() => setPresetRange('thisYear')}
                   >
                     Este año
@@ -208,7 +208,7 @@ const DateRangePicker = ({
             {/* Selector de fechas personalizado */}
             <div className="flex flex-col space-y-2">
               <div>
-                <label htmlFor="start-date" className="block text-xs font-medium text-gray-700 mb-1">
+                <label htmlFor="start-date" className="mb-1 block text-xs font-medium text-slate-700">
                   Fecha de inicio
                 </label>
                 <DatePicker
@@ -221,12 +221,12 @@ const DateRangePicker = ({
                   maxDate={new Date()}
                   dateFormat="dd/MM/yyyy"
                   locale="es"
-                  className="block w-full p-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field p-2"
                 />
               </div>
               
               <div>
-                <label htmlFor="end-date" className="block text-xs font-medium text-gray-700 mb-1">
+                <label htmlFor="end-date" className="mb-1 block text-xs font-medium text-slate-700">
                   Fecha de fin
                 </label>
                 <DatePicker
@@ -240,21 +240,21 @@ const DateRangePicker = ({
                   maxDate={new Date()}
                   dateFormat="dd/MM/yyyy"
                   locale="es"
-                  className="block w-full p-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field p-2"
                 />
               </div>
               
               <div className="flex justify-end space-x-2 pt-2">
                 <button
                   type="button"
-                  className="inline-flex items-center px-2.5 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
                   onClick={() => setIsOpen(false)}
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
-                  className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="inline-flex items-center rounded-xl border border-transparent bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
                   onClick={() => setIsOpen(false)}
                 >
                   Aplicar

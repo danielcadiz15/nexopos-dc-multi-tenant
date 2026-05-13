@@ -415,7 +415,7 @@ const ReporteVentas = () => {
                 type="date"
                 value={filtros.fechaInicio}
                 onChange={(e) => handleFechaChange('fechaInicio', e)}
-                className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="nexo-field pl-10 sm:text-sm"
               />
             </div>
           </div>
@@ -430,7 +430,7 @@ const ReporteVentas = () => {
                 type="date"
                 value={filtros.fechaFin}
                 onChange={(e) => handleFechaChange('fechaFin', e)}
-                className="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="nexo-field pl-10 sm:text-sm"
               />
             </div>
           </div>

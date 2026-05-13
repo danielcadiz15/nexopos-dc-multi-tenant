@@ -187,7 +187,7 @@ const ServicioForm = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                 value={formData.tipo}
                 onChange={handleChange}
                 className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                  errors.tipo ? 'border-red-300' : 'border-gray-300'
+                  errors.tipo ? 'border-red-300' : 'border-slate-200'
                 }`}
               >
                 {tiposServicio.map(tipo => (
@@ -215,7 +215,7 @@ const ServicioForm = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                   onChange={handleChange}
                   max={new Date().toISOString().split('T')[0]}
                   className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                    errors.fecha ? 'border-red-300' : 'border-gray-300'
+                    errors.fecha ? 'border-red-300' : 'border-slate-200'
                   }`}
                 />
                 {errors.fecha && (
@@ -235,7 +235,7 @@ const ServicioForm = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                   onChange={handleChange}
                   min="0"
                   className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                    errors.km_servicio ? 'border-red-300' : 'border-gray-300'
+                    errors.km_servicio ? 'border-red-300' : 'border-slate-200'
                   }`}
                   placeholder="0"
                 />
@@ -256,7 +256,7 @@ const ServicioForm = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                 value={formData.descripcion}
                 onChange={handleChange}
                 rows="3"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                className="nexo-field"
                 placeholder="Detalles del servicio realizado..."
               />
             </div>
@@ -273,7 +273,7 @@ const ServicioForm = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                   name="taller"
                   value={formData.taller}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  className="nexo-field"
                   placeholder="Nombre del taller"
                 />
               </div>
@@ -291,7 +291,7 @@ const ServicioForm = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                   step="0.01"
                   min="0"
                   className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                    errors.monto ? 'border-red-300' : 'border-gray-300'
+                    errors.monto ? 'border-red-300' : 'border-slate-200'
                   }`}
                   placeholder="0.00"
                 />
@@ -319,7 +319,7 @@ const ServicioForm = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                     onChange={handleChange}
                     min={formData.km_servicio ? parseInt(formData.km_servicio) + 1 : 0}
                     className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${
-                      errors.proximo_km ? 'border-red-300' : 'border-gray-300'
+                      errors.proximo_km ? 'border-red-300' : 'border-slate-200'
                     }`}
                     placeholder="Kilometraje"
                   />
@@ -338,7 +338,7 @@ const ServicioForm = ({ vehiculoId, kmActual, onClose, onSuccess }) => {
                     value={formData.proximo_fecha}
                     onChange={handleChange}
                     min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    className="nexo-field"
                   />
                 </div>
               </div>

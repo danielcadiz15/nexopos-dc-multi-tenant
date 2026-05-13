@@ -1806,7 +1806,7 @@ const PuntoVenta = () => {
                 value={searchTerm}
                 onChange={handleSearchChange}
                 onKeyDown={handleSearchKeyDown}
-                className="w-full px-4 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="nexo-field px-4 py-3 text-base"
                 inputMode="search"
                 disabled={!sucursalVenta}
               />

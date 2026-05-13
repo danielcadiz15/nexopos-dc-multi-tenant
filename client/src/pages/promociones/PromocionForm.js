@@ -273,7 +273,7 @@ useEffect(() => {
                     name="nombre"
                     value={formData.nombre}
                     onChange={handleChange}
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="nexo-field mt-1"
                     required
                   />
                 </div>
@@ -287,7 +287,7 @@ useEffect(() => {
                     value={formData.descripcion}
                     onChange={handleChange}
                     rows={3}
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="nexo-field mt-1"
                   />
                 </div>
                 
@@ -299,7 +299,7 @@ useEffect(() => {
                     name="tipo"
                     value={formData.tipo}
                     onChange={handleChange}
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="nexo-field mt-1"
                     required
                   >
                     <option value="porcentaje">Descuento por porcentaje</option>
@@ -332,7 +332,7 @@ useEffect(() => {
                       name="valor"
                       value={formData.valor}
                       onChange={handleChange}
-                      className="pl-10 mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field mt-1 pl-10"
                       min={formData.tipo === 'porcentaje' ? 0 : 1}
                       max={formData.tipo === 'porcentaje' ? 100 : undefined}
                       step={formData.tipo === 'porcentaje' ? 0.01 : formData.tipo === 'monto_fijo' ? 0.01 : 1}
@@ -364,7 +364,7 @@ useEffect(() => {
                               }
                             }));
                           }}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                          className="nexo-field mt-1"
                           min="1"
                           step="1"
                           required
@@ -390,7 +390,7 @@ useEffect(() => {
                       name="fecha_inicio"
                       value={formData.fecha_inicio}
                       onChange={handleChange}
-                      className="pl-10 mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field mt-1 pl-10"
                       required
                     />
                   </div>
@@ -409,7 +409,7 @@ useEffect(() => {
                       name="fecha_fin"
                       value={formData.fecha_fin}
                       onChange={handleChange}
-                      className="pl-10 mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field mt-1 pl-10"
                       min={formData.fecha_inicio}
                       required
                     />
@@ -449,7 +449,7 @@ useEffect(() => {
                     name="min_cantidad"
                     value={formData.condiciones.min_cantidad || ''}
                     onChange={handleCondicionChange}
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="nexo-field mt-1"
                     min="1"
                   />
                   <p className="mt-1 text-sm text-gray-500">
@@ -470,7 +470,7 @@ useEffect(() => {
                       name="min_monto"
                       value={formData.condiciones.min_monto || ''}
                       onChange={handleCondicionChange}
-                      className="pl-10 mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      className="nexo-field mt-1 pl-10"
                       min="0"
                       step="0.01"
                     />
