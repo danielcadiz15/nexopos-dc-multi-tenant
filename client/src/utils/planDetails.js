@@ -78,19 +78,25 @@ export const PLAN_COMMERCIAL_META_ES = {
     includedUsers: 2,
     includedBranches: 1,
     extraUserArs: 12000,
-    extraBranchArs: 25000
+    extraBranchArs: 25000,
+    accessPolicy:
+      'Sesión única por usuario. Sesiones concurrentes de la empresa hasta el cupo de usuarios activos del plan.'
   },
   intermediate: {
     includedUsers: 6,
     includedBranches: 3,
     extraUserArs: 10000,
-    extraBranchArs: 22000
+    extraBranchArs: 22000,
+    accessPolicy:
+      'Sesión única por usuario. Sesiones concurrentes de la empresa hasta el cupo de usuarios activos del plan.'
   },
   premium: {
     includedUsers: 15,
     includedBranches: 8,
     extraUserArs: 9000,
-    extraBranchArs: 20000
+    extraBranchArs: 20000,
+    accessPolicy:
+      'Sesión única por usuario. Sesiones concurrentes de la empresa hasta el cupo de usuarios activos del plan.'
   }
 };
 

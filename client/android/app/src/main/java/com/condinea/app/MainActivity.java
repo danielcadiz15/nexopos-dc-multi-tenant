@@ -335,6 +335,31 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    private void openTeamViewerQuickSupport() {
+        Intent launchIntent = getPackageManager().getLaunchIntentForPackage("com.teamviewer.quicksupport.market");
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(launchIntent);
+            return;
+        }
+
+        Intent marketIntent = new Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("market://details?id=com.teamviewer.quicksupport.market")
+        );
+        marketIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(marketIntent);
+        } catch (ActivityNotFoundException noMarket) {
+            Intent webIntent = new Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("https://play.google.com/store/apps/details?id=com.teamviewer.quicksupport.market")
+            );
+            webIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(webIntent);
+        }
+    }
+
     private void attachJsBridgeIfNeeded() {
         if (jsBridgeAttached || getBridge() == null || getBridge().getWebView() == null) return;
         getBridge().getWebView().addJavascriptInterface(new NexoAndroidBridge(), "NexoAndroid");
@@ -350,6 +375,11 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public void openExternalUrlInChrome(String url) {
             runOnUiThread(() -> openExternalUrlInChrome(url));
+        }
+
+        @JavascriptInterface
+        public void openTeamViewerQuickSupport() {
+            runOnUiThread(MainActivity.this::openTeamViewerQuickSupport);
         }
     }
 }

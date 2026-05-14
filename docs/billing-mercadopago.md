@@ -77,6 +77,36 @@ La empresa no necesita que un superadmin cambie el plan manualmente después del
 
 Los valores históricos de plan **`pro`** y **`enterprise`** se normalizan a **Intermedia** y **Premium** al leer/guardar.
 
+## Modelo mixto vigente (módulos + usuarios)
+
+El esquema comercial actual combina:
+
+1. **Plan base por módulos** (Básica / Intermedia / Premium).
+2. **Cupo de usuarios incluidos** por plan.
+3. **Adicional por usuario extra** (y sucursal extra según tabla comercial).
+
+Referencias de metadatos:
+
+- Backend: `functions/utils/modulePresets.js` (`PLAN_COMMERCIAL_META`)
+- Frontend: `client/src/utils/planDetails.js` (`PLAN_COMMERCIAL_META_ES`)
+
+## Política de acceso y sesiones
+
+Para sostener estabilidad operativa y evitar uso descontrolado:
+
+- **Sesión única por usuario**: cada email/usuario mantiene una sola sesión activa; si inicia en otro dispositivo, la sesión más reciente reemplaza la anterior.
+- **Límite de sesiones concurrentes por empresa**: se controla por plan (por defecto, hasta el cupo total de usuarios habilitados del plan + extras).
+- **Límite de usuarios creados por empresa**: al superar el cupo se bloquea alta de usuarios con mensaje comercial.
+
+Implementación técnica principal:
+
+- `functions/utils/subscriptionAccess.js`
+- `functions/utils/auth.js`
+- `functions/routes/usuarios.routes.js`
+- `client/src/services/api.service.js`
+- `client/src/contexts/AuthContext.js`
+- `client/src/utils/sessionControl.js`
+
 ## Webhook en Mercado Pago
 
 En [Tus integraciones → Webhooks](https://www.mercadopago.com.ar/developers/panel/app) configurá la URL:

@@ -13,6 +13,7 @@ import {
   MODULE_LABELS_ES,
   getModulePresetForPlan,
   PLAN_DEEP_COPY_ES,
+  PLAN_COMMERCIAL_META_ES,
   PLAN_IDS,
   countEnabledModules,
   planLabel
@@ -53,6 +54,7 @@ export default function PlanesAbonoExplainerModal({ open, onClose, initialPlan =
 
   const preset = getModulePresetForPlan(tab);
   const copy = PLAN_DEEP_COPY_ES[tab];
+  const commercial = PLAN_COMMERCIAL_META_ES[tab];
   const enabledCount = countEnabledModules(preset);
   const styles = tierStyle[tab];
 
@@ -156,6 +158,25 @@ export default function PlanesAbonoExplainerModal({ open, onClose, initialPlan =
               <FaInfoCircle className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
               <span>{copy.highlight}</span>
             </div>
+
+            {commercial ? (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700">
+                <p className="font-semibold text-slate-900">Condiciones comerciales del plan</p>
+                <ul className="mt-2 space-y-1.5">
+                  <li>
+                    Incluye hasta <strong>{commercial.includedUsers} usuarios</strong> y{' '}
+                    <strong>{commercial.includedBranches} sucursales</strong>.
+                  </li>
+                  <li>
+                    Usuario adicional: <strong>${commercial.extraUserArs.toLocaleString('es-AR')}</strong> / mes.
+                  </li>
+                  <li>
+                    Sucursal adicional: <strong>${commercial.extraBranchArs.toLocaleString('es-AR')}</strong> / mes.
+                  </li>
+                  <li>{commercial.accessPolicy}</li>
+                </ul>
+              </div>
+            ) : null}
           </div>
 
           <h4 className="mt-6 text-xs font-bold uppercase tracking-wide text-slate-500">

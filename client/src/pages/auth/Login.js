@@ -11,7 +11,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { FaAndroid, FaBuilding, FaLock, FaShoppingCart, FaSignInAlt, FaUser } from 'react-icons/fa';
+import { FaAndroid, FaBuilding, FaHeadset, FaLock, FaShoppingCart, FaSignInAlt, FaUser } from 'react-icons/fa';
 
 // Hooks
 import { useAuth } from '../../contexts/AuthContext';
@@ -25,6 +25,10 @@ import PasswordInput from '../../components/common/PasswordInput';
 const ADMIN_WEB_URL = 'https://nexopos-dc.web.app';
 const DEFAULT_CAJA_APK_URL =
   'https://firebasestorage.googleapis.com/v0/b/nexopos-dc.firebasestorage.app/o/app-debug.apk?alt=media&token=39c2debe-b394-42f3-ba3c-7917f274b1f2';
+const TEAMVIEWER_QS_ANDROID_INTENT =
+  'intent://start#Intent;scheme=teamviewerqs;package=com.teamviewer.quicksupport.market;end';
+const TEAMVIEWER_QS_PLAYSTORE_URL =
+  'https://play.google.com/store/apps/details?id=com.teamviewer.quicksupport.market';
 
 const normalizeExternalUrl = (raw) => {
   const value = String(raw || '').trim();
@@ -149,6 +153,28 @@ const Login = () => {
       window.open(urlDescargaApk, '_blank', 'noopener,noreferrer');
     } catch {
       window.location.href = urlDescargaApk;
+    }
+  };
+
+  const handleAbrirSoporteRemoto = (event) => {
+    event?.preventDefault?.();
+    try {
+      if (nativeRuntime) {
+        const bridge = window?.NexoAndroid;
+        if (bridge && typeof bridge.openTeamViewerQuickSupport === 'function') {
+          bridge.openTeamViewerQuickSupport();
+          return;
+        }
+      }
+
+      if (isAndroidWeb) {
+        window.location.assign(TEAMVIEWER_QS_ANDROID_INTENT);
+        return;
+      }
+
+      window.open(TEAMVIEWER_QS_PLAYSTORE_URL, '_blank', 'noopener,noreferrer');
+    } catch {
+      window.location.href = TEAMVIEWER_QS_PLAYSTORE_URL;
     }
   };
 
@@ -333,6 +359,20 @@ const Login = () => {
               </p>
             </div>
           )}
+
+          <div className="mb-6 rounded-xl border border-sky-200 bg-sky-50 p-4 text-center">
+            <button
+              type="button"
+              onClick={handleAbrirSoporteRemoto}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-sky-700"
+            >
+              <FaHeadset className="text-base" />
+              Soporte remoto (TeamViewer)
+            </button>
+            <p className="mt-2 text-xs text-slate-600">
+              Tocá el botón, abrí QuickSupport y compartinos el ID para asistencia a distancia.
+            </p>
+          </div>
           
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Correo electrónico */}
