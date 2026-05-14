@@ -287,11 +287,11 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                       onClick={() => toggleSubmenu(item.label)}
                       className={`
                         flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-medium
-                        transition-colors duration-200 hover:bg-white/5
+                        transition-colors duration-200 hover:bg-slate-800/70
                         ${
                           isParentActive(item.submenu)
                             ? 'bg-gradient-to-r from-indigo-600/35 to-violet-600/25 text-white ring-1 ring-indigo-400/35'
-                            : 'text-slate-200'
+                            : 'text-slate-100'
                         }
                       `}
                     >
@@ -315,7 +315,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                               ${
                                 isActive(subitem.path)
                                   ? 'bg-gradient-to-r from-indigo-600 to-violet-600 font-medium text-white shadow-md'
-                                  : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                                  : 'text-slate-100 hover:bg-slate-800/70 hover:text-white'
                               }
                             `}
                             onClick={() => window.innerWidth < 1024 && toggleSidebar()}
@@ -331,11 +331,11 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                     to={item.path}
                     className={`
                       flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-200
-                      hover:bg-white/5
+                      hover:bg-slate-800/70
                       ${
                         isActive(item.path)
                           ? 'bg-gradient-to-r from-indigo-600/35 to-violet-600/25 text-white ring-1 ring-indigo-400/35'
-                          : 'text-slate-200'
+                          : 'text-slate-100'
                       }
                     `}
                     onClick={() => window.innerWidth < 1024 && toggleSidebar()}
@@ -352,11 +352,11 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                   to="/admin"
                   className={`
                     flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-200
-                    hover:bg-white/5
+                    hover:bg-slate-800/70
                     ${
                       location.pathname === '/admin'
                         ? 'bg-gradient-to-r from-amber-500/25 to-orange-500/20 text-amber-100 ring-1 ring-amber-400/30'
-                        : 'text-slate-200'
+                        : 'text-slate-100'
                     }
                   `}
                   onClick={() => window.innerWidth < 1024 && toggleSidebar()}

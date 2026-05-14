@@ -28,8 +28,19 @@ import TicketVenta from '../modules/ventas/TicketVenta';
 
 const formatMoneda = (value) => `$${(parseFloat(value || 0)).toFixed(2)}`;
 const OFFLINE_SALES_KEY = 'mobile_pos_offline_sales_v1';
+const POS_SESSION_KEY = 'mobile_pos_session_v1';
+const DEFAULT_CAJA_APK_URL =
+  'https://firebasestorage.googleapis.com/v0/b/nexopos-dc.firebasestorage.app/o/app-debug.apk?alt=media&token=39c2debe-b394-42f3-ba3c-7917f274b1f2';
 const BALANZA_PREFIX_MIN = 20;
 const BALANZA_PREFIX_MAX = 29;
+
+const normalizeExternalUrl = (raw) => {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^\/\//.test(value)) return `https:${value}`;
+  return `https://${value}`;
+};
 
 const obtenerPrecioVenta = (producto) => {
   const precioLista =
@@ -138,6 +149,7 @@ const MobilePuntoVenta = () => {
   const [actualizandoApp, setActualizandoApp] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [pendingSalesCount, setPendingSalesCount] = useState(0);
+  const restoredSessionRef = useRef(false);
   const viewport = useViewport();
   /**
    * Pico de altura interior: al abrir el teclado `innerHeight` baja y si usamos eso para el layout,
@@ -165,14 +177,17 @@ const MobilePuntoVenta = () => {
     return () => window.removeEventListener('orientationchange', onOrientationChange);
   }, []);
 
-  /** Tablet apaisada: más ancho que alto, pantalla suficientemente grande (evita móvil en landscape). */
+  /** Layout horizontal para tablets/notebooks en apaisado. */
   const landscapeTablet =
     viewport.width > viewport.height &&
-    viewport.width >= 900 &&
-    peakInnerHeightRef.current >= 520;
+    viewport.width >= 760 &&
+    peakInnerHeightRef.current >= 460;
+  const splitLandscapeLayout = landscapeTablet;
 
   const compact =
-    viewport.width < 390 || (!landscapeTablet && viewport.height < 760);
+    viewport.width < 390 ||
+    (!landscapeTablet && viewport.height < 760) ||
+    (landscapeTablet && peakInnerHeightRef.current < 620);
 
   const cajaModulos = configTicket?.caja_modulos || {};
   const cajaClientesHabilitado = cajaModulos.clientes !== false;
@@ -182,6 +197,7 @@ const MobilePuntoVenta = () => {
 
   const cerrarSesion = async () => {
     try {
+      clearPosSession();
       await logout();
       navigate('/login', { replace: true });
     } catch (error) {
@@ -197,6 +213,34 @@ const MobilePuntoVenta = () => {
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
+    }
+  }, []);
+
+  const loadPosSession = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(POS_SESSION_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const savePosSession = useCallback((snapshot) => {
+    try {
+      localStorage.setItem(POS_SESSION_KEY, JSON.stringify(snapshot || {}));
+    } catch {
+      // Ignorar errores de storage en webviews restringidos
+    }
+  }, []);
+
+  const clearPosSession = useCallback(() => {
+    try {
+      localStorage.removeItem(POS_SESSION_KEY);
+    } catch {
+      // Ignorar errores de storage en webviews restringidos
     }
   }, []);
 
@@ -254,7 +298,7 @@ const MobilePuntoVenta = () => {
   const actualizarAppCaja = async () => {
     try {
       setActualizandoApp(true);
-      await cargarConfigTicket();
+      const configActualizada = await cargarConfigTicket();
       setResultados([]);
       setClientesEncontrados([]);
 
@@ -262,8 +306,21 @@ const MobilePuntoVenta = () => {
         const deudaActualizada = await clientesService.obtenerDeudasCliente(clienteSeleccionado.id);
         setDeudaCliente(deudaActualizada);
       }
+      const apkUrl = normalizeExternalUrl(
+        configActualizada?.caja_apk_url || configTicket?.caja_apk_url || DEFAULT_CAJA_APK_URL
+      );
+      if (!apkUrl) {
+        toast.info('Caja actualizada. No hay URL de APK configurada para actualizar la app.');
+        return;
+      }
 
-      toast.success('Caja actualizada');
+      const nativeBridge = window?.NexoAndroid;
+      if (nativeBridge && typeof nativeBridge.openExternalUrlInChrome === 'function') {
+        nativeBridge.openExternalUrlInChrome(apkUrl);
+      } else {
+        window.location.assign(apkUrl);
+      }
+      toast.info('Buscando última versión de APK para actualizar...');
     } catch (error) {
       console.error('[MOBILE POS] Error al actualizar caja:', error);
       toast.error('No se pudo actualizar la caja');
@@ -296,6 +353,43 @@ const MobilePuntoVenta = () => {
   useEffect(() => {
     searchInputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (restoredSessionRef.current) return;
+    const session = loadPosSession();
+    if (!session) {
+      restoredSessionRef.current = true;
+      return;
+    }
+
+    if (Array.isArray(session.carrito)) {
+      setCarrito(session.carrito);
+    }
+    if (typeof session.metodoPago === 'string' && session.metodoPago) {
+      setMetodoPago(session.metodoPago);
+    }
+    if (typeof session.montoRecibido === 'string') {
+      setMontoRecibido(session.montoRecibido);
+    }
+    if (typeof session.sucursalVenta === 'string') {
+      setSucursalVenta(session.sucursalVenta);
+    }
+    if (session.clienteSeleccionado && typeof session.clienteSeleccionado === 'object') {
+      setClienteSeleccionado(session.clienteSeleccionado);
+    }
+    restoredSessionRef.current = true;
+  }, [loadPosSession]);
+
+  useEffect(() => {
+    if (!restoredSessionRef.current) return;
+    savePosSession({
+      carrito,
+      metodoPago,
+      montoRecibido,
+      sucursalVenta,
+      clienteSeleccionado
+    });
+  }, [carrito, metodoPago, montoRecibido, sucursalVenta, clienteSeleccionado, savePosSession]);
 
   useEffect(() => {
     setPendingSalesCount(readOfflineQueue().length);
@@ -597,6 +691,7 @@ const MobilePuntoVenta = () => {
     setDeudaCliente(null);
     setMostrarDeudaCliente(false);
     setComprobanteDeuda(null);
+    clearPosSession();
     searchInputRef.current?.focus();
   };
 
@@ -747,9 +842,13 @@ const MobilePuntoVenta = () => {
   const mostrarResultados =
     loadingBusqueda || resultados.length > 0 || (busquedaLista && sucursalVenta);
 
-  const gridResultadosClass = landscapeTablet
-    ? 'grid grid-cols-2 gap-2 sm:gap-3'
-    : 'grid grid-cols-1 gap-2 sm:gap-3';
+  const gridResultadosClass = splitLandscapeLayout
+    ? viewport.width >= 1320
+      ? 'grid grid-cols-3 gap-2 sm:gap-3'
+      : 'grid grid-cols-2 gap-2 sm:gap-3'
+    : viewport.width >= 760
+      ? 'grid grid-cols-2 gap-2 sm:gap-3'
+      : 'grid grid-cols-1 gap-2 sm:gap-3';
 
   const resultadosSolo = (
     <>
@@ -1057,7 +1156,7 @@ const MobilePuntoVenta = () => {
 
   return (
     <>
-      <div className="scrollbar-thin flex h-full min-h-0 w-full flex-col gap-1.5 overflow-y-auto overscroll-y-contain sm:gap-2">
+      <div className={`scrollbar-thin flex h-full min-h-0 w-full flex-col gap-1.5 ${landscapeTablet ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} sm:gap-2`}>
         <div
           className={`shrink-0 rounded-2xl bg-gradient-to-r from-blue-700 to-indigo-700 text-white shadow-lg ${compact ? 'p-2' : 'p-4'}`}
         >
@@ -1198,7 +1297,7 @@ const MobilePuntoVenta = () => {
       </div>
 
       {landscapeTablet ? (
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden">
           <section
             aria-label="Resultados de búsqueda"
             className={`scrollbar-thin min-h-0 overflow-y-auto overscroll-y-contain pr-0.5 ${mostrarResultados ? 'flex-1' : 'hidden'}`}
@@ -1206,20 +1305,27 @@ const MobilePuntoVenta = () => {
             {resultadosSolo}
           </section>
 
-          <div className={`flex min-h-0 flex-1 flex-row items-stretch gap-2 overflow-x-auto overflow-y-hidden ${mostrarResultados ? 'border-t border-gray-200 pt-2' : ''} sm:gap-3`}>
-            <section
-              aria-label="Productos del carrito"
-              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pr-2"
-            >
-              {tarjetaCarritoLandscape}
-            </section>
-            <section
-              aria-label="Medios de pago y cobro"
-              className="scrollbar-thin flex min-h-0 w-[clamp(17rem,min(360px,35vw),24rem)] min-w-[15rem] max-w-[40vw] shrink-0 flex-col overflow-y-auto overscroll-y-contain border-l border-gray-200 pl-3"
-            >
+          {splitLandscapeLayout ? (
+            <div className={`grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(320px,380px)] items-stretch gap-3 overflow-hidden ${mostrarResultados ? 'border-t border-gray-200 pt-2' : ''}`}>
+              <section
+                aria-label="Productos del carrito"
+                className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+              >
+                {tarjetaCarritoLandscape}
+              </section>
+              <section
+                aria-label="Medios de pago y cobro"
+                className="scrollbar-thin flex min-h-0 min-w-0 flex-col overflow-y-auto overscroll-y-contain border-l border-gray-200 pl-3"
+              >
+                {panelCobroResumen}
+              </section>
+            </div>
+          ) : (
+            <div className={`flex min-h-0 flex-1 flex-col gap-2 ${mostrarResultados ? 'border-t border-gray-200 pt-2' : ''}`}>
+              {tarjetaCarritoPortrait}
               {panelCobroResumen}
-            </section>
-          </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="scrollbar-thin flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-y-contain pr-0.5">

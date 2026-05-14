@@ -23,14 +23,15 @@ export function computeSuggestedPrice({
   unidadesMensualesEstimadas,
   margenObjetivoPct
 }) {
-  const costo = toNumber(costoUnitario);
-  const unidades = toNumber(unidadesMensualesEstimadas);
-  const margen = toNumber(margenObjetivoPct);
+  const costo = Math.max(0, toNumber(costoUnitario));
+  const unidades = Math.max(0, toNumber(unidadesMensualesEstimadas));
+  const margenRaw = toNumber(margenObjetivoPct);
+  const margen = Math.min(95, Math.max(0, margenRaw));
   const gastosMensuales =
-    toNumber(alquilerMensual) +
-    toNumber(movilMensual) +
-    toNumber(combustibleMensual) +
-    toNumber(otrosGastosMensuales);
+    Math.max(0, toNumber(alquilerMensual)) +
+    Math.max(0, toNumber(movilMensual)) +
+    Math.max(0, toNumber(combustibleMensual)) +
+    Math.max(0, toNumber(otrosGastosMensuales));
 
   const gastoPorUnidad = unidades > 0 ? gastosMensuales / unidades : 0;
   const costoTotalUnitario = costo + gastoPorUnidad;
@@ -45,6 +46,10 @@ export function computeSuggestedPrice({
     gastoPorUnidad,
     costoTotalUnitario,
     suggestedPrice,
-    canSuggest: costo > 0 && unidades > 0 && denominator > 0
+    canSuggest: costo > 0 && unidades > 0 && denominator > 0,
+    warnings: {
+      margenAjustado: margen !== margenRaw,
+      unidadesInvalidas: unidades <= 0
+    }
   };
 }

@@ -8,7 +8,7 @@
  * @related_files ../../services/auth.service.js
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FaAndroid, FaBuilding, FaLock, FaShoppingCart, FaSignInAlt, FaUser } from 'react-icons/fa';
@@ -21,7 +21,9 @@ import configuracionService from '../../services/configuracion.service';
 import Button from '../../components/common/Button';
 import PasswordInput from '../../components/common/PasswordInput';
 
-const ADMIN_WEB_URL = 'https://www.nexopos-dc.web.app/login';
+const ADMIN_WEB_URL = 'https://nexopos-dc.web.app/login';
+const DEFAULT_CAJA_APK_URL =
+  'https://firebasestorage.googleapis.com/v0/b/nexopos-dc.firebasestorage.app/o/app-debug.apk?alt=media&token=39c2debe-b394-42f3-ba3c-7917f274b1f2';
 
 const normalizeExternalUrl = (raw) => {
   const value = String(raw || '').trim();
@@ -63,15 +65,70 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [cajaApkUrlServidor, setCajaApkUrlServidor] = useState('');
+  const redirectHandledRef = useRef(false);
 
   const envCajaApkUrl = (process.env.REACT_APP_CAJA_APK_URL || '').trim();
-  const urlDescargaApk = normalizeExternalUrl(cajaApkUrlServidor || envCajaApkUrl);
+  const urlDescargaApk = normalizeExternalUrl(cajaApkUrlServidor || envCajaApkUrl || DEFAULT_CAJA_APK_URL);
+  const isAndroidWeb = (() => {
+    try {
+      const ua = String(window?.navigator?.userAgent || '').toLowerCase();
+      return ua.includes('android') && !nativeRuntime;
+    } catch {
+      return false;
+    }
+  })();
 
   const redirectAdminToWeb = () => {
     try {
       window.location.assign(ADMIN_WEB_URL);
     } catch {
       window.location.href = ADMIN_WEB_URL;
+    }
+  };
+
+  const openAdminViaNativeBridge = useCallback(() => {
+    try {
+      if (!nativeRuntime) return false;
+      const bridge = window?.NexoAndroid;
+      if (bridge && typeof bridge.openAdminInChrome === 'function') {
+        bridge.openAdminInChrome();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, [nativeRuntime]);
+
+  const isAdminAuthorized = useCallback((user) => {
+    const rol = String(user?.rol || user?.role || '').toLowerCase();
+    return rol.includes('admin') || rol.includes('super');
+  }, []);
+
+  const handleDescargarApk = (event) => {
+    event?.preventDefault?.();
+    if (!urlDescargaApk) {
+      toast.warning('No hay URL de descarga configurada.');
+      return;
+    }
+
+    const directApk = /\.apk([?#].*)?$/i.test(urlDescargaApk);
+    if (!directApk) {
+      toast.info(
+        'El enlace configurado no parece un archivo .apk directo. En Android, si apunta a una página intermedia (Drive/preview), la descarga puede fallar.',
+        { autoClose: 6500 }
+      );
+    }
+
+    // En Android Web funciona mejor descargar en la misma pestaña.
+    try {
+      if (isAndroidWeb) {
+        window.location.assign(urlDescargaApk);
+        return;
+      }
+      window.open(urlDescargaApk, '_blank', 'noopener,noreferrer');
+    } catch {
+      window.location.href = urlDescargaApk;
     }
   };
 
@@ -91,8 +148,27 @@ const Login = () => {
   
   // Redireccionar si ya está autenticado
   useEffect(() => {
+    if (!isAuthenticated) {
+      redirectHandledRef.current = false;
+      return;
+    }
+    if (redirectHandledRef.current) return;
+
     if (isAuthenticated) {
-      if (nativeRuntime && accessMode === 'admin') {
+      redirectHandledRef.current = true;
+      const quiereAdmin = accessMode === 'admin';
+      if (quiereAdmin) {
+        if (!isAdminAuthorized(currentUser)) {
+          toast.warning('Este usuario solo tiene acceso de cajero.');
+          navigate('/cajero', { replace: true });
+          return;
+        }
+        if (nativeRuntime) {
+          if (!openAdminViaNativeBridge()) {
+            redirectAdminToWeb();
+          }
+          return;
+        }
         redirectAdminToWeb();
         return;
       }
@@ -112,7 +188,16 @@ const Login = () => {
 
       navigate('/', { replace: true });
     }
-  }, [accessMode, currentUser, isAuthenticated, navigate, location, nativeRuntime]);
+  }, [
+    accessMode,
+    currentUser,
+    isAuthenticated,
+    navigate,
+    location,
+    nativeRuntime,
+    openAdminViaNativeBridge,
+    isAdminAuthorized
+  ]);
   
   /**
    * Actualiza el estado del formulario
@@ -163,11 +248,6 @@ const Login = () => {
    */
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    if (nativeRuntime && accessMode === 'admin') {
-      redirectAdminToWeb();
-      return;
-    }
     
     if (!validateForm()) {
       return;
@@ -216,7 +296,6 @@ const Login = () => {
               type="button"
               onClick={() => {
                 setAccessMode('admin');
-                if (nativeRuntime) redirectAdminToWeb();
               }}
               className={`rounded-xl border-2 p-4 text-left transition ${
                 accessMode === 'admin'
@@ -253,7 +332,8 @@ const Login = () => {
             >
               <a
                 href={urlDescargaApk}
-                target="_blank"
+                onClick={handleDescargarApk}
+                target={isAndroidWeb ? '_self' : '_blank'}
                 rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-green-700"
               >

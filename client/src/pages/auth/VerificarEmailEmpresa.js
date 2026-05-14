@@ -148,7 +148,13 @@ const VerificarEmailEmpresa = () => {
           { autoClose: 7000 }
         );
       }
-      navigate('/configuracion/empresa', { replace: true });
+      navigate('/configuracion/empresa', {
+        replace: true,
+        state: {
+          openWizardModal: true,
+          onboardingSource: isDemoMode ? 'demo' : 'standard'
+        }
+      });
     } catch (err) {
       const codigo = err?.code || '';
       let msg = err?.message || 'No se pudo crear la empresa';

@@ -15,11 +15,13 @@ import { FaSave, FaArrowLeft, FaSpinner } from 'react-icons/fa';
 import productosService from '../../services/productos.service';
 import categoriasService from '../../services/categorias.service';
 import proveedoresService from '../../services/proveedores.service';
+import configuracionService from '../../services/configuracion.service';
 import {
   buscarCadenaExternaConCache,
   normalizarGtin
 } from '../../services/barcodeLookup.service';
 import { contribuirCatalogoComunidad } from '../../services/barcodeCatalog.service';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Componentes
 import Card from '../../components/common/Card';
@@ -32,6 +34,7 @@ import {
 } from '../../utils/precioSugerido';
 
 const ProductoForm = () => {
+  const { currentUser, hasPermission } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -63,10 +66,12 @@ const ProductoForm = () => {
   const [modoCalculo, setModoCalculo] = useState('manual'); // 'manual' o 'porcentaje'
   const [wizardStep, setWizardStep] = useState(1);
   const [barcodeLookupLoading, setBarcodeLookupLoading] = useState(false);
-  const [showSugerenciaPanel, setShowSugerenciaPanel] = useState(false);
+  const [showSugerenciaPanel, setShowSugerenciaPanel] = useState(true);
   const [pricingSuggestionConfig, setPricingSuggestionConfig] = useState(
     getPricingSuggestionDefaults()
   );
+  const pricingConfigLoadedRef = useRef(false);
+  const pricingConfigSaveTimeoutRef = useRef(null);
   /** true si en esta sesión hubo datos desde caché/OFF/UPC (no contribuir al catálogo global como “manual”) */
   const sesionAltaDesdeFuenteExternaRef = useRef(false);
 
@@ -76,17 +81,49 @@ const ProductoForm = () => {
     }
   }, [id]);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('pricing_suggestion_config');
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return;
-      setPricingSuggestionConfig((prev) => ({ ...prev, ...parsed }));
-    } catch (e) {
-      console.warn('No se pudo cargar configuración de sugerencia de precios:', e?.message || e);
-    }
+  const isAdminUser =
+    currentUser?.rol === 'Administrador' ||
+    currentUser?.rol === 'admin' ||
+    currentUser?.rol === 'Admin' ||
+    currentUser?.rolId === 'admin';
+  const canUsePricingSuggestion =
+    isAdminUser || hasPermission('productos', 'crear') || hasPermission('productos', 'editar');
+
+  const normalizePricingConfig = useCallback((source = {}) => {
+    const defaults = getPricingSuggestionDefaults();
+    return {
+      alquilerMensual: Number(source.alquilerMensual ?? defaults.alquilerMensual) || 0,
+      movilMensual: Number(source.movilMensual ?? defaults.movilMensual) || 0,
+      combustibleMensual: Number(source.combustibleMensual ?? defaults.combustibleMensual) || 0,
+      otrosGastosMensuales: Number(source.otrosGastosMensuales ?? defaults.otrosGastosMensuales) || 0,
+      unidadesMensualesEstimadas:
+        Number(source.unidadesMensualesEstimadas ?? defaults.unidadesMensualesEstimadas) ||
+        defaults.unidadesMensualesEstimadas,
+      margenObjetivoPct:
+        Number(source.margenObjetivoPct ?? defaults.margenObjetivoPct) || defaults.margenObjetivoPct
+    };
   }, []);
+
+  useEffect(() => {
+    if (!canUsePricingSuggestion) return;
+    let isMounted = true;
+    const cargarConfiguracionPrecios = async () => {
+      try {
+        const configEmpresa = await configuracionService.obtener();
+        if (!isMounted) return;
+        const backendConfig = normalizePricingConfig(configEmpresa?.pricing_suggestion || {});
+        setPricingSuggestionConfig(backendConfig);
+      } catch (e) {
+        console.warn('No se pudo cargar configuración de sugerencia desde backend:', e?.message || e);
+      } finally {
+        if (isMounted) pricingConfigLoadedRef.current = true;
+      }
+    };
+    cargarConfiguracionPrecios();
+    return () => {
+      isMounted = false;
+    };
+  }, [canUsePricingSuggestion, normalizePricingConfig]);
   
   // Datos de respaldo para cuando fallan las APIs
   const CATEGORIAS_RESPALDO = [];
@@ -142,15 +179,31 @@ const ProductoForm = () => {
 
   const handlePricingSuggestionConfigChange = (field, value) => {
     setPricingSuggestionConfig((prev) => {
-      const next = { ...prev, [field]: value };
-      try {
-        localStorage.setItem('pricing_suggestion_config', JSON.stringify(next));
-      } catch (e) {
-        console.warn('No se pudo guardar configuración de sugerencia:', e?.message || e);
-      }
+      const next = normalizePricingConfig({ ...prev, [field]: value });
       return next;
     });
   };
+
+  useEffect(() => {
+    if (!canUsePricingSuggestion || !pricingConfigLoadedRef.current) return;
+    if (pricingConfigSaveTimeoutRef.current) {
+      clearTimeout(pricingConfigSaveTimeoutRef.current);
+    }
+    pricingConfigSaveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await configuracionService.actualizar({
+          pricing_suggestion: normalizePricingConfig(pricingSuggestionConfig)
+        });
+      } catch (e) {
+        console.warn('No se pudo persistir configuración de sugerencia en backend:', e?.message || e);
+      }
+    }, 700);
+    return () => {
+      if (pricingConfigSaveTimeoutRef.current) {
+        clearTimeout(pricingConfigSaveTimeoutRef.current);
+      }
+    };
+  }, [canUsePricingSuggestion, normalizePricingConfig, pricingSuggestionConfig]);
   
   // Cargar datos iniciales
   useEffect(() => {
@@ -581,6 +634,7 @@ const ProductoForm = () => {
         pricingSuggestionConfig={pricingSuggestionConfig}
         onPricingSuggestionConfigChange={handlePricingSuggestionConfigChange}
         onAplicarPrecioSugerido={usarPrecioSugerido}
+        canUsePricingSuggestion={canUsePricingSuggestion}
         guardarProducto={guardarProducto}
         submitting={submitting}
         navigate={navigate}
@@ -729,6 +783,16 @@ const ProductoForm = () => {
             </Card>
             
             <Card title="Precios y Stock">
+              {canUsePricingSuggestion && (
+                <div className="mb-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-3 py-2.5">
+                  <p className="text-sm font-semibold text-indigo-900">
+                    Precio sugerido inteligente (gastos + margen objetivo)
+                  </p>
+                  <p className="mt-1 text-xs text-indigo-800">
+                    Diferencial NexoPOS: distribuimos gastos fijos mensuales por unidad y calculamos el precio objetivo.
+                  </p>
+                </div>
+              )}
               {!isEditing && (
                 <p className="mb-4 text-sm text-gray-600">
                   Las tres listas de precio se guardan igual al precio de venta hasta que los diferencies en Gestión de precios.
@@ -810,7 +874,7 @@ const ProductoForm = () => {
                       readOnly={modoCalculo === 'porcentaje'}
                     />
                   </div>
-                  {sugerencia.canSuggest && (
+                  {canUsePricingSuggestion && sugerencia.canSuggest && (
                     <div className="mt-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
                       <p>
                         Precio sugerido: <strong>${sugerencia.suggestedPrice.toFixed(2)}</strong>
@@ -868,17 +932,19 @@ const ProductoForm = () => {
                   )}
                 </div>
                 
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowSugerenciaPanel((v) => !v)}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
-                  >
-                    {showSugerenciaPanel ? 'Ocultar' : 'Mostrar'} cálculo de precio sugerido (gastos + margen objetivo)
-                  </button>
-                </div>
+                {canUsePricingSuggestion && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowSugerenciaPanel((v) => !v)}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
+                    >
+                      {showSugerenciaPanel ? 'Ocultar' : 'Mostrar'} cálculo de precio sugerido (gastos + margen objetivo)
+                    </button>
+                  </div>
+                )}
 
-                {showSugerenciaPanel && (
+                {canUsePricingSuggestion && showSugerenciaPanel && (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <p className="text-xs text-slate-600">
                       Cargá tus gastos mensuales y el margen objetivo para sugerir un precio de venta por unidad.
@@ -968,6 +1034,14 @@ const ProductoForm = () => {
                       Gastos mensuales: <strong>${sugerencia.gastosMensuales.toFixed(2)}</strong>{' '}
                       · Gasto por unidad: <strong>${sugerencia.gastoPorUnidad.toFixed(2)}</strong>
                     </p>
+                    <p className="mt-1 text-xs text-slate-700">
+                      Fórmula: <strong>Precio sugerido = (Costo + Gastos/Unidades) / (1 - Margen%)</strong>
+                    </p>
+                    {sugerencia.warnings?.margenAjustado && (
+                      <p className="mt-1 text-xs font-medium text-amber-700">
+                        El margen objetivo se ajustó automáticamente al rango 0-95%.
+                      </p>
+                    )}
                   </div>
                 )}
 

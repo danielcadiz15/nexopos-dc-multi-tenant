@@ -277,6 +277,7 @@ class ConfiguracionService extends FirebaseService {
    * @returns {Object} Configuraci��n formateada para el frontend
    */
   formatearConfiguracion(data) {
+    const pricingSuggestion = data.pricing_suggestion || {};
     return {
       // Informaci��n b��sica
       razon_social: data.razon_social || '',
@@ -318,6 +319,14 @@ class ConfiguracionService extends FirebaseService {
         alerta_deudas: data.caja_modulos?.alerta_deudas !== false,
         pago_deudas: data.caja_modulos?.pago_deudas !== false,
         ver_comprobante_deuda: data.caja_modulos?.ver_comprobante_deuda !== false
+      },
+      pricing_suggestion: {
+        alquilerMensual: Number(pricingSuggestion.alquilerMensual ?? 0) || 0,
+        movilMensual: Number(pricingSuggestion.movilMensual ?? 0) || 0,
+        combustibleMensual: Number(pricingSuggestion.combustibleMensual ?? 0) || 0,
+        otrosGastosMensuales: Number(pricingSuggestion.otrosGastosMensuales ?? 0) || 0,
+        unidadesMensualesEstimadas: Number(pricingSuggestion.unidadesMensualesEstimadas ?? 1000) || 1000,
+        margenObjetivoPct: Number(pricingSuggestion.margenObjetivoPct ?? 30) || 30
       },
       /** URL pública (HTTPS) del APK de la app de caja para descarga desde login */
       caja_apk_url: typeof data.caja_apk_url === 'string' ? data.caja_apk_url.trim() : ''
@@ -376,6 +385,14 @@ class ConfiguracionService extends FirebaseService {
         pago_deudas: config.caja_modulos?.pago_deudas !== false,
         ver_comprobante_deuda: config.caja_modulos?.ver_comprobante_deuda !== false
       },
+      pricing_suggestion: {
+        alquilerMensual: Number(config.pricing_suggestion?.alquilerMensual ?? 0) || 0,
+        movilMensual: Number(config.pricing_suggestion?.movilMensual ?? 0) || 0,
+        combustibleMensual: Number(config.pricing_suggestion?.combustibleMensual ?? 0) || 0,
+        otrosGastosMensuales: Number(config.pricing_suggestion?.otrosGastosMensuales ?? 0) || 0,
+        unidadesMensualesEstimadas: Number(config.pricing_suggestion?.unidadesMensualesEstimadas ?? 1000) || 1000,
+        margenObjetivoPct: Number(config.pricing_suggestion?.margenObjetivoPct ?? 30) || 30
+      },
       caja_apk_url: typeof config.caja_apk_url === 'string' ? config.caja_apk_url.trim() : '',
       
       // Metadatos
@@ -423,6 +440,14 @@ class ConfiguracionService extends FirebaseService {
         alerta_deudas: true,
         pago_deudas: true,
         ver_comprobante_deuda: true
+      },
+      pricing_suggestion: {
+        alquilerMensual: 0,
+        movilMensual: 0,
+        combustibleMensual: 0,
+        otrosGastosMensuales: 0,
+        unidadesMensualesEstimadas: 1000,
+        margenObjetivoPct: 30
       },
       caja_apk_url: ''
     };

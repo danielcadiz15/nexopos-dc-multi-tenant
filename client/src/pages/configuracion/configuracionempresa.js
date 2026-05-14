@@ -57,6 +57,31 @@ function Modal({ open, title, children, onClose }){
   );
 }
 
+const storageSafeGet = (storage, key, fallback = '') => {
+  try {
+    const value = storage?.getItem?.(key);
+    return value ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const storageSafeSet = (storage, key, value) => {
+  try {
+    storage?.setItem?.(key, value);
+  } catch {
+    // Ignore unavailable storage (private mode/restricted webviews).
+  }
+};
+
+const storageSafeRemove = (storage, key) => {
+  try {
+    storage?.removeItem?.(key);
+  } catch {
+    // Ignore unavailable storage (private mode/restricted webviews).
+  }
+};
+
 /**
  * Página de configuración de datos empresariales
  * Permite configurar todos los datos que aparecerán en las facturas
@@ -67,14 +92,18 @@ const ConfiguracionEmpresa = () => {
   const [showPlanesExplainer, setShowPlanesExplainer] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const pendingWizardFromVerify = Boolean(location.state?.openWizardModal);
+  const onboardingSource = location.state?.onboardingSource || 'standard';
 
   const getCompanyId = useCallback(async () => {
     if (orgId) return orgId;
     try {
       const token = await auth.currentUser?.getIdTokenResult();
-      const cid = token?.claims?.companyId || localStorage.getItem('companyId') || null;
+      const cid = token?.claims?.companyId || storageSafeGet(window.localStorage, 'companyId', null);
       return cid;
-    } catch { return localStorage.getItem('companyId') || null; }
+    } catch {
+      return storageSafeGet(window.localStorage, 'companyId', null);
+    }
   }, [orgId]);
 
   const aplicarCatalogoSugerido = useCallback(async () => {
@@ -291,12 +320,15 @@ const ConfiguracionEmpresa = () => {
   const [empresaNombre, setEmpresaNombre] = useState('');
   const [empresaSlug, setEmpresaSlug] = useState('');
   const [codigoAdministrador, setCodigoAdministrador] = useState('');
-  const [empresaChosenPlan, setEmpresaChosenPlan] = useState(() => sessionStorage.getItem('pendingChosenPlan') || 'basic');
+  const [empresaChosenPlan, setEmpresaChosenPlan] = useState(
+    () => storageSafeGet(window.sessionStorage, 'pendingChosenPlan', 'basic') || 'basic'
+  );
   const [joinCode, setJoinCode] = useState('');
   const [creandoOrg, setCreandoOrg] = useState(false);
   const [uniendoOrg, setUniendoOrg] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardMode, setWizardMode] = useState(false);
+  const [wizardModalOpen, setWizardModalOpen] = useState(false);
 
   // ========= REGISTRO + CREACIÓN UNIFICADO =========
   const [regEmail, setRegEmail] = useState('');
@@ -319,8 +351,8 @@ const ConfiguracionEmpresa = () => {
       const cred = await createUserWithEmailAndPassword(auth, regEmail.trim(), regPass);
       await sendEmailVerification(cred.user, getEmailActionCodeSettings());
       const empresaTrim = regEmpresa.trim();
-      sessionStorage.setItem('pendingEmpresaNombre', empresaTrim);
-      sessionStorage.setItem('pendingChosenPlan', regChosenPlan);
+      storageSafeSet(window.sessionStorage, 'pendingEmpresaNombre', empresaTrim);
+      storageSafeSet(window.sessionStorage, 'pendingChosenPlan', regChosenPlan);
       toast.success(
         'Correo enviado: revisá tu bandeja para «Verificación de correo electrónico», tocá el enlace y si no ves el mensaje, revisá spam. Volvé a la pantalla «Verificá tu correo» del sistema para crear la empresa.',
         { autoClose: 7000 }
@@ -333,10 +365,6 @@ const ConfiguracionEmpresa = () => {
       setCreandoCuentaEmpresa(false);
     }
   };
-
-  useEffect(() => {
-    sessionStorage.removeItem('postVerifyGoConfig');
-  }, []);
 
   useEffect(() => {
     cargarConfiguracion();
@@ -365,7 +393,8 @@ const ConfiguracionEmpresa = () => {
         return;
       }
       setCreandoOrg(true);
-      const selectedPlan = empresaChosenPlan || sessionStorage.getItem('pendingChosenPlan') || 'basic';
+      const selectedPlan =
+        empresaChosenPlan || storageSafeGet(window.sessionStorage, 'pendingChosenPlan', 'basic') || 'basic';
       const res = await createTenant(empresaNombre.trim(), empresaSlug.trim() || null, codigoAdministrador.trim(), selectedPlan);
       if (!res?.success || !res.orgId) {
         throw new Error(res?.message || 'No se pudo crear la empresa');
@@ -456,6 +485,7 @@ const ConfiguracionEmpresa = () => {
       try { const configExistente = await configuracionService.obtener(); if (configExistente && configExistente.razon_social) { await configuracionService.actualizar(datosCompletos); } else { await configuracionService.guardar(datosCompletos); } }
       catch { await configuracionService.guardar(datosCompletos); }
       toast.success('Configuración guardada correctamente'); setLogoUrl(logoUrlFinal); setLogoFile(null); setLogoPreview(null);
+      setWizardModalOpen(false);
       setWizardMode(false);
       navigate('/', { replace: true });
     } catch (error) { console.error('Error al guardar configuración:', error); toast.error('Error al guardar la configuración'); }
@@ -470,6 +500,7 @@ const ConfiguracionEmpresa = () => {
     !formData.telefono_principal?.trim() &&
     !formData.email?.trim();
   const showWizard = !!orgId && wizardMode;
+  const showWizardAsModal = showWizard && wizardModalOpen;
   const wizardSteps = [
     { title: 'Identidad de la empresa', hint: 'Cómo se va a ver tu negocio en comprobantes.' },
     { title: 'Datos fiscales', hint: 'Datos legales/fiscales para facturación.' },
@@ -510,8 +541,29 @@ const ConfiguracionEmpresa = () => {
     if (!loading && orgId && isFirstSetup) {
       setWizardMode(true);
       setWizardStep(0);
+      if (
+        pendingWizardFromVerify ||
+        storageSafeGet(window.sessionStorage, 'postVerifyGoConfig', '') === '1'
+      ) {
+        setWizardModalOpen(true);
+        storageSafeRemove(window.sessionStorage, 'postVerifyGoConfig');
+        navigate(location.pathname, { replace: true, state: null });
+        if (onboardingSource === 'demo') {
+          toast.info('Bienvenido a la demo. Te guiamos paso a paso para dejar tu empresa lista en minutos.', {
+            autoClose: 5500
+          });
+        }
+      }
     }
-  }, [loading, orgId, isFirstSetup]);
+  }, [
+    loading,
+    orgId,
+    isFirstSetup,
+    pendingWizardFromVerify,
+    navigate,
+    location.pathname,
+    onboardingSource
+  ]);
 
   if (loading) {
     return (<div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>);
@@ -631,7 +683,7 @@ const ConfiguracionEmpresa = () => {
                         checked={empresaChosenPlan === id}
                         onChange={(e) => {
                           setEmpresaChosenPlan(e.target.value);
-                          sessionStorage.setItem('pendingChosenPlan', e.target.value);
+                          storageSafeSet(window.sessionStorage, 'pendingChosenPlan', e.target.value);
                         }}
                         className="mr-2"
                       />
@@ -684,7 +736,11 @@ const ConfiguracionEmpresa = () => {
           {!!orgId && !showWizard && (
             <Button
               color="secondary"
-              onClick={() => { setWizardStep(0); setWizardMode(true); }}
+              onClick={() => {
+                setWizardStep(0);
+                setWizardModalOpen(false);
+                setWizardMode(true);
+              }}
             >
               Abrir asistente
             </Button>
@@ -699,11 +755,15 @@ const ConfiguracionEmpresa = () => {
       </div>
 
       {showWizard && (
-        <Card>
+        <div className={showWizardAsModal ? 'fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3' : ''}>
+          <div className={showWizardAsModal ? 'w-full max-w-4xl max-h-[92vh] overflow-y-auto' : ''}>
+            <Card>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold tracking-wide text-indigo-600 uppercase">Asistente interactivo</p>
+                <p className={`text-xs font-semibold tracking-wide uppercase ${showWizardAsModal ? 'text-fuchsia-600' : 'text-indigo-600'}`}>
+                  {showWizardAsModal ? 'Setup guiado NexoPOS' : 'Asistente interactivo'}
+                </p>
                 <h3 className="text-lg font-semibold text-gray-900">
                   Paso {wizardStep + 1} de {wizardSteps.length}: {wizardSteps[wizardStep].title}
                 </h3>
@@ -711,14 +771,22 @@ const ConfiguracionEmpresa = () => {
               </div>
               <button
                 type="button"
-                className="text-xs text-indigo-600 hover:text-indigo-800"
-                onClick={() => setWizardMode(false)}
+                className={`text-xs ${showWizardAsModal ? 'text-slate-500 hover:text-slate-700' : 'text-indigo-600 hover:text-indigo-800'}`}
+                onClick={() => {
+                  if (showWizardAsModal) {
+                    setWizardModalOpen(false);
+                  }
+                  setWizardMode(false);
+                }}
               >
-                Prefiero formulario completo
+                {showWizardAsModal ? 'Completar después' : 'Prefiero formulario completo'}
               </button>
             </div>
             <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
-              <div className="h-2 bg-indigo-600 transition-all duration-300" style={{ width: `${wizardProgress}%` }} />
+              <div
+                className={`h-2 transition-all duration-300 ${showWizardAsModal ? 'bg-fuchsia-600' : 'bg-indigo-600'}`}
+                style={{ width: `${wizardProgress}%` }}
+              />
             </div>
 
             {wizardStep === 0 && (
@@ -963,7 +1031,9 @@ const ConfiguracionEmpresa = () => {
               )}
             </div>
           </div>
-        </Card>
+            </Card>
+          </div>
+        </div>
       )}
 
       {!showWizard && (

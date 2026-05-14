@@ -1,20 +1,23 @@
 package com.condinea.app;
 
 import android.app.AlarmManager;
+import android.app.KeyguardManager;
 import android.app.PendingIntent;
-import android.app.admin.DevicePolicyManager;
-import android.content.ComponentName;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.text.InputType;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.webkit.JavascriptInterface;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Switch;
@@ -29,64 +32,53 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class MainActivity extends BridgeActivity {
+    private static final String ADMIN_WEB_URL = "https://nexopos-dc.web.app/login";
+    private static final long TEMP_UNLOCK_MS = 5L * 60L * 1000L;
     private static final Set<String> ALLOWED_HOSTS = new HashSet<>(Arrays.asList(
         "nexopos-dc.web.app",
         "www.nexopos-dc.web.app"
     ));
-    private static final String[] KIOSK_BLOCKLIST_PACKAGES = new String[] {
-        "com.android.chrome",
-        "com.android.vending",
-        "com.google.android.youtube",
-        "com.google.android.gm",
-        "com.android.calendar",
-        "com.google.android.apps.maps"
-    };
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable immersiveRunnable = this::applyImmersiveMode;
     private int hiddenTapCount = 0;
     private long hiddenTapFirstMs = 0L;
     private boolean technicalUnlocked = false;
+    private long allowExitUntilMs = 0L;
+    private boolean jsBridgeAttached = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        attachJsBridgeIfNeeded();
         applyImmersiveMode();
-        startWatchdogIfEnabled();
         applyKioskPoliciesIfEnabled();
-        scheduleRelaunchIfConfigured();
         enforceAllowedDomain();
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
+        attachJsBridgeIfNeeded();
+        applyImmersiveMode();
+        handler.postDelayed(this::applyImmersiveMode, 220);
         if (KioskPrefs.isKioskEnabled(this)) {
-            applyImmersiveMode();
             applyKioskPoliciesIfEnabled();
-            scheduleBringToFront();
         }
     }
 
     @Override
-    protected void onPause() {
+    public void onPause() {
         super.onPause();
-        if (KioskPrefs.isKioskEnabled(this) && !technicalUnlocked) {
-            scheduleBringToFront();
-        }
     }
 
     @Override
-    protected void onStop() {
+    public void onStop() {
         super.onStop();
-        if (KioskPrefs.isKioskEnabled(this) && !technicalUnlocked) {
-            scheduleBringToFront();
-        }
     }
 
     @Override
     public void onBackPressed() {
-        if (KioskPrefs.isKioskEnabled(this) && !technicalUnlocked) {
+        if (KioskPrefs.isKioskEnabled(this) && !technicalUnlocked && !isTemporaryExitAllowed()) {
             Toast.makeText(this, "Modo kiosko activo", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -96,7 +88,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onUserLeaveHint() {
         super.onUserLeaveHint();
-        if (KioskPrefs.isKioskEnabled(this) && !technicalUnlocked) {
+        if (KioskPrefs.isKioskEnabled(this) && !technicalUnlocked && !isTemporaryExitAllowed()) {
             scheduleBringToFront();
         }
     }
@@ -184,8 +176,6 @@ public class MainActivity extends BridgeActivity {
             .setNegativeButton("Cerrar", (d, w) -> lockAgain())
             .setNeutralButton("Salir kiosko", (d, w) -> {
                 KioskPrefs.setKioskEnabled(this, false);
-                stopWatchdog();
-                stopLockTaskSafely();
                 technicalUnlocked = false;
                 Toast.makeText(this, "Modo kiosko desactivado", Toast.LENGTH_LONG).show();
             })
@@ -200,11 +190,6 @@ public class MainActivity extends BridgeActivity {
                 }
                 if (kioskSwitch.isChecked()) {
                     applyKioskPoliciesIfEnabled();
-                    startWatchdogIfEnabled();
-                    scheduleRelaunchIfConfigured();
-                } else {
-                    stopWatchdog();
-                    stopLockTaskSafely();
                 }
                 lockAgain();
             })
@@ -222,8 +207,6 @@ public class MainActivity extends BridgeActivity {
     private void applyKioskPoliciesIfEnabled() {
         if (!KioskPrefs.isKioskEnabled(this)) return;
         applyImmersiveMode();
-        configureDeviceOwnerPolicies();
-        startLockTaskSafely();
     }
 
     private void applyImmersiveMode() {
@@ -245,80 +228,29 @@ public class MainActivity extends BridgeActivity {
                 | View.SYSTEM_UI_FLAG_FULLSCREEN;
             decorView.setSystemUiVisibility(flags);
         }
-        handler.removeCallbacks(immersiveRunnable);
-        handler.postDelayed(immersiveRunnable, 800);
-    }
-
-    private void startLockTaskSafely() {
-        try {
-            startLockTask();
-        } catch (Exception ignored) {
-            // Si no es Device Owner, dependerá de screen pinning/manual.
-        }
-    }
-
-    private void stopLockTaskSafely() {
-        try {
-            stopLockTask();
-        } catch (Exception ignored) {
-        }
-    }
-
-    private void configureDeviceOwnerPolicies() {
-        DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
-        ComponentName admin = new ComponentName(this, KioskAdminReceiver.class);
-        if (dpm == null || !dpm.isDeviceOwnerApp(getPackageName())) return;
-
-        try {
-            dpm.setLockTaskPackages(admin, new String[]{getPackageName()});
-        } catch (Exception ignored) {}
-
-        // Ocultar apps no permitidas (solo si somos Device Owner).
-        for (String pkg : KIOSK_BLOCKLIST_PACKAGES) {
-            try {
-                dpm.setApplicationHidden(admin, pkg, true);
-            } catch (Exception ignored) {}
-        }
-    }
-
-    private void startWatchdogIfEnabled() {
-        if (!KioskPrefs.isWatchdogEnabled(this)) return;
-        Intent i = new Intent(this, KioskWatchdogService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(i);
-        } else {
-            startService(i);
-        }
-    }
-
-    private void stopWatchdog() {
-        stopService(new Intent(this, KioskWatchdogService.class));
     }
 
     private void scheduleBringToFront() {
+        handler.removeCallbacksAndMessages(null);
         handler.postDelayed(() -> {
-            if (!KioskPrefs.isKioskEnabled(this) || technicalUnlocked) return;
+            if (!KioskPrefs.isKioskEnabled(this) || technicalUnlocked || isTemporaryExitAllowed()) return;
+            if (isDeviceLockedOrScreenOff()) return;
             Intent i = new Intent(this, MainActivity.class);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
             startActivity(i);
         }, 500);
     }
 
-    private void scheduleRelaunchIfConfigured() {
-        int minutes = KioskPrefs.getRestartMinutes(this);
-        if (minutes <= 0) return;
-        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        if (am == null) return;
-        Intent i = new Intent(this, MainActivity.class);
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent pi = PendingIntent.getActivity(
-            this,
-            48002,
-            i,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
-        long triggerAt = System.currentTimeMillis() + minutes * 60L * 1000L;
-        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+    private boolean isDeviceLockedOrScreenOff() {
+        try {
+            KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            boolean locked = km != null && km.isKeyguardLocked();
+            boolean screenInteractive = pm != null && pm.isInteractive();
+            return locked || !screenInteractive;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private void enforceAllowedDomain() {
@@ -337,6 +269,76 @@ public class MainActivity extends BridgeActivity {
             return Math.max(0, n);
         } catch (Exception e) {
             return 0;
+        }
+    }
+
+    private boolean isTemporaryExitAllowed() {
+        return System.currentTimeMillis() < allowExitUntilMs;
+    }
+
+    private void requestPinThen(Runnable onSuccess) {
+        EditText pinInput = new EditText(this);
+        pinInput.setHint("PIN de administrador");
+        pinInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        new AlertDialog.Builder(this)
+            .setTitle("Desbloqueo temporal")
+            .setMessage("Ingresá el PIN para continuar.")
+            .setView(pinInput)
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Desbloquear", (d, w) -> {
+                String entered = String.valueOf(pinInput.getText());
+                if (!KioskPrefs.getAdminPin(this).equals(entered)) {
+                    Toast.makeText(this, "PIN incorrecto", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                allowExitUntilMs = System.currentTimeMillis() + TEMP_UNLOCK_MS;
+                if (onSuccess != null) onSuccess.run();
+            })
+            .show();
+    }
+
+    private void openAdminInChrome() {
+        Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(ADMIN_WEB_URL));
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        i.setPackage("com.android.chrome");
+        try {
+            startActivity(i);
+        } catch (ActivityNotFoundException noChrome) {
+            i.setPackage(null);
+            startActivity(i);
+        }
+    }
+
+    private void openExternalUrlInChrome(String rawUrl) {
+        if (rawUrl == null) return;
+        String url = rawUrl.trim();
+        if (!(url.startsWith("https://") || url.startsWith("http://"))) return;
+        Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        i.setPackage("com.android.chrome");
+        try {
+            startActivity(i);
+        } catch (ActivityNotFoundException noChrome) {
+            i.setPackage(null);
+            startActivity(i);
+        }
+    }
+
+    private void attachJsBridgeIfNeeded() {
+        if (jsBridgeAttached || getBridge() == null || getBridge().getWebView() == null) return;
+        getBridge().getWebView().addJavascriptInterface(new NexoAndroidBridge(), "NexoAndroid");
+        jsBridgeAttached = true;
+    }
+
+    public class NexoAndroidBridge {
+        @JavascriptInterface
+        public void openAdminInChrome() {
+            runOnUiThread(() -> requestPinThen(MainActivity.this::openAdminInChrome));
+        }
+
+        @JavascriptInterface
+        public void openExternalUrlInChrome(String url) {
+            runOnUiThread(() -> openExternalUrlInChrome(url));
         }
     }
 }

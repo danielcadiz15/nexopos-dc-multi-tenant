@@ -41,6 +41,14 @@ function emptyEmpresaData() {
       pago_deudas: true,
       ver_comprobante_deuda: true
     },
+    pricing_suggestion: {
+      alquilerMensual: 0,
+      movilMensual: 0,
+      combustibleMensual: 0,
+      otrosGastosMensuales: 0,
+      unidadesMensualesEstimadas: 1000,
+      margenObjetivoPct: 30
+    },
     caja_apk_url: '',
     activo: true
   };
@@ -64,7 +72,18 @@ function patchEmpresa(existingMerged, patch) {
   if (patch.contacto) out.contacto = { ...existingMerged.contacto, ...patch.contacto };
   if (patch.facturacion) out.facturacion = { ...existingMerged.facturacion, ...patch.facturacion };
   if (patch.caja_modulos) out.caja_modulos = { ...existingMerged.caja_modulos, ...patch.caja_modulos };
+  if (patch.pricing_suggestion) {
+    out.pricing_suggestion = { ...existingMerged.pricing_suggestion, ...patch.pricing_suggestion };
+  }
   return out;
+}
+
+function canManagePricingSuggestion(user) {
+  if (!user) return false;
+  const rol = String(user.rol || '').toLowerCase();
+  if (rol === 'administrador' || rol === 'admin') return true;
+  const permisos = user.permisos || {};
+  return permisos.productos?.crear === true || permisos.productos?.editar === true;
 }
 
 /**
@@ -151,6 +170,9 @@ const configuracionRoutes = async (req, res, path) => {
 
         const stored = await readEmpresaDoc(companyId);
         const merged = mergeEmpresaData(stored || {});
+        if (!canManagePricingSuggestion(req.user)) {
+          delete merged.pricing_suggestion;
+        }
 
         res.json({
           success: true,
@@ -182,6 +204,13 @@ const configuracionRoutes = async (req, res, path) => {
         }
 
         const nuevaConfig = req.body || {};
+        if (Object.prototype.hasOwnProperty.call(nuevaConfig, 'pricing_suggestion') && !canManagePricingSuggestion(req.user)) {
+          res.status(403).json({
+            success: false,
+            message: 'No tenés permisos para configurar precios sugeridos'
+          });
+          return true;
+        }
         const existingRaw = await readEmpresaDoc(companyId);
         const merged = patchEmpresa(mergeEmpresaData(existingRaw), nuevaConfig);
 
@@ -218,6 +247,13 @@ const configuracionRoutes = async (req, res, path) => {
         }
 
         const datosActualizados = req.body || {};
+        if (Object.prototype.hasOwnProperty.call(datosActualizados, 'pricing_suggestion') && !canManagePricingSuggestion(req.user)) {
+          res.status(403).json({
+            success: false,
+            message: 'No tenés permisos para configurar precios sugeridos'
+          });
+          return true;
+        }
         console.log('[CONFIGURACION] PUT empresa org', companyId);
 
         const existingRaw = await readEmpresaDoc(companyId);

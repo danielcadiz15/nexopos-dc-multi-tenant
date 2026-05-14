@@ -17,7 +17,8 @@ public final class KioskPrefs {
     }
 
     public static boolean isKioskEnabled(Context context) {
-        return prefs(context).getBoolean(KEY_KIOSK_ENABLED, true);
+        // Modo seguro: kiosko desactivado por defecto hasta activación manual.
+        return prefs(context).getBoolean(KEY_KIOSK_ENABLED, false);
     }
 
     public static void setKioskEnabled(Context context, boolean enabled) {
@@ -25,7 +26,8 @@ public final class KioskPrefs {
     }
 
     public static boolean isWatchdogEnabled(Context context) {
-        return prefs(context).getBoolean(KEY_WATCHDOG_ENABLED, true);
+        // Se habilita manualmente desde el panel técnico cuando el equipo está listo.
+        return prefs(context).getBoolean(KEY_WATCHDOG_ENABLED, false);
     }
 
     public static void setWatchdogEnabled(Context context, boolean enabled) {

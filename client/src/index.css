@@ -95,3 +95,29 @@ code {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/*
+  Tablets en horizontal (altura baja): priorizar scroll vertical para evitar
+  paneles cortados cuando la UI ocupa más que el viewport disponible.
+*/
+@media (orientation: landscape) and (max-height: 900px) {
+  html,
+  body {
+    overflow: auto;
+  }
+
+  #root,
+  .nexo-viewport-root {
+    height: auto;
+    max-height: none;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .nexo-route-outlet {
+    overflow-y: auto !important;
+    overflow-x: hidden;
+    min-height: 100dvh;
+    -webkit-overflow-scrolling: touch;
+  }
+}
