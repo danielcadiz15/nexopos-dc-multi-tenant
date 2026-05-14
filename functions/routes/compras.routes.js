@@ -63,7 +63,7 @@ async function computeCambiosCosto(companyId, detalles) {
 }
 
 // Función para enriquecer compras con información de proveedores
-const enriquecerComprasConProveedores = async (compras) => {
+const enriquecerComprasConProveedores = async (compras, companyId = null) => {
   if (!Array.isArray(compras) || compras.length === 0) {
     return compras;
   }
@@ -81,7 +81,13 @@ const enriquecerComprasConProveedores = async (compras) => {
     // Obtener datos de proveedores en paralelo
     const proveedoresPromises = proveedoresIds.map(async (proveedorId) => {
       try {
-        const proveedorDoc = await db.collection('proveedores').doc(proveedorId).get();
+        let proveedorDoc = null;
+        if (companyId) {
+          proveedorDoc = await db.collection('companies').doc(companyId).collection('proveedores').doc(proveedorId).get();
+        }
+        if (!proveedorDoc || !proveedorDoc.exists) {
+          proveedorDoc = await db.collection('proveedores').doc(proveedorId).get();
+        }
         return { 
           id: proveedorId, 
           data: proveedorDoc.exists ? proveedorDoc.data() : null,
@@ -144,7 +150,10 @@ const enriquecerComprasConProveedores = async (compras) => {
         // Sin proveedor
         proveedor_info = {
           id: compra.proveedor_id || null,
-          nombre: compra.proveedor_id ? `Proveedor ${compra.proveedor_id}` : 'Sin proveedor',
+          nombre:
+            compra.proveedor_nombre ||
+            compra.proveedor ||
+            (compra.proveedor_id ? `Proveedor ${compra.proveedor_id}` : 'Sin proveedor'),
           contacto: '',
           telefono: '',
           email: ''
@@ -334,7 +343,7 @@ const comprasRoutes = async (req, res, path) => {
 		});
 		
 		// ✅ PASO 1: Enriquecer compras con información de proveedores
-		const comprasConProveedores = await enriquecerComprasConProveedores(compras);
+		const comprasConProveedores = await enriquecerComprasConProveedores(compras, companyId);
 		
 		// ✅ PASO 2: Enriquecer detalles con información de productos
 		const comprasCompletas = await enriquecerDetallesConProductos(comprasConProveedores);
@@ -396,7 +405,7 @@ const comprasRoutes = async (req, res, path) => {
 		};
 		
 		// ✅ PASO 1: Enriquecer compra individual con proveedor
-		const comprasConProveedor = await enriquecerComprasConProveedores([compra]);
+		const comprasConProveedor = await enriquecerComprasConProveedores([compra], companyId);
 		
 		// ✅ PASO 2: Enriquecer detalles con información de productos
 		const comprasCompletas = await enriquecerDetallesConProductos(comprasConProveedor);
@@ -615,43 +624,47 @@ const comprasRoutes = async (req, res, path) => {
 	if (path === '/compras/filtrar' && req.method === 'GET') {
 	  try {
 		const { fecha_inicio, fecha_fin, estado, proveedor_id } = req.query;
-		
-		let query = db.collection('compras');
-		
-		if (fecha_inicio && fecha_fin) {
-		  const fechaInicioDate = new Date(fecha_inicio);
-		  fechaInicioDate.setHours(0, 0, 0, 0);
-		  
-		  const fechaFinDate = new Date(fecha_fin);
-		  fechaFinDate.setHours(23, 59, 59, 999);
-		  
-		  query = query
-			.where('fecha', '>=', admin.firestore.Timestamp.fromDate(fechaInicioDate))
-			.where('fecha', '<=', admin.firestore.Timestamp.fromDate(fechaFinDate));
+		if (!companyId) {
+		  return res.status(400).json({ success: false, message: 'CompanyId requerido' });
 		}
-		
-		if (estado) {
-		  query = query.where('estado', '==', estado);
-		}
-		
-		if (proveedor_id) {
-		  query = query.where('proveedor_id', '==', proveedor_id);
-		}
-		
-		const snapshot = await query.get();
-		const compras = [];
-		
-		snapshot.forEach(doc => {
-		  compras.push({
+
+		const fechaInicioDate = fecha_inicio ? new Date(fecha_inicio) : null;
+		if (fechaInicioDate) fechaInicioDate.setHours(0, 0, 0, 0);
+		const fechaFinDate = fecha_fin ? new Date(fecha_fin) : null;
+		if (fechaFinDate) fechaFinDate.setHours(23, 59, 59, 999);
+
+		const snapshot = await db.collection('companies').doc(companyId).collection('compras').get();
+		const baseCompras = [];
+		snapshot.forEach((doc) => {
+		  const data = doc.data() || {};
+		  let fecha = null;
+		  if (data.fecha && typeof data.fecha === 'string') fecha = new Date(data.fecha);
+		  else if (data.fecha && data.fecha.toDate) fecha = data.fecha.toDate();
+		  else if (data.fechaCreacion && data.fechaCreacion.toDate) fecha = data.fechaCreacion.toDate();
+
+		  if (fechaInicioDate && (!fecha || fecha < fechaInicioDate)) return;
+		  if (fechaFinDate && (!fecha || fecha > fechaFinDate)) return;
+		  if (estado && String(data.estado || '').toLowerCase() !== String(estado).toLowerCase()) return;
+		  if (proveedor_id && data.proveedor_id !== proveedor_id) return;
+
+		  baseCompras.push({
 			id: doc.id,
-			...doc.data(),
-			// Formatear para la tabla
-			numero: doc.data().numero || `COMP-${doc.id.slice(-6)}`,
-			proveedor: doc.data().proveedor_nombre || 'Proveedor',
-			subtotal: doc.data().subtotal || doc.data().total || 0,
-			impuestos: doc.data().impuestos || 0
+			...data
 		  });
 		});
+
+		const comprasEnriquecidas = await enriquecerComprasConProveedores(baseCompras, companyId);
+		const compras = comprasEnriquecidas.map((compra) => ({
+		  ...compra,
+		  numero: compra.numero || `COMP-${compra.id.slice(-6)}`,
+		  proveedor:
+			compra.proveedor_info?.nombre ||
+			compra.proveedor_nombre ||
+			compra.proveedor ||
+			(compra.proveedor_id ? `Proveedor ${compra.proveedor_id}` : 'Sin proveedor'),
+		  subtotal: compra.subtotal || compra.total || 0,
+		  impuestos: compra.impuestos || 0
+		}));
 		
 		res.json(compras);
 		return true;

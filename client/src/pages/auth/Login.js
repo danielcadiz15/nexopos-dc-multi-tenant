@@ -16,12 +16,13 @@ import { FaAndroid, FaBuilding, FaLock, FaShoppingCart, FaSignInAlt, FaUser } fr
 // Hooks
 import { useAuth } from '../../contexts/AuthContext';
 import configuracionService from '../../services/configuracion.service';
+import tabletLoginBg from '../../assets/nexopos-tablet-login-bg.png';
 
 // Componentes
 import Button from '../../components/common/Button';
 import PasswordInput from '../../components/common/PasswordInput';
 
-const ADMIN_WEB_URL = 'https://nexopos-dc.web.app/login';
+const ADMIN_WEB_URL = 'https://nexopos-dc.web.app';
 const DEFAULT_CAJA_APK_URL =
   'https://firebasestorage.googleapis.com/v0/b/nexopos-dc.firebasestorage.app/o/app-debug.apk?alt=media&token=39c2debe-b394-42f3-ba3c-7917f274b1f2';
 
@@ -78,6 +79,13 @@ const Login = () => {
     }
   })();
 
+  const loginBackgroundStyle = {
+    backgroundImage: `url(${tabletLoginBg})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center center',
+    backgroundRepeat: 'no-repeat'
+  };
+
   const redirectAdminToWeb = () => {
     try {
       window.location.assign(ADMIN_WEB_URL);
@@ -86,24 +94,36 @@ const Login = () => {
     }
   };
 
-  const openAdminViaNativeBridge = useCallback(() => {
-    try {
-      if (!nativeRuntime) return false;
-      const bridge = window?.NexoAndroid;
-      if (bridge && typeof bridge.openAdminInChrome === 'function') {
-        bridge.openAdminInChrome();
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  }, [nativeRuntime]);
-
   const isAdminAuthorized = useCallback((user) => {
     const rol = String(user?.rol || user?.role || '').toLowerCase();
     return rol.includes('admin') || rol.includes('super');
   }, []);
+
+  const redirectAfterLogin = useCallback((user) => {
+    redirectHandledRef.current = true;
+    const quiereAdmin = accessMode === 'admin';
+    if (quiereAdmin) {
+      if (!isAdminAuthorized(user)) {
+        toast.warning('Este usuario solo tiene acceso de cajero.');
+        navigate('/cajero', { replace: true });
+        return;
+      }
+      if (nativeRuntime) {
+        navigate('/', { replace: true });
+        return;
+      }
+      const sameWebHost =
+        typeof window !== 'undefined' &&
+        window.location?.origin === 'https://nexopos-dc.web.app';
+      if (sameWebHost) {
+        navigate('/', { replace: true });
+      } else {
+        redirectAdminToWeb();
+      }
+      return;
+    }
+    navigate('/cajero', { replace: true });
+  }, [accessMode, isAdminAuthorized, nativeRuntime, navigate]);
 
   const handleDescargarApk = (event) => {
     event?.preventDefault?.();
@@ -146,58 +166,23 @@ const Login = () => {
     return () => { cancelado = true; };
   }, []);
   
-  // Redireccionar si ya está autenticado
+  // Mantener pantalla de login al abrir la app.
+  // La redirección ocurre solo después de un submit exitoso (handleSubmit -> redirectAfterLogin).
   useEffect(() => {
     if (!isAuthenticated) {
       redirectHandledRef.current = false;
       return;
     }
     if (redirectHandledRef.current) return;
+    redirectHandledRef.current = true;
 
-    if (isAuthenticated) {
-      redirectHandledRef.current = true;
-      const quiereAdmin = accessMode === 'admin';
-      if (quiereAdmin) {
-        if (!isAdminAuthorized(currentUser)) {
-          toast.warning('Este usuario solo tiene acceso de cajero.');
-          navigate('/cajero', { replace: true });
-          return;
-        }
-        if (nativeRuntime) {
-          if (!openAdminViaNativeBridge()) {
-            redirectAdminToWeb();
-          }
-          return;
-        }
-        redirectAdminToWeb();
-        return;
-      }
-      const rol = String(currentUser?.rol || currentUser?.role || '').toLowerCase();
-      const esCajero = ['cajero', 'empleado', 'vendedor', 'viewer'].includes(rol);
-      const quiereMostrador = accessMode === 'cajero';
-      if (esCajero || quiereMostrador) {
-        navigate('/cajero', { replace: true });
-        return;
-      }
-
-      const from = location.state?.from?.pathname;
-      if (from && from !== '/login') {
-        navigate(from, { replace: true });
-        return;
-      }
-
+    const wantsAdmin = accessMode === 'admin';
+    if (wantsAdmin && isAdminAuthorized(currentUser)) {
       navigate('/', { replace: true });
+      return;
     }
-  }, [
-    accessMode,
-    currentUser,
-    isAuthenticated,
-    navigate,
-    location,
-    nativeRuntime,
-    openAdminViaNativeBridge,
-    isAdminAuthorized
-  ]);
+    navigate('/cajero', { replace: true });
+  }, [accessMode, currentUser, isAdminAuthorized, isAuthenticated, navigate]);
   
   /**
    * Actualiza el estado del formulario
@@ -256,9 +241,8 @@ const Login = () => {
     setLoading(true);
     
     try {
-      await login(formData.email, formData.password);
-      
-      // La redirección se manejará en el useEffect
+      const user = await login(formData.email, formData.password);
+      redirectAfterLogin(user);
     } catch (error) {
       console.error('Error al iniciar sesión:', error);
       
@@ -278,8 +262,12 @@ const Login = () => {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-100 bg-nexo-mesh px-4 py-6">
-      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-elevated ring-1 ring-slate-900/[0.04] backdrop-blur-sm">
+    <div
+      className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-x-hidden overflow-y-auto px-4 py-6"
+      style={loginBackgroundStyle}
+    >
+      <div className="absolute inset-0 bg-slate-950/35" aria-hidden />
+      <div className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-elevated ring-1 ring-slate-900/[0.04] backdrop-blur-sm">
         <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-sky-500" />
         <div className="px-8 py-10">
           <div className="mb-8 text-center">

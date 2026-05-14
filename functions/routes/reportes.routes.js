@@ -31,6 +31,60 @@ async function obtenerProductosEmpresa(companyId) {
   return productosMap;
 }
 
+async function obtenerProveedoresEmpresa(companyId) {
+  const proveedoresMap = {};
+  if (companyId) {
+    const tenantSnap = await db.collection('companies').doc(companyId).collection('proveedores').get();
+    tenantSnap.forEach((doc) => {
+      proveedoresMap[doc.id] = doc.data();
+    });
+  }
+  const globalSnap = await db.collection('proveedores').get();
+  globalSnap.forEach((doc) => {
+    const data = doc.data();
+    if (!companyId || !data.orgId || data.orgId === companyId) {
+      proveedoresMap[doc.id] = proveedoresMap[doc.id] || data;
+    }
+  });
+  return proveedoresMap;
+}
+
+function resolverNombreProveedor(compra, proveedoresMap) {
+  const proveedorId = compra?.proveedor_id || null;
+  const proveedor = proveedorId ? proveedoresMap?.[proveedorId] : null;
+  return (
+    compra?.proveedor_info?.nombre ||
+    compra?.proveedor_nombre ||
+    compra?.proveedor ||
+    proveedor?.nombre ||
+    (proveedorId ? `Proveedor ${proveedorId}` : 'Sin proveedor')
+  );
+}
+
+function resolverTotalCompra(compra) {
+  const posibles = [
+    compra?.total,
+    compra?.total_general,
+    compra?.monto_total,
+    compra?.importe_total,
+    compra?.subtotal
+  ];
+  for (const v of posibles) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  if (Array.isArray(compra?.detalles) && compra.detalles.length > 0) {
+    return compra.detalles.reduce((acc, det) => {
+      const cantidad = Number(det?.cantidad) || 0;
+      const costo = Number(det?.costo ?? det?.precio_unitario ?? det?.precio ?? 0) || 0;
+      return acc + (cantidad * costo);
+    }, 0);
+  }
+
+  return 0;
+}
+
 module.exports = async function reportesRoutes(req, res, path) {
   console.log('📊 [REPORTES] Ruta:', path);
   
@@ -723,7 +777,7 @@ module.exports = async function reportesRoutes(req, res, path) {
     // ==================== REPORTE DE COMPRAS ====================
     if (path === '/reportes/compras' && req.method === 'GET') {
       try {
-        const { fechaInicio, fechaFin, sucursal_id } = req.query;
+        const { fechaInicio, fechaFin, sucursal_id, estado, proveedor_id } = req.query;
         if (!fechaInicio || !fechaFin) {
           res.status(400).json({ error: 'Fechas requeridas' });
           return true;
@@ -739,6 +793,7 @@ module.exports = async function reportesRoutes(req, res, path) {
         const fFin = new Date(fechaFin); fFin.setHours(23,59,59,999);
 
         const compras = [];
+        const proveedoresMap = await obtenerProveedoresEmpresa(companyId);
         comprasSnap.forEach(d => {
           const c = d.data();
           let fecha = fechaDocumento(c);
@@ -756,14 +811,19 @@ module.exports = async function reportesRoutes(req, res, path) {
         const productosMasComprados = {};
 
         for (const compra of compras) {
-          const t = parseFloat(compra.total || compra.subtotal || 0) || 0;
+          const t = resolverTotalCompra(compra);
           total += t; cantidad++;
           if (compra.proveedor_id) proveedoresUnicos.add(compra.proveedor_id);
           const fechaKey = compra.fechaISO.split('T')[0];
           if (!comprasPorDia[fechaKey]) comprasPorDia[fechaKey] = { fecha: fechaKey, total: 0, cantidad: 0 };
           comprasPorDia[fechaKey].total += t; comprasPorDia[fechaKey].cantidad++;
           const provKey = compra.proveedor_id || 'sin_proveedor';
-          if (!comprasPorProveedor[provKey]) comprasPorProveedor[provKey] = { proveedor_id: provKey, nombre: compra.proveedor || compra.proveedor_nombre || 'Proveedor', total: 0, cantidad: 0 };
+          if (!comprasPorProveedor[provKey]) comprasPorProveedor[provKey] = {
+            proveedor_id: provKey,
+            nombre: resolverNombreProveedor(compra, proveedoresMap),
+            total: 0,
+            cantidad: 0
+          };
           comprasPorProveedor[provKey].total += t; comprasPorProveedor[provKey].cantidad++;
           if (Array.isArray(compra.detalles)) {
             for (const det of compra.detalles) {
@@ -825,7 +885,7 @@ module.exports = async function reportesRoutes(req, res, path) {
           if (proveedor_id && c.proveedor_id !== proveedor_id) return;
           const key = fecha.toISOString().split('T')[0];
           if (!porDia[key]) porDia[key] = { fecha:key, total:0, cantidad:0 };
-          const t = parseFloat(c.total || c.subtotal || 0) || 0;
+          const t = resolverTotalCompra(c);
           porDia[key].total += t; porDia[key].cantidad++;
         });
         res.json(Object.values(porDia).sort((a,b)=>a.fecha.localeCompare(b.fecha)));
@@ -842,6 +902,7 @@ module.exports = async function reportesRoutes(req, res, path) {
         const fIni = new Date(fechaInicio); fIni.setHours(0,0,0,0);
         const fFin = new Date(fechaFin); fFin.setHours(23,59,59,999);
         const porProv = {};
+        const proveedoresMap = await obtenerProveedoresEmpresa(companyId);
         snap.forEach(d=>{
           const c = d.data();
           let fecha = fechaDocumento(c);
@@ -849,8 +910,13 @@ module.exports = async function reportesRoutes(req, res, path) {
           if (estado && String(c.estado || '').toLowerCase() !== String(estado).toLowerCase()) return;
           if (proveedor_id && c.proveedor_id !== proveedor_id) return;
           const key = c.proveedor_id || 'sin_proveedor';
-          if (!porProv[key]) porProv[key] = { proveedor_id:key, nombre: c.proveedor || c.proveedor_nombre || 'Proveedor', total:0, cantidad:0 };
-          const t = parseFloat(c.total || c.subtotal || 0) || 0;
+          if (!porProv[key]) porProv[key] = {
+            proveedor_id: key,
+            nombre: resolverNombreProveedor(c, proveedoresMap),
+            total: 0,
+            cantidad: 0
+          };
+          const t = resolverTotalCompra(c);
           porProv[key].total += t; porProv[key].cantidad++;
         });
         const arr = Object.values(porProv).map(x=>({ ...x, porcentaje: 0 })).sort((a,b)=>b.total-a.total);

@@ -36,7 +36,7 @@ import PasswordInput from '../../components/common/PasswordInput';
 import { 
   FaBuilding, FaSave, FaUpload, FaTimes,
   FaPhone, FaMapMarkerAlt, FaFileInvoice,
-  FaImage, FaCog, FaCogs, FaDatabase, FaLayerGroup
+  FaImage, FaCog, FaCogs, FaDatabase, FaLayerGroup, FaArrowLeft
 } from 'react-icons/fa';
 
 /** Modal simple */
@@ -94,6 +94,13 @@ const ConfiguracionEmpresa = () => {
   const location = useLocation();
   const pendingWizardFromVerify = Boolean(location.state?.openWizardModal);
   const onboardingSource = location.state?.onboardingSource || 'standard';
+  const handleVolver = useCallback(() => {
+    if (!orgId) {
+      navigate('/login', { replace: true });
+      return;
+    }
+    navigate(-1);
+  }, [navigate, orgId]);
 
   const getCompanyId = useCallback(async () => {
     if (orgId) return orgId;
@@ -733,6 +740,9 @@ const ConfiguracionEmpresa = () => {
           Configuración Empresarial
         </h1>
         <div className="flex gap-2">
+          <Button color="secondary" icon={<FaArrowLeft />} onClick={handleVolver}>
+            Volver
+          </Button>
           {!!orgId && !showWizard && (
             <Button
               color="secondary"
@@ -1620,7 +1630,7 @@ const ConfiguracionEmpresa = () => {
       <div className="flex justify-end space-x-3">
         <button
           type="button"
-          onClick={() => window.location.reload()}
+          onClick={handleVolver}
           className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:ring-offset-2"
         >
           Cancelar

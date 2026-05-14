@@ -323,13 +323,15 @@ const LicenseBanner = ({ compact }) => {
                 {preapprovalLoading ? 'Abriendo…' : 'Activar débito automático'}
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={irConfigLicencia}
-              className="rounded-lg border border-current/30 bg-white/80 px-3 py-2 text-xs font-semibold hover:bg-white sm:text-sm"
-            >
-              Más opciones / licencia
-            </button>
+            {!compact ? (
+              <button
+                type="button"
+                onClick={irConfigLicencia}
+                className="rounded-lg border border-current/30 bg-white/80 px-3 py-2 text-xs font-semibold hover:bg-white sm:text-sm"
+              >
+                Más opciones / licencia
+              </button>
+            ) : null}
             {pagoUrl && !puedePagarMp ? (
               <a
                 href={pagoUrl}

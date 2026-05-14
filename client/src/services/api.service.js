@@ -1,6 +1,7 @@
 // src/services/api.service.js - REEMPLAZAR COMPLETO
 import { auth } from '../firebase/config';
 import { getCloudApiBaseUrl } from '../config/cloudApi';
+import { ensureDeviceId, ensureSessionId, getSessionStartedAtMs } from '../utils/sessionControl';
 
 function emitLicense402(body) {
   const msg = body?.message || 'Licencia inválida';
@@ -18,6 +19,14 @@ function emitLicense402(body) {
   } catch {}
 }
 
+function emitSessionBlocked(body) {
+  const msg = body?.message || 'Sesión restringida';
+  const detail = body && typeof body === 'object' ? body : { message: msg };
+  try {
+    window.dispatchEvent(new CustomEvent('auth:force-logout', { detail: { ...detail, message: msg } }));
+  } catch {}
+}
+
 class ApiService {
   constructor(basePath = '') {
     this.baseURL = getCloudApiBaseUrl();
@@ -27,9 +36,15 @@ class ApiService {
 
   async getAuthHeaders() {
     const token = await auth.currentUser?.getIdToken?.();
+    const deviceId = ensureDeviceId();
+    const sessionId = ensureSessionId();
+    const sessionStartedAtMs = getSessionStartedAtMs();
     return {
       'Content-Type': 'application/json',
-      ...(token && { 'Authorization': `Bearer ${token}` })
+      ...(token && { 'Authorization': `Bearer ${token}` }),
+      ...(deviceId && { 'x-nexo-device-id': deviceId }),
+      ...(sessionId && { 'x-nexo-session-id': sessionId }),
+      ...(sessionStartedAtMs && { 'x-nexo-session-started-at': String(sessionStartedAtMs) })
     };
   }
 
@@ -64,6 +79,9 @@ class ApiService {
     const headers = await this.getAuthHeaders();
     const response = await fetch(this.buildUrl(endpoint, params), { method: 'GET', headers });
     const data = await response.json().catch(() => ({}));
+    if ([401, 409, 429].includes(response.status) && String(data?.code || '').startsWith('SESSION_')) {
+      emitSessionBlocked(data);
+    }
     if (response.status === 402) {
       emitLicense402(data);
     } else {
@@ -80,6 +98,9 @@ class ApiService {
       body: JSON.stringify(data)
     });
     const responseData = await response.json().catch(() => ({}));
+    if ([401, 409, 429].includes(response.status) && String(responseData?.code || '').startsWith('SESSION_')) {
+      emitSessionBlocked(responseData);
+    }
     if (response.status === 402) {
       emitLicense402(responseData);
     } else {
@@ -96,6 +117,9 @@ class ApiService {
       body: JSON.stringify(data)
     });
     const responseData = await response.json().catch(() => ({}));
+    if ([401, 409, 429].includes(response.status) && String(responseData?.code || '').startsWith('SESSION_')) {
+      emitSessionBlocked(responseData);
+    }
     if (response.status === 402) {
       emitLicense402(responseData);
     } else {
@@ -112,6 +136,9 @@ class ApiService {
       body: JSON.stringify(data)
     });
     const responseData = await response.json().catch(() => ({}));
+    if ([401, 409, 429].includes(response.status) && String(responseData?.code || '').startsWith('SESSION_')) {
+      emitSessionBlocked(responseData);
+    }
     if (response.status === 402) {
       emitLicense402(responseData);
     } else {
@@ -128,6 +155,9 @@ class ApiService {
       body: Object.keys(data || {}).length ? JSON.stringify(data) : undefined
     });
     const responseData = await response.json().catch(() => ({}));
+    if ([401, 409, 429].includes(response.status) && String(responseData?.code || '').startsWith('SESSION_')) {
+      emitSessionBlocked(responseData);
+    }
     if (response.status === 402) {
       emitLicense402(responseData);
     } else {

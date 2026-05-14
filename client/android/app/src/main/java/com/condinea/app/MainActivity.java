@@ -24,6 +24,7 @@ import android.widget.Switch;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -207,6 +208,7 @@ public class MainActivity extends BridgeActivity {
     private void applyKioskPoliciesIfEnabled() {
         if (!KioskPrefs.isKioskEnabled(this)) return;
         applyImmersiveMode();
+        startWatchdogService();
     }
 
     private void applyImmersiveMode() {
@@ -239,6 +241,15 @@ public class MainActivity extends BridgeActivity {
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
             startActivity(i);
         }, 500);
+    }
+
+    private void startWatchdogService() {
+        Intent serviceIntent = new Intent(this, KioskWatchdogService.class);
+        try {
+            ContextCompat.startForegroundService(this, serviceIntent);
+        } catch (Exception ignored) {
+            startService(serviceIntent);
+        }
     }
 
     private boolean isDeviceLockedOrScreenOff() {

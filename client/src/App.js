@@ -95,6 +95,7 @@ import ProduccionDetalle from './pages/produccion/ProduccionDetalle';
 //listas de precios
 import GestionPrecios from './pages/productos/GestionPrecios';
 import Caja from './pages/caja/Caja';
+import Gastos from './pages/finanzas/Gastos';
 import Devoluciones from './pages/devoluciones/Devoluciones';
 import DevolucionForm from './pages/devoluciones/DevolucionForm';
 import Transferencias from './pages/transferencias/Transferencias';
@@ -112,6 +113,7 @@ import AdminPanel from './pages/admin/AdminPanel';
 import SuperAdminRoute from './components/common/SuperAdminRoute';
 import LicenseBanner from './components/layout/LicenseBanner';
 import { useViewportHeight } from './hooks/useViewportHeight';
+import tabletLoginBg from './assets/nexopos-tablet-login-bg.png';
 
 const CajeroApp = () => (
   <div className="scrollbar-thin flex h-full min-h-0 w-full flex-col overflow-y-auto overscroll-y-contain bg-gray-50 px-2 pt-1 pb-1 sm:px-3">
@@ -130,11 +132,17 @@ const AppContent = () => {
   const { loading } = auth;
 
   if (loading) {
+    const splashStyle = {
+      backgroundImage: `url(${tabletLoginBg})`,
+      backgroundSize: '200% 100%',
+      backgroundPosition: 'left center',
+      backgroundRepeat: 'no-repeat'
+    };
     return (
-      <div className="nexo-viewport-root flex flex-1 items-center justify-center bg-gray-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Cargando...</p>
+      <div className="nexo-viewport-root flex flex-1 items-center justify-center" style={splashStyle}>
+        <div className="text-center rounded-2xl bg-slate-950/55 px-8 py-6 text-white backdrop-blur-sm">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto"></div>
+          <p className="mt-4 font-semibold">Iniciando NexoPOS...</p>
         </div>
       </div>
     );
@@ -237,8 +245,9 @@ const AppContent = () => {
 			<Route path="/sucursales" element={<Sucursales />} />
 			{/* Nuevos Módulos */}
 			<Route path="/caja" element={<Caja />} />
-			<Route path="/gastos" element={<Navigate to="/caja" replace />} />
-			<Route path="/gastos/nuevo" element={<Navigate to="/caja" replace />} />
+			<Route path="/finanzas/gastos" element={<Gastos />} />
+			<Route path="/gastos" element={<Gastos />} />
+			<Route path="/gastos/nuevo" element={<Gastos />} />
 			<Route path="/devoluciones" element={<Devoluciones />} />
 			<Route path="/devoluciones/nueva" element={<DevolucionForm />} />
 			<Route path="/listas-precios" element={<Navigate to="/productos/precios" replace />} />

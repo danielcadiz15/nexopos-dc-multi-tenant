@@ -58,6 +58,7 @@ const combustibleRoutes = require('./routes/combustible.routes');
 const serviciosVehiculosRoutes = require('./routes/servicios.vehiculos.routes');
 // Rutas de Caja
 const cajaRoutes = require('./routes/caja.routes');
+const gastosRoutes = require('./routes/gastos.routes');
 const billingMercadoPagoRoutes = require('./routes/billing-mercadopago.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const { normalizePlan: normalizeLicensePlanId } = require('./utils/planTiers');
@@ -436,8 +437,9 @@ async function nexoposMainApi(req, res) {
         path.startsWith('/productos') ||
         path.startsWith('/barcode-catalog') ||
         path.startsWith('/clientes') ||
-        path.startsWith('/compras') || path.startsWith('/stock') || path.startsWith('/caja') || path.startsWith('/reportes') || path.startsWith('/auditoria')) {
+        path.startsWith('/compras') || path.startsWith('/stock') || path.startsWith('/caja') || path.startsWith('/gastos') || path.startsWith('/reportes') || path.startsWith('/auditoria')) {
       await authenticateUser(req, res, () => {});
+      if (res.headersSent) return;
       const lic = await checkLicense(req, res);
       if (!lic.ok) {
         return res.status(402).json({
@@ -946,6 +948,10 @@ async function nexoposMainApi(req, res) {
       // ✅ CONFIGURACIÓN EMPRESARIAL — requiere contexto multi-tenant (req.companyId vía JWT/usuariosOrg)
       if (!responseEnviada && path.startsWith('/configuracion')) {
         await authenticateUser(req, res, () => {});
+        if (res.headersSent) {
+          responseEnviada = true;
+          return;
+        }
         console.log('🏢 [CONFIGURACION] Enrutando a configuración empresarial:', path);
         const configuracionHandled = await configuracionRoutes(req, res, path);
         console.log('🏢 [CONFIGURACION] Handled:', configuracionHandled);
@@ -1176,6 +1182,15 @@ async function nexoposMainApi(req, res) {
 		if (!responseEnviada && path.startsWith('/caja')) {
 		  const cajaHandled = await cajaRoutes(req, res, path);
 		  if (cajaHandled) {
+			responseEnviada = true;
+			return;
+		  }
+		}
+
+		// Gastos (finanzas)
+		if (!responseEnviada && path.startsWith('/gastos')) {
+		  const gastosHandled = await gastosRoutes(req, res, path);
+		  if (gastosHandled) {
 			responseEnviada = true;
 			return;
 		  }

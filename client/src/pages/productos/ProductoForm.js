@@ -16,6 +16,7 @@ import productosService from '../../services/productos.service';
 import categoriasService from '../../services/categorias.service';
 import proveedoresService from '../../services/proveedores.service';
 import configuracionService from '../../services/configuracion.service';
+import gastosService from '../../services/gastos.service';
 import {
   buscarCadenaExternaConCache,
   normalizarGtin
@@ -70,6 +71,7 @@ const ProductoForm = () => {
   const [pricingSuggestionConfig, setPricingSuggestionConfig] = useState(
     getPricingSuggestionDefaults()
   );
+  const [syncingGastosFinanzas, setSyncingGastosFinanzas] = useState(false);
   const pricingConfigLoadedRef = useRef(false);
   const pricingConfigSaveTimeoutRef = useRef(null);
   /** true si en esta sesión hubo datos desde caché/OFF/UPC (no contribuir al catálogo global como “manual”) */
@@ -182,6 +184,27 @@ const ProductoForm = () => {
       const next = normalizePricingConfig({ ...prev, [field]: value });
       return next;
     });
+  };
+
+  const sincronizarGastosDesdeFinanzas = async () => {
+    try {
+      setSyncingGastosFinanzas(true);
+      const hasta = new Date();
+      const desde = new Date();
+      desde.setDate(hasta.getDate() - 30);
+      const reporte = await gastosService.obtenerReporte({
+        fecha_inicio: desde.toISOString().split('T')[0],
+        fecha_fin: hasta.toISOString().split('T')[0]
+      });
+      const totalFinanzas = Number(reporte?.resumen?.total_incluir_costos ?? 0) || 0;
+      handlePricingSuggestionConfigChange('otrosGastosMensuales', totalFinanzas);
+      toast.success('Gastos sincronizados desde Finanzas (ultimos 30 dias)');
+    } catch (error) {
+      console.error('No se pudieron sincronizar gastos desde Finanzas:', error);
+      toast.error('No se pudieron sincronizar gastos desde Finanzas');
+    } finally {
+      setSyncingGastosFinanzas(false);
+    }
   };
 
   useEffect(() => {
@@ -1029,6 +1052,18 @@ const ProductoForm = () => {
                           className="nexo-field mt-1"
                         />
                       </label>
+                    </div>
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={sincronizarGastosDesdeFinanzas}
+                        disabled={syncingGastosFinanzas}
+                        className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
+                      >
+                        {syncingGastosFinanzas
+                          ? 'Sincronizando gastos de Finanzas...'
+                          : 'Usar gastos de Finanzas (ultimos 30 dias)'}
+                      </button>
                     </div>
                     <p className="mt-3 text-xs text-slate-700">
                       Gastos mensuales: <strong>${sugerencia.gastosMensuales.toFixed(2)}</strong>{' '}

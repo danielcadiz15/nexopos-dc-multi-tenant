@@ -1,5 +1,6 @@
 // functions/utils/auth.js - Middleware de autenticación Firebase
 const admin = require('firebase-admin');
+const { enforceSessionAccess } = require('./subscriptionAccess');
 
 /**
  * Middleware para verificar autenticación Firebase
@@ -175,6 +176,30 @@ async function authenticateUser(req, res, next) {
       });
       
       req.user = userData;
+
+      // Control de sesión única por usuario y límite de sesiones activas por empresa.
+      if (req.companyId && req.user?.uid) {
+        const sessionId = req.headers['x-nexo-session-id'] || req.headers['x-session-id'] || '';
+        const deviceId = req.headers['x-nexo-device-id'] || req.headers['x-device-id'] || '';
+        const sessionStartedAt = req.headers['x-nexo-session-started-at'] || '';
+        const sessionCheck = await enforceSessionAccess(
+          admin.firestore(),
+          req.companyId,
+          req.user,
+          String(sessionId || '').trim(),
+          String(deviceId || '').trim(),
+          String(sessionStartedAt || '').trim()
+        );
+        if (!sessionCheck.ok) {
+          req.authBlocked = true;
+          req.authBlockedResponse = {
+            success: false,
+            message: sessionCheck.message || 'Acceso restringido por sesión',
+            code: sessionCheck.code || 'SESSION_INVALID'
+          };
+          return res.status(sessionCheck.status || 401).json(req.authBlockedResponse);
+        }
+      }
       
     } catch (verifyError) {
       console.error('❌ [AUTH] Error al verificar token:', verifyError.message);

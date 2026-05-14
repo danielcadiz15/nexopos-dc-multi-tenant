@@ -1,5 +1,6 @@
 // functions/routes/usuarios.routes.js - CORREGIDO PARA DB
 const admin = require('firebase-admin');
+const { ensureCanCreateUser } = require('../utils/subscriptionAccess');
 
 // Asegurar que admin esté inicializado
 if (!admin.apps.length) {
@@ -525,6 +526,16 @@ const usuariosRoutes = async (req, res, path) => {
             message: 'Email y nombre son requeridos'
           });
           return true;
+        }
+
+        const capCheck = await ensureCanCreateUser(db, companyId);
+        if (!capCheck.ok) {
+          return res.status(capCheck.status || 403).json({
+            success: false,
+            message: capCheck.message,
+            code: capCheck.code,
+            limit: capCheck?.limits?.maxCreatedUsers ?? null
+          });
         }
         
         // Crear usuario en Firebase Auth

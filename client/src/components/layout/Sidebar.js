@@ -123,7 +123,10 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       icon: FaMoneyBillWave,
       label: 'Finanzas',
       permission: 'caja',
-      submenu: [{ path: '/caja', label: 'Caja', module: 'caja', permission: 'caja.ver' }]
+      submenu: [
+        { path: '/caja', label: 'Caja', module: 'caja', permission: 'caja.ver' },
+        { path: '/finanzas/gastos', label: 'Gastos', module: 'caja', permission: 'caja.ver' }
+      ]
     },
     {
       icon: FaUsers,
@@ -150,7 +153,8 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       submenu: [
         { path: '/reportes/ventas', label: 'Reporte de Ventas', permission: 'reportes.ventas' },
         { path: '/reportes/compras', label: 'Reporte de Compras', permission: 'reportes.compras' },
-        { path: '/reportes/ganancias', label: 'Reporte de Ganancias', permission: 'reportes.ganancias' }
+        { path: '/reportes/ganancias', label: 'Reporte de Ganancias', permission: 'reportes.ganancias' },
+        { path: '/finanzas/gastos', label: 'Informe de Gastos', permission: 'reportes.ganancias' }
       ]
     },
     {

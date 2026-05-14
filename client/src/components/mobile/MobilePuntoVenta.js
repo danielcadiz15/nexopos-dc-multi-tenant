@@ -179,9 +179,9 @@ const MobilePuntoVenta = () => {
 
   /** Layout horizontal para tablets/notebooks en apaisado. */
   const landscapeTablet =
-    viewport.width > viewport.height &&
-    viewport.width >= 760 &&
-    peakInnerHeightRef.current >= 460;
+    viewport.width >= 900 &&
+    viewport.width > (viewport.height * 1.05) &&
+    peakInnerHeightRef.current >= 420;
   const splitLandscapeLayout = landscapeTablet;
 
   const compact =
@@ -1539,7 +1539,7 @@ const MobilePuntoVenta = () => {
       )}
 
       {mostrarCarritoCompleto && (
-        <div className="fixed inset-0 z-40 flex flex-col bg-slate-100">
+        <div className="fixed inset-0 z-40 flex h-[100dvh] min-h-0 flex-col bg-slate-100">
           <div className="bg-gradient-to-r from-blue-700 to-indigo-700 px-4 py-4 text-white shadow">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1548,14 +1548,25 @@ const MobilePuntoVenta = () => {
                   Editá cantidades o quitá productos
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-xs text-blue-100">Total</div>
-                <div className="text-3xl font-black">{formatMoneda(total)}</div>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <div className="text-xs text-blue-100">Total</div>
+                  <div className="text-3xl font-black">{formatMoneda(total)}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMostrarCarritoCompleto(false)}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-white ring-1 ring-white/20"
+                  aria-label="Cerrar carrito"
+                  title="Cerrar"
+                >
+                  <FaTimes />
+                </button>
               </div>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3">
+          <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-3">
             {carrito.length === 0 ? (
               <div className="rounded-2xl bg-white p-8 text-center font-semibold text-gray-500 shadow">
                 El carrito está vacío.
@@ -1612,7 +1623,7 @@ const MobilePuntoVenta = () => {
             )}
           </div>
 
-          <div className="border-t border-gray-200 bg-white p-3 shadow-2xl">
+          <div className="shrink-0 border-t border-gray-200 bg-white p-3 shadow-2xl">
             <div className="mb-3 flex items-center justify-between rounded-2xl bg-gray-900 px-4 py-3 text-white">
               <span className="text-lg font-black">Total</span>
               <span className="text-3xl font-black">{formatMoneda(total)}</span>

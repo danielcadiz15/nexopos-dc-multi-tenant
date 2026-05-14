@@ -55,6 +55,14 @@ const ReporteVentas = () => {
   
   // ✅ CORRECCIÓN 2: Estado para datos históricos (comparación)
   const [resumenAnterior, setResumenAnterior] = useState(null);
+
+  const normalizarResumenVentas = (raw = {}) => ({
+    totalVentas: parseFloat(raw.totalVentas ?? raw.total_ventas ?? raw.total ?? 0) || 0,
+    cantidadVentas: parseInt(raw.cantidadVentas ?? raw.cantidad_ventas ?? raw.cantidad ?? 0, 10) || 0,
+    ticketPromedio: parseFloat(raw.ticketPromedio ?? raw.ticket_promedio ?? 0) || 0,
+    ganancia: parseFloat(raw.ganancia ?? raw.ganancia_total ?? raw.ganancia_bruta ?? 0) || 0,
+    margenPromedio: parseFloat(raw.margenPromedio ?? raw.margen_promedio ?? raw.margen ?? 0) || 0
+  });
   
   /**
    * ✅ CORRECCIÓN 3: Efecto para cargar datos automáticamente
@@ -107,7 +115,7 @@ const ReporteVentas = () => {
       }
       
       // Actualizar estados con datos validados
-      setResumen(data.resumen || {});
+      setResumen(normalizarResumenVentas(data?.resumen || {}));
       setVentasPorPeriodo(Array.isArray(data.ventasPorPeriodo) ? data.ventasPorPeriodo : []);
       setVentasPorCategoria(Array.isArray(data.ventasPorCategoria) ? data.ventasPorCategoria : []);
       setVentasPorMetodoPago(Array.isArray(data.ventasPorMetodoPago) ? data.ventasPorMetodoPago : []);
@@ -159,7 +167,7 @@ const ReporteVentas = () => {
       };
       
       const dataAnterior = await reportesService.obtenerReporteVentas(paramsAnterior);
-      setResumenAnterior(dataAnterior?.resumen || {});
+      setResumenAnterior(normalizarResumenVentas(dataAnterior?.resumen || {}));
       
     } catch (error) {
       console.warn('⚠️ Error cargando datos comparativos:', error);

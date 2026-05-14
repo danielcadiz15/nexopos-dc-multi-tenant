@@ -16,6 +16,7 @@ import { toast } from 'react-toastify';
 import { getEmailActionCodeSettings } from '../utils/emailVerification';
 import sucursalesService from '../services/sucursales.service';
 import { MODULE_KEYS, mergeCompanyModules } from '../config/modulesCatalog';
+import { ensureDeviceId, ensureSessionId, rotateSessionId, clearSessionId } from '../utils/sessionControl';
 
 const AuthContext = createContext();
 
@@ -61,6 +62,8 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        ensureDeviceId();
+        ensureSessionId();
         try {
           // Obtener custom claims (roles)
           const tokenResult = await firebaseUser.getIdTokenResult(true);
@@ -215,6 +218,7 @@ export function AuthProvider({ children }) {
         setOrgId(null);
         storageRemove('orgId');
         storageRemove('sucursalSeleccionada');
+        clearSessionId();
         if (uoUnsubRef.current) {
           uoUnsubRef.current();
           uoUnsubRef.current = null;
@@ -512,6 +516,8 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     try {
       console.log("?? [AUTH] Iniciando login con:", email);
+      ensureDeviceId();
+      rotateSessionId();
       
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
@@ -594,6 +600,7 @@ export function AuthProvider({ children }) {
       storageRemove('sucursalSeleccionada');
       storageRemove('orgId');
       storageRemove('companyId');
+      clearSessionId();
       toast.info('Sesion cerrada correctamente');
     } catch (error) {
       console.error('? [AUTH] Error cerrando sesion:', error);
@@ -848,6 +855,32 @@ export function AuthProvider({ children }) {
       console.log('🔐 [AUTH] Usa window.debugAuth() para ver el estado completo');
     }
   }, [value]);
+
+  useEffect(() => {
+    const onForceLogout = async (event) => {
+      const message =
+        event?.detail?.message ||
+        'Tu sesión se abrió en otro dispositivo. Volvé a iniciar sesión.';
+      try {
+        await signOut(auth);
+      } catch {}
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      setSucursalSeleccionada(null);
+      setSucursalesDisponibles([]);
+      setPermisosEfectivos({});
+      setCompanyModules(mergeCompanyModules({}));
+      setOrgId(null);
+      storageRemove('sucursalSeleccionada');
+      storageRemove('orgId');
+      storageRemove('companyId');
+      clearSessionId();
+      toast.warning(message);
+    };
+
+    window.addEventListener('auth:force-logout', onForceLogout);
+    return () => window.removeEventListener('auth:force-logout', onForceLogout);
+  }, []);
 
   // Siempre montar children: el loader vive en AppContent / ProtectedRoute.
   // Antes `{!loading && children}` dejaba #root vacío en móvil mientras Firebase tardaba → pantalla blanca.
