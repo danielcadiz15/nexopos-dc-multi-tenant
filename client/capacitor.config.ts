@@ -7,7 +7,11 @@ const config: CapacitorConfig = {
   bundledWebRuntime: false,
   server: {
     url: 'https://nexopos-dc.web.app/cajero',
-    cleartext: false
+    cleartext: false,
+    allowNavigation: [
+      'nexopos-dc.web.app',
+      '*.nexopos-dc.web.app'
+    ]
   },
   plugins: {
     SplashScreen: {

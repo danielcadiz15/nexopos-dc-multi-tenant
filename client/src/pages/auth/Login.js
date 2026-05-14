@@ -21,12 +21,25 @@ import configuracionService from '../../services/configuracion.service';
 import Button from '../../components/common/Button';
 import PasswordInput from '../../components/common/PasswordInput';
 
+const ADMIN_WEB_URL = 'https://www.nexopos-dc.web.app/login';
+
 const normalizeExternalUrl = (raw) => {
   const value = String(raw || '').trim();
   if (!value) return '';
   if (/^https?:\/\//i.test(value)) return value;
   if (/^\/\//.test(value)) return `https:${value}`;
   return `https://${value}`;
+};
+
+const isNativeCapacitorRuntime = () => {
+  try {
+    return typeof window !== 'undefined' &&
+      !!window.Capacitor &&
+      typeof window.Capacitor.isNativePlatform === 'function' &&
+      window.Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -37,8 +50,9 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, isAuthenticated, currentUser } = useAuth();
+  const nativeRuntime = isNativeCapacitorRuntime();
   const initialAccessMode = location.state?.accessMode ||
-    (location.state?.from?.pathname === '/cajero' ? 'cajero' : 'admin');
+    (location.state?.from?.pathname === '/cajero' || nativeRuntime ? 'cajero' : 'admin');
   const [accessMode, setAccessMode] = useState(initialAccessMode);
   
   // Estado del formulario
@@ -52,6 +66,14 @@ const Login = () => {
 
   const envCajaApkUrl = (process.env.REACT_APP_CAJA_APK_URL || '').trim();
   const urlDescargaApk = normalizeExternalUrl(cajaApkUrlServidor || envCajaApkUrl);
+
+  const redirectAdminToWeb = () => {
+    try {
+      window.location.assign(ADMIN_WEB_URL);
+    } catch {
+      window.location.href = ADMIN_WEB_URL;
+    }
+  };
 
   useEffect(() => {
     let cancelado = false;
@@ -70,6 +92,10 @@ const Login = () => {
   // Redireccionar si ya está autenticado
   useEffect(() => {
     if (isAuthenticated) {
+      if (nativeRuntime && accessMode === 'admin') {
+        redirectAdminToWeb();
+        return;
+      }
       const rol = String(currentUser?.rol || currentUser?.role || '').toLowerCase();
       const esCajero = ['cajero', 'empleado', 'vendedor', 'viewer'].includes(rol);
       const quiereMostrador = accessMode === 'cajero';
@@ -86,7 +112,7 @@ const Login = () => {
 
       navigate('/', { replace: true });
     }
-  }, [accessMode, currentUser, isAuthenticated, navigate, location]);
+  }, [accessMode, currentUser, isAuthenticated, navigate, location, nativeRuntime]);
   
   /**
    * Actualiza el estado del formulario
@@ -137,6 +163,11 @@ const Login = () => {
    */
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (nativeRuntime && accessMode === 'admin') {
+      redirectAdminToWeb();
+      return;
+    }
     
     if (!validateForm()) {
       return;
@@ -183,7 +214,10 @@ const Login = () => {
           <div className="grid grid-cols-2 gap-3 mb-6">
             <button
               type="button"
-              onClick={() => setAccessMode('admin')}
+              onClick={() => {
+                setAccessMode('admin');
+                if (nativeRuntime) redirectAdminToWeb();
+              }}
               className={`rounded-xl border-2 p-4 text-left transition ${
                 accessMode === 'admin'
                   ? 'border-indigo-600 bg-indigo-50 text-indigo-800'
