@@ -1,3 +1,7 @@
+# Android APK generadas localmente
+app-debug.apk
+app-debug-*.apk
+client/public/app-caja.apk
 # Dependencies
 node_modules/
 npm-debug.log*

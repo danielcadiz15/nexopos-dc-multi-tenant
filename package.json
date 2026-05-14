@@ -16,6 +16,8 @@
     "install-all": "npm install && cd functions && npm install && cd ../client && npm install",
     "build": "cd client && npm run build && cd ../functions && npm run build",
     "deploy": "npm run build && firebase deploy --project nexopos-dc",
+    "release:caja-apk": "powershell -ExecutionPolicy Bypass -File ./scripts/release-caja-apk.ps1",
+    "release:caja-apk:no-deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/release-caja-apk.ps1 -NoDeploy",
     "grant-admin": "node scripts/grant-admin.js",
     "enable-modules": "node scripts/enable-modules.js",
     "migrate:la-fabrica:dry-run": "node scripts/migrate-la-fabrica-condinea.js --dry-run",

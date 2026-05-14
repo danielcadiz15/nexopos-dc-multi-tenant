@@ -33,7 +33,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class MainActivity extends BridgeActivity {
-    private static final String ADMIN_WEB_URL = "https://nexopos-dc.web.app/login";
+    private static final String ADMIN_WEB_URL = "https://nexopos-dc.web.app";
     private static final long TEMP_UNLOCK_MS = 5L * 60L * 1000L;
     private static final Set<String> ALLOWED_HOSTS = new HashSet<>(Arrays.asList(
         "nexopos-dc.web.app",

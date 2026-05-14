@@ -142,6 +142,33 @@ firebase deploy --only hosting --project nexopos-dc
 firebase deploy --only functions --project nexopos-dc
 ```
 
+### Release automático de APK (sin subir URL manual a Firestore)
+
+La app usa una URL fija para descarga/actualización:
+
+- `https://nexopos-dc.web.app/app-caja.apk`
+
+Para generar una nueva APK, publicarla automáticamente en esa URL y desplegar hosting:
+
+```bash
+npm run release:caja-apk
+```
+
+Este script:
+
+1. compila web (`client/build`),
+2. sincroniza Capacitor,
+3. compila APK debug Android,
+4. copia la APK a `client/public/app-caja.apk`,
+5. recompila web para incluirla,
+6. despliega hosting.
+
+Si querés solo compilar/copy local sin deploy:
+
+```bash
+npm run release:caja-apk:no-deploy
+```
+
 ## 🔍 Debugging
 
 ### Logs Importantes

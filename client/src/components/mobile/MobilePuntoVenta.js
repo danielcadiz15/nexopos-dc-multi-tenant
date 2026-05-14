@@ -29,8 +29,7 @@ import TicketVenta from '../modules/ventas/TicketVenta';
 const formatMoneda = (value) => `$${(parseFloat(value || 0)).toFixed(2)}`;
 const OFFLINE_SALES_KEY = 'mobile_pos_offline_sales_v1';
 const POS_SESSION_KEY = 'mobile_pos_session_v1';
-const DEFAULT_CAJA_APK_URL =
-  'https://firebasestorage.googleapis.com/v0/b/nexopos-dc.firebasestorage.app/o/app-debug.apk?alt=media&token=39c2debe-b394-42f3-ba3c-7917f274b1f2';
+const DEFAULT_CAJA_APK_URL = 'https://nexopos-dc.web.app/app-caja.apk';
 const BALANZA_PREFIX_MIN = 20;
 const BALANZA_PREFIX_MAX = 29;
 
@@ -151,43 +150,22 @@ const MobilePuntoVenta = () => {
   const [pendingSalesCount, setPendingSalesCount] = useState(0);
   const restoredSessionRef = useRef(false);
   const viewport = useViewport();
-  /**
-   * Pico de altura interior: al abrir el teclado `innerHeight` baja y si usamos eso para el layout,
-   * se desmonta el árbol (p. ej. landscape → portrait) y el input pierde foco / el teclado se cierra.
-   */
-  const peakInnerHeightRef = useRef(
-    typeof window !== 'undefined' ? window.innerHeight : 700
+  const visibleHeight = Math.max(
+    320,
+    Number(viewport.visualHeight || viewport.height || 700)
   );
-  peakInnerHeightRef.current = Math.max(peakInnerHeightRef.current, viewport.height);
-
-  const [, setLayoutEpoch] = useState(0);
-  useEffect(() => {
-    const onOrientationChange = () => {
-      peakInnerHeightRef.current = window.innerHeight;
-      setLayoutEpoch((n) => n + 1);
-      window.setTimeout(() => {
-        peakInnerHeightRef.current = Math.max(
-          peakInnerHeightRef.current,
-          window.innerHeight
-        );
-        setLayoutEpoch((n) => n + 1);
-      }, 320);
-    };
-    window.addEventListener('orientationchange', onOrientationChange);
-    return () => window.removeEventListener('orientationchange', onOrientationChange);
-  }, []);
 
   /** Layout horizontal para tablets/notebooks en apaisado. */
   const landscapeTablet =
     viewport.width >= 900 &&
-    viewport.width > (viewport.height * 1.05) &&
-    peakInnerHeightRef.current >= 420;
+    viewport.width > (visibleHeight * 1.05) &&
+    visibleHeight >= 420;
   const splitLandscapeLayout = landscapeTablet;
 
   const compact =
     viewport.width < 390 ||
-    (!landscapeTablet && viewport.height < 760) ||
-    (landscapeTablet && peakInnerHeightRef.current < 620);
+    (!landscapeTablet && visibleHeight < 760) ||
+    (landscapeTablet && visibleHeight < 620);
 
   const cajaModulos = configTicket?.caja_modulos || {};
   const cajaClientesHabilitado = cajaModulos.clientes !== false;
@@ -306,8 +284,12 @@ const MobilePuntoVenta = () => {
         const deudaActualizada = await clientesService.obtenerDeudasCliente(clienteSeleccionado.id);
         setDeudaCliente(deudaActualizada);
       }
+      const envCajaApkUrl = (process.env.REACT_APP_CAJA_APK_URL || '').trim();
       const apkUrl = normalizeExternalUrl(
-        configActualizada?.caja_apk_url || configTicket?.caja_apk_url || DEFAULT_CAJA_APK_URL
+        envCajaApkUrl ||
+        DEFAULT_CAJA_APK_URL ||
+        configActualizada?.caja_apk_url ||
+        configTicket?.caja_apk_url
       );
       if (!apkUrl) {
         toast.info('Caja actualizada. No hay URL de APK configurada para actualizar la app.');
@@ -1156,7 +1138,14 @@ const MobilePuntoVenta = () => {
 
   return (
     <>
-      <div className={`scrollbar-thin flex h-full min-h-0 w-full flex-col gap-1.5 ${landscapeTablet ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} sm:gap-2`}>
+      <div
+        className={`scrollbar-thin flex min-h-0 w-full flex-col gap-1.5 ${landscapeTablet ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} sm:gap-2`}
+        style={{
+          height: 'calc(var(--app-vh-unit, 1vh) * 100)',
+          minHeight: 'calc(var(--app-vh-unit, 1vh) * 100)',
+          maxHeight: 'calc(var(--app-vh-unit, 1vh) * 100)'
+        }}
+      >
         <div
           className={`shrink-0 rounded-2xl bg-gradient-to-r from-blue-700 to-indigo-700 text-white shadow-lg ${compact ? 'p-2' : 'p-4'}`}
         >
@@ -1380,7 +1369,7 @@ const MobilePuntoVenta = () => {
                 Buscando clientes...
               </div>
             ) : (
-              <div className="max-h-[calc(100vh-260px)] space-y-2 overflow-y-auto">
+              <div className="max-h-[calc(var(--app-vh-unit,1vh)*100-260px)] space-y-2 overflow-y-auto">
                 {clientesEncontrados.map((cliente) => (
                   <button
                     key={cliente.id}
@@ -1412,7 +1401,7 @@ const MobilePuntoVenta = () => {
 
       {mostrarDeudaCliente && deudaTotalCliente > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl">
+          <div className="max-h-[calc(var(--app-vh-unit,1vh)*90)] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xl font-black text-gray-900">Cliente con deuda</div>

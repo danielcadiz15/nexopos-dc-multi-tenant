@@ -23,8 +23,7 @@ import Button from '../../components/common/Button';
 import PasswordInput from '../../components/common/PasswordInput';
 
 const ADMIN_WEB_URL = 'https://nexopos-dc.web.app';
-const DEFAULT_CAJA_APK_URL =
-  'https://firebasestorage.googleapis.com/v0/b/nexopos-dc.firebasestorage.app/o/app-debug.apk?alt=media&token=39c2debe-b394-42f3-ba3c-7917f274b1f2';
+const DEFAULT_CAJA_APK_URL = 'https://nexopos-dc.web.app/app-caja.apk';
 const TEAMVIEWER_QS_ANDROID_INTENT =
   'intent://start#Intent;scheme=teamviewerqs;package=com.teamviewer.quicksupport.market;end';
 const TEAMVIEWER_QS_PLAYSTORE_URL =
@@ -73,7 +72,7 @@ const Login = () => {
   const redirectHandledRef = useRef(false);
 
   const envCajaApkUrl = (process.env.REACT_APP_CAJA_APK_URL || '').trim();
-  const urlDescargaApk = normalizeExternalUrl(cajaApkUrlServidor || envCajaApkUrl || DEFAULT_CAJA_APK_URL);
+  const urlDescargaApk = normalizeExternalUrl(envCajaApkUrl || DEFAULT_CAJA_APK_URL || cajaApkUrlServidor);
   const isAndroidWeb = (() => {
     try {
       const ua = String(window?.navigator?.userAgent || '').toLowerCase();
@@ -98,6 +97,20 @@ const Login = () => {
     }
   };
 
+  const openAdminViaNativeBridge = useCallback(() => {
+    try {
+      if (!nativeRuntime) return false;
+      const bridge = window?.NexoAndroid;
+      if (bridge && typeof bridge.openAdminInChrome === 'function') {
+        bridge.openAdminInChrome();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, [nativeRuntime]);
+
   const isAdminAuthorized = useCallback((user) => {
     const rol = String(user?.rol || user?.role || '').toLowerCase();
     return rol.includes('admin') || rol.includes('super');
@@ -113,7 +126,9 @@ const Login = () => {
         return;
       }
       if (nativeRuntime) {
-        navigate('/', { replace: true });
+        if (!openAdminViaNativeBridge()) {
+          redirectAdminToWeb();
+        }
         return;
       }
       const sameWebHost =
@@ -127,7 +142,7 @@ const Login = () => {
       return;
     }
     navigate('/cajero', { replace: true });
-  }, [accessMode, isAdminAuthorized, nativeRuntime, navigate]);
+  }, [accessMode, isAdminAuthorized, nativeRuntime, navigate, openAdminViaNativeBridge]);
 
   const handleDescargarApk = (event) => {
     event?.preventDefault?.();
@@ -199,6 +214,7 @@ const Login = () => {
       redirectHandledRef.current = false;
       return;
     }
+    if (!currentUser) return;
     if (redirectHandledRef.current) return;
     redirectHandledRef.current = true;
 
