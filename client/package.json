@@ -50,8 +50,9 @@
   },
   "browserslist": {
     "production": [
-      ">0.2%",
-      "not dead",
+      "Chrome >= 61",
+      "Android >= 6",
+      "iOS >= 12",
       "not op_mini all"
     ],
     "development": [
