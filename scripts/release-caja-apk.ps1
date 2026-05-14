@@ -11,6 +11,8 @@ $clientDir = Join-Path $root "client"
 $androidDir = Join-Path $clientDir "android"
 $apkSource = Join-Path $androidDir "app\build\outputs\apk\debug\app-debug.apk"
 $publicApk = Join-Path $clientDir "public\app-caja.apk"
+$publicVersionMeta = Join-Path $clientDir "public\app-caja-version.json"
+$appGradle = Join-Path $androidDir "app\build.gradle"
 $timestamp = Get-Date -Format "yyyy-MM-dd-HHmm"
 $archiveApk = Join-Path $root ("app-debug-nexopos-{0}.apk" -f $timestamp)
 
@@ -45,6 +47,25 @@ function Invoke-Step {
   Write-Host ""
   Write-Host "==> $Title" -ForegroundColor Cyan
   & $Script
+}
+
+function Get-ApkVersionMeta {
+  param([Parameter(Mandatory = $true)][string]$GradleFile)
+  if (!(Test-Path $GradleFile)) {
+    return @{
+      versionCode = 0
+      versionName = "desconocida"
+    }
+  }
+  $content = Get-Content -Path $GradleFile -Raw
+  $codeMatch = [regex]::Match($content, "versionCode\s+(\d+)")
+  $nameMatch = [regex]::Match($content, 'versionName\s+"([^"]+)"')
+  $versionCode = if ($codeMatch.Success) { [int]$codeMatch.Groups[1].Value } else { 0 }
+  $versionName = if ($nameMatch.Success) { $nameMatch.Groups[1].Value } else { "desconocida" }
+  return @{
+    versionCode = $versionCode
+    versionName = $versionName
+  }
 }
 
 $resolvedJavaHome = Resolve-JavaHome -Preferred $JavaHome
@@ -87,8 +108,17 @@ if (!(Test-Path $apkSource)) {
 Invoke-Step -Title "Publicar APK en client/public/app-caja.apk" -Script {
   Copy-Item -Path $apkSource -Destination $publicApk -Force
   Copy-Item -Path $apkSource -Destination $archiveApk -Force
+  $meta = Get-ApkVersionMeta -GradleFile $appGradle
+  $metaPayload = @{
+    versionCode = $meta.versionCode
+    versionName = $meta.versionName
+    releasedAt = (Get-Date).ToUniversalTime().ToString("o")
+    apkUrl = "https://nexopos-dc.web.app/app-caja.apk"
+  }
+  $metaPayload | ConvertTo-Json | Set-Content -Path $publicVersionMeta -Encoding UTF8
   $apk = Get-Item $publicApk
   Write-Host ("APK publica: {0} ({1} bytes)" -f $apk.FullName, $apk.Length) -ForegroundColor Green
+  Write-Host ("Metadata version: {0} (code {1})" -f $meta.versionName, $meta.versionCode) -ForegroundColor DarkGray
 }
 
 Invoke-Step -Title "Rebuild web para incluir app-caja.apk" -Script {

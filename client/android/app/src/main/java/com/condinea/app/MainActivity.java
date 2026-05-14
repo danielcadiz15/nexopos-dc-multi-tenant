@@ -6,6 +6,8 @@ import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -324,14 +326,18 @@ public class MainActivity extends BridgeActivity {
         if (rawUrl == null) return;
         String url = rawUrl.trim();
         if (!(url.startsWith("https://") || url.startsWith("http://"))) return;
-        Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        i.setPackage("com.android.chrome");
         try {
-            startActivity(i);
-        } catch (ActivityNotFoundException noChrome) {
-            i.setPackage(null);
-            startActivity(i);
+            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            i.setPackage("com.android.chrome");
+            try {
+                startActivity(i);
+            } catch (ActivityNotFoundException noChrome) {
+                i.setPackage(null);
+                startActivity(i);
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "No se pudo abrir la actualización", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -380,6 +386,29 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public void openTeamViewerQuickSupport() {
             runOnUiThread(MainActivity.this::openTeamViewerQuickSupport);
+        }
+
+        @JavascriptInterface
+        public int getInstalledVersionCode() {
+            try {
+                PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    return (int) packageInfo.getLongVersionCode();
+                }
+                return packageInfo.versionCode;
+            } catch (PackageManager.NameNotFoundException ignored) {
+                return 0;
+            }
+        }
+
+        @JavascriptInterface
+        public String getInstalledVersionName() {
+            try {
+                PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+                return packageInfo.versionName != null ? packageInfo.versionName : "";
+            } catch (PackageManager.NameNotFoundException ignored) {
+                return "";
+            }
         }
     }
 }

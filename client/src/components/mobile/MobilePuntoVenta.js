@@ -30,6 +30,7 @@ const formatMoneda = (value) => `$${(parseFloat(value || 0)).toFixed(2)}`;
 const OFFLINE_SALES_KEY = 'mobile_pos_offline_sales_v1';
 const POS_SESSION_KEY = 'mobile_pos_session_v1';
 const DEFAULT_CAJA_APK_URL = 'https://nexopos-dc.web.app/app-caja.apk';
+const DEFAULT_CAJA_APK_VERSION_META_URL = 'https://nexopos-dc.web.app/app-caja-version.json';
 const BALANZA_PREFIX_MIN = 20;
 const BALANZA_PREFIX_MAX = 29;
 
@@ -39,6 +40,54 @@ const normalizeExternalUrl = (raw) => {
   if (/^https?:\/\//i.test(value)) return value;
   if (/^\/\//.test(value)) return `https:${value}`;
   return `https://${value}`;
+};
+
+const toPositiveInt = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n);
+};
+
+const getApkVersionMetaUrl = (apkUrl) => {
+  try {
+    const parsed = new URL(apkUrl);
+    const parts = parsed.pathname.split('/');
+    parts[parts.length - 1] = 'app-caja-version.json';
+    parsed.pathname = parts.join('/');
+    return parsed.toString();
+  } catch {
+    return DEFAULT_CAJA_APK_VERSION_META_URL;
+  }
+};
+
+const readNativeInstalledVersion = () => {
+  try {
+    const bridge = window?.NexoAndroid;
+    if (!bridge) return { code: 0, name: '' };
+    const code =
+      typeof bridge.getInstalledVersionCode === 'function'
+        ? toPositiveInt(bridge.getInstalledVersionCode())
+        : 0;
+    const name =
+      typeof bridge.getInstalledVersionName === 'function'
+        ? String(bridge.getInstalledVersionName() || '').trim()
+        : '';
+    return { code, name };
+  } catch {
+    return { code: 0, name: '' };
+  }
+};
+
+const fetchServerApkVersion = async (apkUrl) => {
+  const metaUrl = getApkVersionMetaUrl(apkUrl);
+  const response = await fetch(metaUrl, { cache: 'no-store' });
+  if (!response.ok) return { code: 0, name: '', metaUrl };
+  const body = await response.json().catch(() => ({}));
+  return {
+    code: toPositiveInt(body?.versionCode || body?.version_code),
+    name: String(body?.versionName || body?.version_name || '').trim(),
+    metaUrl
+  };
 };
 
 const obtenerPrecioVenta = (producto) => {
@@ -165,7 +214,7 @@ const MobilePuntoVenta = () => {
   const compact =
     viewport.width < 390 ||
     (!landscapeTablet && visibleHeight < 760) ||
-    (landscapeTablet && visibleHeight < 620);
+    (landscapeTablet && visibleHeight < 860);
 
   const cajaModulos = configTicket?.caja_modulos || {};
   const cajaClientesHabilitado = cajaModulos.clientes !== false;
@@ -296,13 +345,29 @@ const MobilePuntoVenta = () => {
         return;
       }
 
+      const installedVersion = readNativeInstalledVersion();
+      const serverVersion = await fetchServerApkVersion(apkUrl).catch(() => ({ code: 0, name: '' }));
+      if (installedVersion.code > 0 && serverVersion.code > 0 && installedVersion.code >= serverVersion.code) {
+        toast.success(`La app ya está actualizada (v${installedVersion.name || installedVersion.code}).`);
+        return;
+      }
+      if (installedVersion.code > 0 && serverVersion.code > 0) {
+        toast.info(
+          `Nueva versión disponible: v${serverVersion.name || serverVersion.code} (actual v${installedVersion.name || installedVersion.code}).`
+        );
+      }
+
       const nativeBridge = window?.NexoAndroid;
       if (nativeBridge && typeof nativeBridge.openExternalUrlInChrome === 'function') {
-        nativeBridge.openExternalUrlInChrome(apkUrl);
+        try {
+          nativeBridge.openExternalUrlInChrome(apkUrl);
+        } catch {
+          window.location.assign(apkUrl);
+        }
       } else {
         window.location.assign(apkUrl);
       }
-      toast.info('Buscando última versión de APK para actualizar...');
+      toast.info('Descargando actualización de Caja...');
     } catch (error) {
       console.error('[MOBILE POS] Error al actualizar caja:', error);
       toast.error('No se pudo actualizar la caja');

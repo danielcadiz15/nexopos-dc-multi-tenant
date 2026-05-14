@@ -2,6 +2,7 @@
 app-debug.apk
 app-debug-*.apk
 client/public/app-caja.apk
+client/public/app-caja-version.json
 # Dependencies
 node_modules/
 npm-debug.log*
