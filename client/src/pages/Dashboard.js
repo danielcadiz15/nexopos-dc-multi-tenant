@@ -43,6 +43,7 @@ import {
  */
 const Dashboard = () => {
   const { currentUser, sucursalSeleccionada, hasPermission } = useAuth();
+  const isDemoUser = /@nexopos\.demo\.local$/i.test(String(currentUser?.email || '').trim());
   
   // ✅ NUEVO: Verificar si el usuario es administrador
   const esAdministrador = () => {
@@ -913,6 +914,16 @@ const Dashboard = () => {
               <p className="text-xs text-purple-600">📊</p>
             </div>
           </Link>
+
+          {isDemoUser && (
+            <Link to="/cajero">
+              <div className="bg-emerald-50 hover:bg-emerald-100 p-3 rounded-lg flex flex-col items-center transition-colors cursor-pointer text-center">
+                <FaShoppingCart className="text-emerald-600 mb-2" size={20} />
+                <p className="text-sm font-medium text-emerald-800">Probar Caja</p>
+                <p className="text-xs text-emerald-600">Usar con tu sesión demo</p>
+              </div>
+            </Link>
+          )}
 
           {stats.stockBajo > 0 && (
             <Link to="/productos?filtro=stock_bajo">

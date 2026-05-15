@@ -29,6 +29,13 @@ const TEAMVIEWER_QS_ANDROID_INTENT =
 const TEAMVIEWER_QS_PLAYSTORE_URL =
   'https://play.google.com/store/apps/details?id=com.teamviewer.quicksupport.market';
 
+const normalizeDemoPhoneDigits = (raw) => String(raw || '').replace(/\D/g, '');
+const looksLikeDemoPhone = (raw) => {
+  const digits = normalizeDemoPhoneDigits(raw);
+  return digits.length >= 10 && digits.length <= 15;
+};
+const demoEmailFromPhone = (raw) => `demo_${normalizeDemoPhoneDigits(raw)}@nexopos.demo.local`;
+
 const normalizeExternalUrl = (raw) => {
   const value = String(raw || '').trim();
   if (!value) return '';
@@ -39,10 +46,18 @@ const normalizeExternalUrl = (raw) => {
 
 const isNativeCapacitorRuntime = () => {
   try {
-    return typeof window !== 'undefined' &&
+    if (typeof window === 'undefined') return false;
+    if (window?.NexoAndroid) return true;
+    if (
       !!window.Capacitor &&
       typeof window.Capacitor.isNativePlatform === 'function' &&
-      window.Capacitor.isNativePlatform();
+      window.Capacitor.isNativePlatform()
+    ) {
+      return true;
+    }
+    const ua = String(window?.navigator?.userAgent || '').toLowerCase();
+    const isAndroidWebView = ua.includes('android') && (ua.includes('; wv') || ua.includes('version/'));
+    return isAndroidWebView;
   } catch {
     return false;
   }
@@ -72,7 +87,15 @@ const Login = () => {
   const redirectHandledRef = useRef(false);
 
   const envCajaApkUrl = (process.env.REACT_APP_CAJA_APK_URL || '').trim();
-  const urlDescargaApk = normalizeExternalUrl(envCajaApkUrl || DEFAULT_CAJA_APK_URL || cajaApkUrlServidor);
+  const serverCajaApkUrl = normalizeExternalUrl(cajaApkUrlServidor || '');
+  const envCajaApkUrlNormalized = normalizeExternalUrl(envCajaApkUrl || '');
+  const isOfficialHostedApk = (url) =>
+    /^https:\/\/nexopos-dc\.web\.app\/app-caja\.apk([?#].*)?$/i.test(String(url || '').trim());
+  const urlDescargaApk = (() => {
+    if (isOfficialHostedApk(serverCajaApkUrl)) return serverCajaApkUrl;
+    if (isOfficialHostedApk(envCajaApkUrlNormalized)) return envCajaApkUrlNormalized;
+    return DEFAULT_CAJA_APK_URL;
+  })();
   const isAndroidWeb = (() => {
     try {
       const ua = String(window?.navigator?.userAgent || '').toLowerCase();
@@ -97,18 +120,26 @@ const Login = () => {
     }
   };
 
-  const openAdminViaNativeBridge = useCallback(() => {
+  const openAdminExternally = useCallback(() => {
+    if (!nativeRuntime) {
+      redirectAdminToWeb();
+      return true;
+    }
     try {
-      if (!nativeRuntime) return false;
       const bridge = window?.NexoAndroid;
       if (bridge && typeof bridge.openAdminInChrome === 'function') {
         bridge.openAdminInChrome();
         return true;
       }
-      return false;
+      if (bridge && typeof bridge.openExternalUrlInChrome === 'function') {
+        bridge.openExternalUrlInChrome(ADMIN_WEB_URL);
+        return true;
+      }
     } catch {
-      return false;
+      // Sin acción: mostramos mensaje abajo.
     }
+    toast.error('No se pudo abrir el panel web en Chrome. Reiniciá la app e intentá nuevamente.');
+    return false;
   }, [nativeRuntime]);
 
   const isAdminAuthorized = useCallback((user) => {
@@ -126,23 +157,15 @@ const Login = () => {
         return;
       }
       if (nativeRuntime) {
-        if (!openAdminViaNativeBridge()) {
-          redirectAdminToWeb();
-        }
+        openAdminExternally();
         return;
       }
-      const sameWebHost =
-        typeof window !== 'undefined' &&
-        window.location?.origin === 'https://nexopos-dc.web.app';
-      if (sameWebHost) {
-        navigate('/', { replace: true });
-      } else {
-        redirectAdminToWeb();
-      }
+      // Forzamos panel web completo para evitar quedar en variantes embebidas.
+      redirectAdminToWeb();
       return;
     }
     navigate('/cajero', { replace: true });
-  }, [accessMode, isAdminAuthorized, nativeRuntime, navigate, openAdminViaNativeBridge]);
+  }, [accessMode, isAdminAuthorized, nativeRuntime, navigate, openAdminExternally]);
 
   const handleDescargarApk = (event) => {
     event?.preventDefault?.();
@@ -220,11 +243,15 @@ const Login = () => {
 
     const wantsAdmin = accessMode === 'admin';
     if (wantsAdmin && isAdminAuthorized(currentUser)) {
-      navigate('/', { replace: true });
+      if (nativeRuntime) {
+        openAdminExternally();
+      } else {
+        redirectAdminToWeb();
+      }
       return;
     }
     navigate('/cajero', { replace: true });
-  }, [accessMode, currentUser, isAdminAuthorized, isAuthenticated, navigate]);
+  }, [accessMode, currentUser, isAdminAuthorized, isAuthenticated, navigate, nativeRuntime, openAdminExternally]);
   
   /**
    * Actualiza el estado del formulario
@@ -253,11 +280,15 @@ const Login = () => {
    */
   const validateForm = () => {
     const newErrors = {};
-    
+
+    const inputLogin = String(formData.email || '').trim();
+    const emailOk = /\S+@\S+\.\S+/.test(inputLogin);
+    const phoneOk = looksLikeDemoPhone(inputLogin);
+
     if (!formData.email) {
-      newErrors.email = 'El correo electrónico es obligatorio';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Ingrese un correo electrónico válido';
+      newErrors.email = 'El correo electrónico o celular es obligatorio';
+    } else if (!emailOk && !phoneOk) {
+      newErrors.email = 'Ingresá un email válido o un celular (10 a 15 dígitos) para demo';
     }
     
     if (!formData.password) {
@@ -283,7 +314,10 @@ const Login = () => {
     setLoading(true);
     
     try {
-      const user = await login(formData.email, formData.password);
+      const inputLogin = String(formData.email || '').trim();
+      const usingDemoPhone = looksLikeDemoPhone(inputLogin) && !inputLogin.includes('@');
+      const loginEmail = usingDemoPhone ? demoEmailFromPhone(inputLogin) : inputLogin;
+      const user = await login(loginEmail, formData.password);
       redirectAfterLogin(user);
     } catch (error) {
       console.error('Error al iniciar sesión:', error);
@@ -394,7 +428,7 @@ const Login = () => {
             {/* Correo electrónico */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-700">
-                Correo electrónico
+                Correo electrónico o celular (demo)
               </label>
               <div className="relative mt-1">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -403,12 +437,12 @@ const Login = () => {
                 <input
                   id="email"
                   name="email"
-                  type="email"
-                  autoComplete="email"
+                  type="text"
+                  autoComplete="username"
                   value={formData.email}
                   onChange={handleChange}
                   className={`nexo-field pl-10 ${errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`}
-                  placeholder="ejemplo@correo.com"
+                  placeholder="ejemplo@correo.com o 3764123456"
                 />
               </div>
               {errors.email && (
@@ -461,7 +495,7 @@ const Login = () => {
             <p className="mt-2 text-sm text-slate-600">
               ¿Querés probar antes?{' '}
               <Link
-                to="/signup"
+                to="/signup?mode=demo"
                 state={{ signupMode: 'demo' }}
                 className="font-semibold text-emerald-600"
               >
@@ -470,6 +504,9 @@ const Login = () => {
             </p>
             <p className="mt-3 text-xs text-slate-500">
               Si sos cajero, tu administrador debe crearte o invitarte dentro de su empresa.
+            </p>
+            <p className="mt-2 text-xs text-emerald-700">
+              Demo: podés volver a ingresar con celular como usuario y celular como contraseña durante 48 hs.
             </p>
           </div>
         </div>

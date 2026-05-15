@@ -1,6 +1,159 @@
 // functions/utils/auth.js - Middleware de autenticación Firebase
 const admin = require('firebase-admin');
 const { enforceSessionAccess } = require('./subscriptionAccess');
+const DEMO_EMAIL_RE = /@nexopos\.demo\.local$/i;
+
+async function isDemoOrg(orgId) {
+  const id = String(orgId || '').trim();
+  if (!id) return false;
+  try {
+    const companyLic = await admin
+      .firestore()
+      .collection('companies')
+      .doc(id)
+      .collection('config')
+      .doc('license')
+      .get();
+    const license = companyLic.exists ? companyLic.data() || {} : {};
+    if (!companyLic.exists) {
+      const legacyLic = await admin.firestore().collection('licenses').doc(id).get();
+      if (legacyLic.exists) {
+        Object.assign(license, legacyLic.data() || {});
+      }
+    }
+    const billingModel = String(license?.billingModel || '').trim().toLowerCase();
+    return license?.demo === true || billingModel.startsWith('demo');
+  } catch {
+    return false;
+  }
+}
+
+async function choosePreferredCompanyId(companyIds, preferredCompanyId, userEmail) {
+  const ids = Array.from(new Set((companyIds || []).map((v) => String(v || '').trim()).filter(Boolean)));
+  if (!ids.length) return preferredCompanyId || null;
+  const isDemoEmail = DEMO_EMAIL_RE.test(String(userEmail || '').trim());
+  if (isDemoEmail) return preferredCompanyId || ids[0];
+
+  const scored = await Promise.all(
+    ids.map(async (id) => ({
+      id,
+      demo: await isDemoOrg(id)
+    }))
+  );
+  const preferred = String(preferredCompanyId || '').trim();
+  const preferredInfo = scored.find((item) => item.id === preferred);
+  if (preferredInfo && preferredInfo.demo === false) return preferredInfo.id;
+  const nonDemo = scored.find((item) => item.demo === false);
+  if (nonDemo) return nonDemo.id;
+  return preferred || ids[0];
+}
+
+async function collectUserCompanyCandidates(uid, email, preferredCompanyId) {
+  const candidates = [];
+  const pushCandidate = (companyId, userData = {}) => {
+    const id = String(companyId || '').trim();
+    if (!id) return;
+    candidates.push({
+      companyId: id,
+      user: userData && typeof userData === 'object' ? userData : {}
+    });
+  };
+
+  // 1) companies/{org}/usuarios (por uid + email)
+  const byUid = await admin
+    .firestore()
+    .collectionGroup('usuarios')
+    .where('uid', '==', uid)
+    .get();
+  byUid.docs.forEach((snap) => pushCandidate(snap.ref.parent.parent?.id, snap.data() || {}));
+
+  const emailNorm = String(email || '').trim().toLowerCase();
+  if (emailNorm) {
+    const byEmail = await admin
+      .firestore()
+      .collectionGroup('usuarios')
+      .where('email', '==', emailNorm)
+      .get();
+    byEmail.docs.forEach((snap) => pushCandidate(snap.ref.parent.parent?.id, snap.data() || {}));
+  }
+
+  // 2) owner directo en companies (caso histórico)
+  const byOwnerUid = await admin.firestore().collection('companies').where('ownerUid', '==', uid).get();
+  byOwnerUid.docs.forEach((snap) => pushCandidate(snap.id, {}));
+
+  if (emailNorm) {
+    const byOwnerEmail = await admin
+      .firestore()
+      .collection('companies')
+      .where('ownerEmail', '==', emailNorm)
+      .get();
+    byOwnerEmail.docs.forEach((snap) => pushCandidate(snap.id, {}));
+  }
+
+  // 3) usuariosOrg actual como candidato (aunque esté mal seteado, sirve para no perder contexto)
+  const uo = await admin.firestore().collection('usuariosOrg').doc(uid).get();
+  if (uo.exists) {
+    const orgId = String(uo.data()?.orgId || '').trim();
+    if (orgId) pushCandidate(orgId, {});
+  }
+
+  // 4) preferido actual (claims/query) también entra a evaluación
+  if (preferredCompanyId) pushCandidate(preferredCompanyId, {});
+
+  // dedupe preservando primer user-data útil
+  const dedup = new Map();
+  for (const item of candidates) {
+    if (!dedup.has(item.companyId)) {
+      dedup.set(item.companyId, item.user || {});
+      continue;
+    }
+    const prev = dedup.get(item.companyId) || {};
+    if (Object.keys(prev).length === 0 && item.user && Object.keys(item.user).length > 0) {
+      dedup.set(item.companyId, item.user);
+    }
+  }
+  return Array.from(dedup.entries()).map(([companyId, user]) => ({ companyId, user }));
+}
+
+async function resolveRequestedCompanyIfAllowed(uid, email, requestedCompanyId) {
+  const companyId = String(requestedCompanyId || '').trim();
+  if (!companyId) return null;
+  const emailNorm = String(email || '').trim().toLowerCase();
+  try {
+    const byUidDoc = await admin
+      .firestore()
+      .doc(`companies/${companyId}/usuarios/${uid}`)
+      .get();
+    if (byUidDoc.exists) {
+      return { companyId, user: byUidDoc.data() || {} };
+    }
+
+    if (emailNorm) {
+      const byEmail = await admin
+        .firestore()
+        .collection('companies')
+        .doc(companyId)
+        .collection('usuarios')
+        .where('email', '==', emailNorm)
+        .limit(1)
+        .get();
+      if (!byEmail.empty) {
+        return { companyId, user: byEmail.docs[0].data() || {} };
+      }
+    }
+
+    const companyDoc = await admin.firestore().collection('companies').doc(companyId).get();
+    if (!companyDoc.exists) return null;
+    const ownerUid = String(companyDoc.data()?.ownerUid || '').trim();
+    const ownerEmail = String(companyDoc.data()?.ownerEmail || '').trim().toLowerCase();
+    if ((ownerUid && ownerUid === uid) || (ownerEmail && ownerEmail === emailNorm)) {
+      return { companyId, user: {} };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Middleware para verificar autenticación Firebase
@@ -68,64 +221,88 @@ async function authenticateUser(req, res, next) {
         }
       }
 
-      // Fallback para cajeros/empleados antiguos: detectar empresa por uid/email
-      // dentro de companies/{companyId}/usuarios cuando todavía no tienen claims.
-      if (!req.companyId && decodedToken.email) {
+      // Resolver empresa preferida cuando el usuario tenga múltiples organizaciones
+      // (ej. demo + empresa real), priorizando no-demo para cuentas no demo.
+      const requestedOrgId =
+        String(req.query?.orgId || req.body?.orgId || req.headers?.['x-nexo-org-id'] || '')
+          .trim();
+      if (requestedOrgId) {
+        const requested = await resolveRequestedCompanyIfAllowed(
+          decodedToken.uid,
+          decodedToken.email || '',
+          requestedOrgId
+        );
+        if (requested?.companyId) {
+          req.companyId = requested.companyId;
+          companyId = requested.companyId;
+          userData = {
+            ...userData,
+            ...(requested.user || {}),
+            uid: decodedToken.uid,
+            email: decodedToken.email,
+            companyId: requested.companyId,
+            orgId: requested.companyId
+          };
+        }
+      }
+
+      const shouldResolvePreferredCompany =
+        Boolean(decodedToken.email) &&
+        (
+          !req.companyId ||
+          (!DEMO_EMAIL_RE.test(String(decodedToken.email || '').trim()) && (await isDemoOrg(req.companyId)))
+        );
+      if (shouldResolvePreferredCompany) {
         try {
-          const byUid = await admin.firestore()
-            .collectionGroup('usuarios')
-            .where('uid', '==', decodedToken.uid)
-            .limit(1)
-            .get();
+          const companies = await collectUserCompanyCandidates(
+            decodedToken.uid,
+            decodedToken.email || '',
+            req.companyId || companyId || userData.companyId || null
+          );
+          const companyIds = companies.map((item) => item.companyId);
 
-          let companyUserSnap = byUid.empty ? null : byUid.docs[0];
+          const preferredCompanyId = await choosePreferredCompanyId(
+            companyIds,
+            req.companyId || companyId || userData.companyId || null,
+            decodedToken.email
+          );
 
-          if (!companyUserSnap) {
-            const byEmail = await admin.firestore()
-              .collectionGroup('usuarios')
-              .where('email', '==', decodedToken.email)
-              .limit(1)
-              .get();
-            companyUserSnap = byEmail.empty ? null : byEmail.docs[0];
-          }
+          if (preferredCompanyId) {
+            const selected =
+              companies.find((item) => item.companyId === preferredCompanyId)?.user ||
+              {};
+            req.companyId = preferredCompanyId;
+            companyId = preferredCompanyId;
+            userData = {
+              ...userData,
+              ...selected,
+              uid: decodedToken.uid,
+              email: decodedToken.email,
+              companyId: preferredCompanyId,
+              orgId: preferredCompanyId
+            };
 
-          if (companyUserSnap) {
-            const detectedCompanyId = companyUserSnap.ref.parent.parent?.id || null;
-            const companyUser = companyUserSnap.data();
-            if (detectedCompanyId) {
-              req.companyId = detectedCompanyId;
-              companyId = detectedCompanyId;
-              userData = {
-                ...userData,
-                ...companyUser,
-                uid: decodedToken.uid,
-                email: decodedToken.email,
-                companyId: detectedCompanyId,
-                orgId: detectedCompanyId
-              };
+            await admin.firestore().collection('usuariosOrg').doc(decodedToken.uid).set({
+              uid: decodedToken.uid,
+              orgId: preferredCompanyId,
+              roles: [selected.rol_id || selected.role || selected.rol || 'empleado'],
+              sucursales: Array.isArray(selected.sucursales) ? selected.sucursales : [],
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
 
-              await admin.firestore().collection('usuariosOrg').doc(decodedToken.uid).set({
-                uid: decodedToken.uid,
-                orgId: detectedCompanyId,
-                roles: [companyUser.rol_id || companyUser.role || companyUser.rol || 'empleado'],
-                sucursales: Array.isArray(companyUser.sucursales) ? companyUser.sucursales : [],
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-              }, { merge: true });
+            await admin.auth().setCustomUserClaims(decodedToken.uid, {
+              companyId: preferredCompanyId,
+              orgId: preferredCompanyId,
+              rol: selected.rol || decodedToken.rol || 'Empleado',
+              role: selected.rol_id || decodedToken.role || 'empleado',
+              rolId: selected.rol_id || decodedToken.rolId || 'empleado',
+              activo: selected.activo !== false
+            });
 
-              await admin.auth().setCustomUserClaims(decodedToken.uid, {
-                companyId: detectedCompanyId,
-                orgId: detectedCompanyId,
-                rol: companyUser.rol || decodedToken.rol || 'Empleado',
-                role: companyUser.rol_id || decodedToken.role || 'empleado',
-                rolId: companyUser.rol_id || decodedToken.rolId || 'empleado',
-                activo: companyUser.activo !== false
-              });
-
-              console.log('✅ [AUTH] Empresa detectada por usuario/email:', {
-                email: decodedToken.email,
-                companyId: detectedCompanyId
-              });
-            }
+            console.log('✅ [AUTH] Empresa preferida detectada por usuario/email:', {
+              email: decodedToken.email,
+              companyId: preferredCompanyId
+            });
           }
         } catch (lookupError) {
           console.warn('⚠️ [AUTH] No se pudo detectar empresa por email:', lookupError.message);

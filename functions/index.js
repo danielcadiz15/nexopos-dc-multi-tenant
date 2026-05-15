@@ -18,6 +18,7 @@ const tenantsCallables = require('./callables/tenants');
 exports.createTenant = tenantsCallables.createTenant;
 exports.joinTenant = tenantsCallables.joinTenant;
 exports.setActiveTenant = tenantsCallables.setActiveTenant;
+exports.ensureDemoTenantAccess = tenantsCallables.ensureDemoTenantAccess;
 exports.generateTenantBootstrapCode = tenantsCallables.generateTenantBootstrapCode;
 exports.migrateOrgCatalogDefaults = tenantsCallables.migrateOrgCatalogDefaults;
 

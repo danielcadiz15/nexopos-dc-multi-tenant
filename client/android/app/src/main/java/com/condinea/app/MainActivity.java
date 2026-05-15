@@ -32,6 +32,7 @@ import com.getcapacitor.BridgeActivity;
 
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 
 public class MainActivity extends BridgeActivity {
@@ -40,6 +41,12 @@ public class MainActivity extends BridgeActivity {
     private static final Set<String> ALLOWED_HOSTS = new HashSet<>(Arrays.asList(
         "nexopos-dc.web.app",
         "www.nexopos-dc.web.app"
+    ));
+    private static final Set<String> ALLOWED_WEBVIEW_PATH_PREFIXES = new HashSet<>(Arrays.asList(
+        "/login",
+        "/signup",
+        "/verificar-email",
+        "/cajero"
     ));
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -56,6 +63,7 @@ public class MainActivity extends BridgeActivity {
         applyImmersiveMode();
         applyKioskPoliciesIfEnabled();
         enforceAllowedDomain();
+        handler.postDelayed(this::enforceAllowedDomain, 250);
     }
 
     @Override
@@ -64,6 +72,7 @@ public class MainActivity extends BridgeActivity {
         attachJsBridgeIfNeeded();
         applyImmersiveMode();
         handler.postDelayed(this::applyImmersiveMode, 220);
+        handler.postDelayed(this::enforceAllowedDomain, 260);
         if (KioskPrefs.isKioskEnabled(this)) {
             applyKioskPoliciesIfEnabled();
         }
@@ -270,10 +279,42 @@ public class MainActivity extends BridgeActivity {
         if (getBridge() == null || getBridge().getWebView() == null) return;
         String current = getBridge().getWebView().getUrl();
         if (current == null || current.isEmpty()) return;
-        for (String host : ALLOWED_HOSTS) {
-            if (current.contains(host)) return;
+
+        Uri uri;
+        try {
+            uri = Uri.parse(current);
+        } catch (Exception ignored) {
+            getBridge().getWebView().loadUrl("https://nexopos-dc.web.app/cajero");
+            return;
         }
-        getBridge().getWebView().loadUrl("https://nexopos-dc.web.app/cajero");
+        String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+        if (!ALLOWED_HOSTS.contains(host)) {
+            getBridge().getWebView().loadUrl("https://nexopos-dc.web.app/cajero");
+            return;
+        }
+
+        String path = uri.getPath();
+        String normalizedPath = path == null || path.isEmpty() ? "/" : path;
+        String lowerPath = normalizedPath.toLowerCase(Locale.ROOT);
+
+        // Admin nunca debe renderizarse embebido en la tablet.
+        if (lowerPath.startsWith("/admin")) {
+            openAdminInChrome();
+            getBridge().getWebView().loadUrl("https://nexopos-dc.web.app/cajero");
+            return;
+        }
+
+        // Cualquier ruta fuera de login/signup/verificación/cajero vuelve a cajero.
+        boolean allowedPath = false;
+        for (String prefix : ALLOWED_WEBVIEW_PATH_PREFIXES) {
+            if (lowerPath.equals(prefix) || lowerPath.startsWith(prefix + "/")) {
+                allowedPath = true;
+                break;
+            }
+        }
+        if (!allowedPath) {
+            getBridge().getWebView().loadUrl("https://nexopos-dc.web.app/cajero");
+        }
     }
 
     private int parsePositiveInt(String raw) {

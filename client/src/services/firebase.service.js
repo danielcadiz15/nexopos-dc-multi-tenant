@@ -236,12 +236,15 @@ export async function createTenant(
   const callable = httpsCallable(functions, 'createTenant');
   const creationModeRaw = options?.creationMode;
   const creationMode = creationModeRaw != null ? String(creationModeRaw).trim().toLowerCase() : '';
+  const demoPhoneRaw = options?.demoPhone;
+  const demoPhone = demoPhoneRaw != null ? String(demoPhoneRaw).trim() : '';
   const res = await callable({
     nombre,
     slug,
     codigoAdministrador: codigoAdministrador != null ? String(codigoAdministrador) : '',
     chosenPlan,
-    creationMode: creationMode || undefined
+    creationMode: creationMode || undefined,
+    demoPhone: demoPhone || undefined
   });
   return res.data;
 }

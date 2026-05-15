@@ -20,7 +20,11 @@ const ProtectedRoute = ({ children }) => {
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />;
   if (isSuperAdminEmail(currentUser?.email)) return children;
 
-  if (currentUser && !currentUser.emailVerified) {
+  const hasVerifiedPhone = Boolean(String(currentUser?.phoneNumber || '').trim());
+  const isDemoSyntheticUser = /@nexopos\.demo\.local$/i.test(
+    String(currentUser?.email || '').trim()
+  );
+  if (currentUser && !currentUser.emailVerified && !hasVerifiedPhone && !isDemoSyntheticUser) {
     if (location.pathname !== '/verificar-email') {
       return <Navigate to="/verificar-email" replace state={{ from: location }} />;
     }

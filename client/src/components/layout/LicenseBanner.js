@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { toast } from 'react-toastify';
 import { db } from '../../firebase/config';
@@ -10,6 +9,7 @@ import {
   daysUntilPaidUntil
 } from '../../utils/licenseUi';
 import { normalizeLicensePlan, PLAN_LABELS_ES } from '../../utils/planTiers';
+import PlanesAbonoExplainerModal from '../configuracion/PlanesAbonoExplainerModal';
 import {
   getNextBillingAmountARS,
   getPreferredCheckoutPlan,
@@ -28,12 +28,12 @@ import { getMercadoPagoCheckoutUrl, goToMercadoPagoCheckout } from '../../utils/
  */
 const LicenseBanner = ({ compact }) => {
   const { orgId } = useAuth();
-  const navigate = useNavigate();
   const [lic, setLic] = useState(null);
   const [ui, setUi] = useState(null);
   const [billingMp, setBillingMp] = useState(null);
   const [payLoading, setPayLoading] = useState(false);
   const [preapprovalLoading, setPreapprovalLoading] = useState(false);
+  const [showPlanesExplainer, setShowPlanesExplainer] = useState(false);
   const [apiBlock, setApiBlock] = useState(null);
 
   const reload = useCallback(async () => {
@@ -126,11 +126,14 @@ const LicenseBanner = ({ compact }) => {
   const abrirPagoMp = async () => {
     const plan = getPreferredCheckoutPlan(lic || {});
     const price = getNextBillingAmountARS(lic || {}, billingMp || {});
-    if (!billingMp?.mercadoPagoTokenPresent || price <= 0) {
+    if (billingMp?.mercadoPagoTokenPresent === false) {
       toast.warning(
         'El pago con Mercado Pago no está disponible en este momento. Probá más tarde o usá el enlace alternativo si aparece.'
       );
       return;
+    }
+    if (price <= 0) {
+      toast.info('Estamos consultando el importe de tu plan. Si no avanza, probá desde "Más opciones / licencia".');
     }
     setPayLoading(true);
     try {
@@ -178,8 +181,8 @@ const LicenseBanner = ({ compact }) => {
     }
   };
 
-  const irConfigLicencia = () => {
-    navigate('/configuracion/empresa?licencia=1');
+  const abrirGuiaPlanes = () => {
+    setShowPlanesExplainer(true);
   };
 
   if (!orgId) return null;
@@ -194,7 +197,7 @@ const LicenseBanner = ({ compact }) => {
   const pagoUrl = apiBlock?.pagoBilleteraUrl || ui?.pagoUrl;
   const arsNext = getNextBillingAmountARS(lic || {}, billingMp || {});
   const puedePagarMp =
-    billingMp?.mercadoPagoTokenPresent && arsNext > 0 && ui?.phase !== 'blocked';
+    billingMp?.mercadoPagoTokenPresent !== false && ui?.phase !== 'blocked';
 
   const graceLike =
     apiBlock?.code === 'LICENSE_GRACE_NO_FACTURACION' || apiBlock?.code === 'LICENSE_NO_PAYMENT_GRACE';
@@ -326,10 +329,10 @@ const LicenseBanner = ({ compact }) => {
             {!compact ? (
               <button
                 type="button"
-                onClick={irConfigLicencia}
+                onClick={abrirGuiaPlanes}
                 className="rounded-lg border border-current/30 bg-white/80 px-3 py-2 text-xs font-semibold hover:bg-white sm:text-sm"
               >
-                Más opciones / licencia
+                Más opciones de planes
               </button>
             ) : null}
             {pagoUrl && !puedePagarMp ? (
@@ -345,6 +348,15 @@ const LicenseBanner = ({ compact }) => {
           </div>
         </div>
       </div>
+      <PlanesAbonoExplainerModal
+        open={showPlanesExplainer}
+        onClose={() => setShowPlanesExplainer(false)}
+        initialPlan={
+          ['basic', 'intermediate', 'premium'].includes(normalizeLicensePlan(lic?.plan))
+            ? normalizeLicensePlan(lic?.plan)
+            : 'intermediate'
+        }
+      />
     </div>
   );
 };

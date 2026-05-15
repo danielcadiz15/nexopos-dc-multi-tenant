@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/common/Button';
@@ -13,13 +13,28 @@ const Signup = () => {
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [empresa, setEmpresa] = useState('');
-  const signupMode = location.state?.signupMode === 'demo' ? 'demo' : 'standard';
+  const [demoPhone, setDemoPhone] = useState('');
+  const signupMode = useMemo(() => {
+    const fromState = location.state?.signupMode;
+    const fromQuery = new URLSearchParams(location.search || '').get('mode');
+    const fromSession = typeof window !== 'undefined'
+      ? sessionStorage.getItem('pendingSignupMode')
+      : '';
+    if (fromState === 'demo' || fromQuery === 'demo' || fromSession === 'demo') {
+      return 'demo';
+    }
+    return 'standard';
+  }, [location.search, location.state]);
   const isDemoMode = signupMode === 'demo';
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (isDemoMode) sessionStorage.setItem('pendingSignupMode', 'demo');
-    else sessionStorage.removeItem('pendingSignupMode');
+    if (isDemoMode) {
+      sessionStorage.setItem('pendingSignupMode', 'demo');
+    } else {
+      sessionStorage.removeItem('pendingSignupMode');
+      sessionStorage.removeItem('pendingDemoPhone');
+    }
   }, [isDemoMode]);
 
   useEffect(() => {
@@ -30,23 +45,45 @@ const Signup = () => {
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    if (!email || !password || !confirm || !empresa) return;
-    if (password !== confirm) {
+    const empresaFinal = empresa.trim();
+    const demoPhoneDigits = String(demoPhone || '').replace(/\D/g, '');
+    if (!isDemoMode && (!email || !password || !confirm)) return;
+    if (!isDemoMode && !empresaFinal) return;
+    if (isDemoMode && (demoPhoneDigits.length < 10 || demoPhoneDigits.length > 15)) {
+      alert('Ingresá un celular válido (10 a 15 dígitos).');
+      return;
+    }
+    if (!isDemoMode && password !== confirm) {
       alert('Las contraseñas no coinciden');
       return;
     }
     setLoading(true);
     try {
-      await signUp(email, password, empresa);
-      navigate('/verificar-email', {
+      const syntheticEmail = `demo_${demoPhoneDigits}@nexopos.demo.local`;
+      const syntheticPassword = demoPhoneDigits;
+      await signUp(
+        isDemoMode ? syntheticEmail : email,
+        isDemoMode ? syntheticPassword : password,
+        isDemoMode ? `Demo ${demoPhoneDigits.slice(-4)}` : empresaFinal,
+        { skipEmailVerification: isDemoMode }
+      );
+      if (isDemoMode) sessionStorage.setItem('pendingDemoPhone', demoPhoneDigits);
+      navigate(isDemoMode ? '/verificar-email?mode=demo' : '/verificar-email', {
         replace: true,
         state: {
-          empresaNombre: empresa.trim(),
-          signupMode
+          empresaNombre: isDemoMode ? `Demo ${demoPhoneDigits.slice(-4)}` : empresaFinal,
+          signupMode,
+          demoPhone: isDemoMode ? demoPhoneDigits : ''
         }
       });
     } catch (e) {
-      alert(e.message || 'Error al registrarse');
+      const code = String(e?.code || '');
+      if (isDemoMode && code.includes('email-already-in-use')) {
+        alert('Este celular ya tiene un demo activo. Ingresá con usuario = celular y contraseña = celular.');
+        navigate('/login', { replace: true, state: { accessMode: 'admin' } });
+      } else {
+        alert(e.message || 'Error al registrarse');
+      }
     } finally {
       setLoading(false);
     }
@@ -65,47 +102,63 @@ const Signup = () => {
             </h1>
             <p className="text-sm text-gray-600 mt-2">
               {isDemoMode
-                ? 'Creá tu empresa demo y usá la versión completa durante 48 horas. Después elegís el plan que mejor te cierre.'
+                ? 'Entrá al demo express en minutos: cargá tu celular y empezá a probar con datos listos.'
                 : 'Este usuario quedará como administrador principal. Luego podrá crear cajeros y empleados.'}
             </p>
             {isDemoMode && (
               <p className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                Tu demo es full: módulos premium habilitados para que la pruebes sin límites funcionales.
+                Demo express: con tu celular dejamos una empresa demo lista, con datos reales de prueba para que veas todo en minutos.
+                <br />
+                Para volver a ingresar durante las 48 hs: usuario = tu celular, contraseña = tu celular.
               </p>
             )}
           </div>
 
           <form onSubmit={onSubmit} className="space-y-4">
-            <input
-              className="nexo-field py-3"
-              type="text"
-              placeholder="Nombre de empresa"
-              value={empresa}
-              onChange={e=>setEmpresa(e.target.value)}
-            />
-            <input
-              className="nexo-field py-3"
-              type="email"
-              placeholder="Email del administrador"
-              value={email}
-              onChange={e=>setEmail(e.target.value)}
-            />
-            <PasswordInput
-              className="nexo-field py-3"
-              name="password"
-              placeholder="Contraseña"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-            />
-            <PasswordInput
-              className="nexo-field py-3"
-              name="confirm"
-              placeholder="Confirmar contraseña"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              autoComplete="new-password"
-            />
+            {!isDemoMode ? (
+              <input
+                className="nexo-field py-3"
+                type="text"
+                placeholder="Nombre de empresa"
+                value={empresa}
+                onChange={e => setEmpresa(e.target.value)}
+              />
+            ) : (
+              <input
+                className="nexo-field py-3"
+                type="tel"
+                placeholder="Celular para demo express (ej: 3764123456)"
+                value={demoPhone}
+                onChange={e => setDemoPhone(e.target.value)}
+              />
+            )}
+            {!isDemoMode ? (
+              <>
+                <input
+                  className="nexo-field py-3"
+                  type="email"
+                  placeholder="Email del administrador"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                />
+                <PasswordInput
+                  className="nexo-field py-3"
+                  name="password"
+                  placeholder="Contraseña"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+                <PasswordInput
+                  className="nexo-field py-3"
+                  name="confirm"
+                  placeholder="Confirmar contraseña"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </>
+            ) : null}
             <Button type="submit" fullWidth loading={loading}>
               {isDemoMode ? 'Crear demo gratis' : 'Crear empresa'}
             </Button>

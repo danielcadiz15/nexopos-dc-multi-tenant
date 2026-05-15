@@ -10,8 +10,9 @@ import {
   reload,
   sendEmailVerification
 } from 'firebase/auth';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from '../firebase/config';
+import { doc, getDoc, onSnapshot, collectionGroup, query, where, getDocs } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { auth, db, functions } from '../firebase/config';
 import { toast } from 'react-toastify';
 import { getEmailActionCodeSettings } from '../utils/emailVerification';
 import sucursalesService from '../services/sucursales.service';
@@ -19,6 +20,13 @@ import { MODULE_KEYS, mergeCompanyModules } from '../config/modulesCatalog';
 import { ensureDeviceId, ensureSessionId, rotateSessionId, clearSessionId } from '../utils/sessionControl';
 
 const AuthContext = createContext();
+const DEMO_EMAIL_RE = /@nexopos\.demo\.local$/i;
+const DEMO_EMAIL_PHONE_RE = /^demo_(\d+)@nexopos\.demo\.local$/i;
+
+const isDemoLicenseDoc = (license) => {
+  const billingModel = String(license?.billingModel || '').trim().toLowerCase();
+  return license?.demo === true || billingModel.startsWith('demo');
+};
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -59,6 +67,81 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const resolvePreferredOrgId = useCallback(async (uid, candidateOrgId, email) => {
+    try {
+      if (!uid) return candidateOrgId || null;
+      if (DEMO_EMAIL_RE.test(String(email || '').trim())) return candidateOrgId || null;
+
+      const q = query(collectionGroup(db, 'usuarios'), where('uid', '==', uid));
+      const snap = await getDocs(q);
+      const orgIds = Array.from(
+        new Set(
+          snap.docs
+            .map((d) => String(d.ref.path || '').split('/'))
+            .filter((parts) => parts.length >= 2 && parts[0] === 'companies')
+            .map((parts) => parts[1])
+            .filter(Boolean)
+        )
+      );
+      if (!orgIds.length) return candidateOrgId || null;
+
+      const scored = await Promise.all(
+        orgIds.map(async (orgIdItem) => {
+          try {
+            const licenseSnap = await getDoc(doc(db, 'companies', orgIdItem, 'config', 'license'));
+            const license = licenseSnap.exists() ? licenseSnap.data() || {} : {};
+            return { orgId: orgIdItem, demo: isDemoLicenseDoc(license) };
+          } catch {
+            return { orgId: orgIdItem, demo: false };
+          }
+        })
+      );
+      const nonDemo = scored.find((s) => s.demo === false)?.orgId;
+      return nonDemo || candidateOrgId || scored[0]?.orgId || null;
+    } catch (e) {
+      console.warn('[AUTH] resolvePreferredOrgId:', e?.message || e);
+      return candidateOrgId || null;
+    }
+  }, []);
+
+  const inferDemoPhoneFromEmail = useCallback((email) => {
+    const match = String(email || '').trim().toLowerCase().match(DEMO_EMAIL_PHONE_RE);
+    const digits = match?.[1] || '';
+    if (digits.length < 10 || digits.length > 15) return '';
+    return digits;
+  }, []);
+
+  const ensureDemoTenantForUser = useCallback(async (firebaseUser, currentOrgId) => {
+    if (!firebaseUser) return currentOrgId || null;
+    const email = String(firebaseUser.email || '').trim().toLowerCase();
+    if (!DEMO_EMAIL_RE.test(email)) return currentOrgId || null;
+    if (currentOrgId) return currentOrgId;
+    try {
+      const callable = httpsCallable(functions, 'ensureDemoTenantAccess');
+      const demoPhone = inferDemoPhoneFromEmail(email);
+      const result = await callable({ demoPhone });
+      const linkedOrgId = result?.data?.orgId || null;
+      if (linkedOrgId) {
+        storageSet('orgId', linkedOrgId);
+        storageSet('companyId', linkedOrgId);
+      }
+      return linkedOrgId || currentOrgId || null;
+    } catch (e) {
+      console.warn('[AUTH] ensureDemoTenantForUser:', e?.message || e);
+      return currentOrgId || null;
+    }
+  }, [inferDemoPhoneFromEmail]);
+
+  const ensurePreferredActiveTenant = useCallback(async (preferredOrgId) => {
+    if (!preferredOrgId) return;
+    try {
+      const callable = httpsCallable(functions, 'setActiveTenant');
+      await callable({ orgId: preferredOrgId });
+    } catch (e) {
+      console.warn('[AUTH] No se pudo activar org preferida automáticamente:', e?.message || e);
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
@@ -83,10 +166,15 @@ export function AuthProvider({ children }) {
             }
           } catch {}
           
+          resolvedOrgId = await resolvePreferredOrgId(firebaseUser.uid, resolvedOrgId, firebaseUser.email);
+          resolvedOrgId = await ensureDemoTenantForUser(firebaseUser, resolvedOrgId);
+          await ensurePreferredActiveTenant(resolvedOrgId);
+
           // Obtener datos adicionales del usuario desde Firestore
           let userData = {
             id: firebaseUser.uid,
             email: firebaseUser.email,
+            phoneNumber: firebaseUser.phoneNumber || '',
             nombre: customClaims.nombre || firebaseUser.displayName || 'Usuario',
             apellido: customClaims.apellido || '',
             rol: customClaims.rol || customClaims.role || 'Usuario',
@@ -234,7 +322,7 @@ export function AuthProvider({ children }) {
       }
       unsubscribe();
     };
-  }, []);
+  }, [ensureDemoTenantForUser, ensurePreferredActiveTenant, resolvePreferredOrgId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -525,7 +613,10 @@ export function AuthProvider({ children }) {
       // Obtener token con custom claims
       const tokenResult = await firebaseUser.getIdTokenResult(true);
       const customClaims = tokenResult.claims;
-      const resolvedOrgId = customClaims.companyId || customClaims.orgId || storageGet('companyId') || storageGet('orgId') || null;
+      let resolvedOrgId = customClaims.companyId || customClaims.orgId || storageGet('companyId') || storageGet('orgId') || null;
+      resolvedOrgId = await resolvePreferredOrgId(firebaseUser.uid, resolvedOrgId, firebaseUser.email);
+      resolvedOrgId = await ensureDemoTenantForUser(firebaseUser, resolvedOrgId);
+      await ensurePreferredActiveTenant(resolvedOrgId);
       if (resolvedOrgId) {
         setOrgId(resolvedOrgId);
         storageSet('orgId', resolvedOrgId);
@@ -535,6 +626,7 @@ export function AuthProvider({ children }) {
       const user = {
         id: firebaseUser.uid,
         email: firebaseUser.email,
+        phoneNumber: firebaseUser.phoneNumber || '',
         nombre: customClaims.nombre || firebaseUser.displayName || 'Usuario',
         apellido: customClaims.apellido || '',
         rol: customClaims.rol || customClaims.role || 'Usuario',
@@ -608,16 +700,21 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const signUp = async (email, password, nombreEmpresa = null) => {
+  const signUp = async (email, password, nombreEmpresa = null, options = {}) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     const firebaseUser = cred.user;
-    await sendEmailVerification(firebaseUser, getEmailActionCodeSettings());
+    const skipEmailVerification = options?.skipEmailVerification === true;
+    if (!skipEmailVerification) {
+      auth.languageCode = 'es';
+      await sendEmailVerification(firebaseUser, getEmailActionCodeSettings());
+    }
     if (nombreEmpresa && typeof window !== 'undefined') {
       sessionStorage.setItem('pendingEmpresaNombre', nombreEmpresa.trim());
     }
     setCurrentUser({
       id: firebaseUser.uid,
       email: firebaseUser.email,
+      phoneNumber: firebaseUser.phoneNumber || '',
       nombre: firebaseUser.displayName || 'Usuario',
       rol: 'Usuario',
       rolId: '1',
@@ -628,9 +725,16 @@ export function AuthProvider({ children }) {
       emailVerified: firebaseUser.emailVerified
     });
     setIsAuthenticated(true);
-    toast.success(
-      'Te enviamos un correo de verificación al mail que ingresaste. Abrí «Verificación de correo», tocá «Verificar», revisá spam y volvé aquí cuando esté confirmado.'
-    , { autoClose: 6500 });
+    if (!skipEmailVerification) {
+      toast.success(
+        'Te enviamos un correo de verificación en español al mail que ingresaste. Este paso protege tu cuenta y la información de tus clientes antes de habilitar la empresa.'
+      , { autoClose: 6500 });
+    } else {
+      toast.success(
+        'Cuenta demo creada. Confirmá tu número de celular para activar la demo y empezar a probar.',
+        { autoClose: 5000 }
+      );
+    }
     return firebaseUser;
   };
 
@@ -704,6 +808,7 @@ export function AuthProvider({ children }) {
     const user = {
       id: firebaseUser.uid,
       email: firebaseUser.email,
+      phoneNumber: firebaseUser.phoneNumber || '',
       nombre: customClaims.nombre || firebaseUser.displayName || 'Usuario',
       apellido: customClaims.apellido || '',
       rol: customClaims.rol || customClaims.role || 'Usuario',

@@ -63,6 +63,17 @@ async function obtenerProductoEmpresa(companyId, productId) {
   return globalDoc;
 }
 
+function normalizeProductOutput(producto = {}) {
+  return {
+    ...producto,
+    precio_venta: parseFloat(producto.precio_venta || 0),
+    precio_costo: parseFloat(producto.precio_costo || 0),
+    stock_actual: parseInt(producto.stock_actual || producto.stock?.cantidad || 0, 10),
+    stock_minimo: parseInt(producto.stock_minimo || 5, 10),
+    unidad_medida: producto.unidad_medida || 'unidad'
+  };
+}
+
 /**
  * Función auxiliar para validar un producto
  */
@@ -105,32 +116,8 @@ const productosRoutes = async (req, res, path) => {
   try {
     const companyId = req.companyId || req.user?.companyId || req.query?.orgId || null;
     if (path === '/productos' && req.method === 'GET') {
-      let query = db.collection('productos');
-      
-      // Filtrar por companyId si está disponible
-      if (companyId) {
-        query = query.where('orgId', '==', companyId);
-        console.log(`🔍 [MULTI-TENANT] Filtrando productos por companyId: ${companyId}`);
-      } else {
-        console.log('⚠️ [MULTI-TENANT] No hay companyId, mostrando todos los productos');
-      }
-      
-      const productosSnapshot = await query.get();
-      const productos = [];
-      
-      productosSnapshot.forEach(doc => {
-        const data = doc.data();
-        productos.push({
-          id: doc.id,
-          ...data,
-          // Asegurar campos numéricos
-          precio_venta: parseFloat(data.precio_venta || 0),
-          precio_costo: parseFloat(data.precio_costo || 0),
-          stock_actual: parseInt(data.stock_actual || data.stock?.cantidad || 0),
-          stock_minimo: parseInt(data.stock_minimo || 5),
-          unidad_medida: data.unidad_medida || 'unidad'
-        });
-      });
+      const productosBase = await obtenerProductosEmpresa(companyId);
+      const productos = productosBase.map((p) => normalizeProductOutput(p));
       
       console.log(`✅ Productos encontrados: ${productos.length}`);
       
@@ -145,29 +132,10 @@ const productosRoutes = async (req, res, path) => {
     
     // PRODUCTOS - GET solo activos
     else if (path === '/productos/activos' && req.method === 'GET') {
-      let query = db.collection('productos').where('activo', '==', true);
-      
-      // Filtrar por companyId si está disponible
-      if (companyId) {
-        query = query.where('orgId', '==', companyId);
-        console.log(`🔍 [MULTI-TENANT] Obteniendo productos activos por companyId: ${companyId}`);
-      }
-      
-      const productosSnapshot = await query.get();
-      
-      const productos = [];
-      productosSnapshot.forEach(doc => {
-        const data = doc.data();
-        productos.push({
-          id: doc.id,
-          ...data,
-          precio_venta: parseFloat(data.precio_venta || 0),
-          precio_costo: parseFloat(data.precio_costo || 0),
-          stock_actual: parseInt(data.stock_actual || data.stock?.cantidad || 0),
-          stock_minimo: parseInt(data.stock_minimo || 5),
-          unidad_medida: data.unidad_medida || 'unidad'
-        });
-      });
+      const productosBase = await obtenerProductosEmpresa(companyId);
+      const productos = productosBase
+        .filter((p) => p?.activo !== false)
+        .map((p) => normalizeProductOutput(p));
       
       res.json({
         success: true,
@@ -181,30 +149,10 @@ const productosRoutes = async (req, res, path) => {
     // PRODUCTOS - Búsqueda (CRÍTICO para PuntoVenta)
     else if (path === '/productos/buscar' && req.method === 'GET') {
       const termino = req.query.termino;
+      const productosEmpresa = await obtenerProductosEmpresa(companyId);
       
       if (!termino) {
-        // Devolver todos los productos si no hay término
-        let query = db.collection('productos');
-        
-        // Filtrar por companyId si está disponible
-        if (companyId) {
-          query = query.where('orgId', '==', companyId);
-          console.log(`🔍 [MULTI-TENANT] Buscando productos por companyId: ${companyId}`);
-        }
-        
-        const productosSnapshot = await query.get();
-        const productos = [];
-        
-        productosSnapshot.forEach(doc => {
-          const data = doc.data();
-          productos.push({
-            id: doc.id,
-            ...data,
-            precio_venta: parseFloat(data.precio_venta || 0),
-            stock_actual: parseInt(data.stock_actual || data.stock?.cantidad || 0),
-            unidad_medida: data.unidad_medida || 'unidad'
-          });
-        });
+        const productos = productosEmpresa.map((p) => normalizeProductOutput(p));
         
         res.json({
           success: true,
@@ -214,18 +162,10 @@ const productosRoutes = async (req, res, path) => {
         return true;
       }
       
-      // Búsqueda flexible - por nombre, código, o código de barras
-      let query = db.collection('productos');
-      if (companyId) {
-        query = query.where('orgId', '==', companyId);
-        console.log(`🔍 [MULTI-TENANT] Filtrando productos por companyId: ${companyId}`);
-      }
-      const productosSnapshot = await query.get();
       const productos = [];
       const terminoLower = termino.toLowerCase();
       
-      productosSnapshot.forEach(doc => {
-        const data = doc.data();
+      productosEmpresa.forEach((data) => {
         const nombre = (data.nombre || '').toLowerCase();
         const codigo = (data.codigo || '').toLowerCase();
         const codigoBarras = (data.codigo_barras || '').toLowerCase();
@@ -234,15 +174,7 @@ const productosRoutes = async (req, res, path) => {
         if (nombre.includes(terminoLower) || 
             codigo.includes(terminoLower) || 
             codigoBarras.includes(terminoLower)) {
-          productos.push({
-            id: doc.id,
-            ...data,
-            precio_venta: parseFloat(data.precio_venta || 0),
-            precio_costo: parseFloat(data.precio_costo || 0),
-            stock_actual: parseInt(data.stock_actual || data.stock?.cantidad || 0),
-            stock_minimo: parseInt(data.stock_minimo || 5),
-            unidad_medida: data.unidad_medida || 'unidad'
-          });
+          productos.push(normalizeProductOutput(data));
         }
       });
       

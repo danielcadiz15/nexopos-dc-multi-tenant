@@ -7,7 +7,7 @@
  * @requires react, react-router-dom, ./contexts/AuthContext, ./components/*, ./pages/*
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -115,6 +115,51 @@ import LicenseBanner from './components/layout/LicenseBanner';
 import { useViewportHeight } from './hooks/useViewportHeight';
 import tabletLoginBg from './assets/nexopos-tablet-login-bg.png';
 
+const ADMIN_WEB_URL = 'https://nexopos-dc.web.app';
+
+const isNativeCapacitorRuntime = () => {
+  try {
+    if (typeof window === 'undefined') return false;
+    if (window?.NexoAndroid) return true;
+    if (
+      !!window.Capacitor &&
+      typeof window.Capacitor.isNativePlatform === 'function' &&
+      window.Capacitor.isNativePlatform()
+    ) {
+      return true;
+    }
+    const ua = String(window?.navigator?.userAgent || '').toLowerCase();
+    const isAndroidWebView = ua.includes('android') && (ua.includes('; wv') || ua.includes('version/'));
+    return isAndroidWebView;
+  } catch {
+    return false;
+  }
+};
+
+const openAdminInExternalBrowser = () => {
+  try {
+    const bridge = window?.NexoAndroid;
+    if (bridge && typeof bridge.openAdminInChrome === 'function') {
+      bridge.openAdminInChrome();
+      return true;
+    }
+    if (bridge && typeof bridge.openExternalUrlInChrome === 'function') {
+      bridge.openExternalUrlInChrome(ADMIN_WEB_URL);
+      return true;
+    }
+  } catch {
+    // continuamos con fallback
+  }
+
+  try {
+    const intentUrl = 'intent://nexopos-dc.web.app/#Intent;scheme=https;package=com.android.chrome;end';
+    window.location.assign(intentUrl);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const CajeroApp = () => (
   <div className="scrollbar-thin flex h-full min-h-0 w-full flex-col overflow-y-auto overscroll-y-contain bg-gray-50 px-2 pt-1 pb-1 sm:px-3">
     <div className="shrink-0">
@@ -125,6 +170,36 @@ const CajeroApp = () => (
     </div>
   </div>
 );
+
+const RootRouteGateway = () => {
+  const nativeRuntime = isNativeCapacitorRuntime();
+  if (nativeRuntime) {
+    return <Navigate to="/cajero" replace />;
+  }
+  return <Dashboard />;
+};
+
+const AdminRouteGateway = () => {
+  const nativeRuntime = isNativeCapacitorRuntime();
+
+  useEffect(() => {
+    if (!nativeRuntime) return;
+    const opened = openAdminInExternalBrowser();
+    if (!opened) {
+      window.location.assign(ADMIN_WEB_URL);
+    }
+  }, [nativeRuntime]);
+
+  if (nativeRuntime) {
+    return (
+      <div className="flex h-full min-h-[40vh] items-center justify-center px-6 text-center text-sm text-slate-600">
+        Abriendo panel de administración en Chrome...
+      </div>
+    );
+  }
+
+  return <AdminPanel />;
+};
 
 const AppContent = () => {
   useViewportHeight();
@@ -164,8 +239,8 @@ const AppContent = () => {
         <Route path="/cajero" element={<ProtectedRoute><CajeroApp /></ProtectedRoute>} />
 
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/admin" element={<SuperAdminRoute><AdminPanel /></SuperAdminRoute>} />
+            <Route path="/" element={<RootRouteGateway />} />
+            <Route path="/admin" element={<SuperAdminRoute><AdminRouteGateway /></SuperAdminRoute>} />
             
             {/* Módulo de Productos */}
             <Route path="/productos" element={<Productos />} />

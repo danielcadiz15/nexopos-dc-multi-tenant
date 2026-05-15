@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460">
+  <rect width="1200" height="460" fill="#f8fafc"/>
+  <text x="60" y="60" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#0f172a">
+    NexoPOS - Onboarding rapido (cliente nuevo)
+  </text>
+
+  <rect x="60" y="110" width="160" height="90" rx="14" fill="#2563eb"/>
+  <text x="78" y="148" font-family="Arial, sans-serif" font-size="18" fill="#ffffff" font-weight="700">1) Crear cuenta</text>
+  <text x="86" y="172" font-family="Arial, sans-serif" font-size="15" fill="#dbeafe">Email + clave</text>
+
+  <rect x="250" y="110" width="170" height="90" rx="14" fill="#3b82f6"/>
+  <text x="268" y="148" font-family="Arial, sans-serif" font-size="18" fill="#ffffff" font-weight="700">2) Verificar email</text>
+  <text x="278" y="172" font-family="Arial, sans-serif" font-size="15" fill="#dbeafe">Activar acceso</text>
+
+  <rect x="450" y="110" width="170" height="90" rx="14" fill="#0ea5e9"/>
+  <text x="468" y="148" font-family="Arial, sans-serif" font-size="18" fill="#ffffff" font-weight="700">3) Crear empresa</text>
+  <text x="486" y="172" font-family="Arial, sans-serif" font-size="15" fill="#e0f2fe">Wizard inicial</text>
+
+  <rect x="650" y="110" width="180" height="90" rx="14" fill="#14b8a6"/>
+  <text x="668" y="148" font-family="Arial, sans-serif" font-size="18" fill="#ffffff" font-weight="700">4) Configuracion</text>
+  <text x="673" y="172" font-family="Arial, sans-serif" font-size="15" fill="#ccfbf1">Empresa y sucursal</text>
+
+  <rect x="860" y="110" width="160" height="90" rx="14" fill="#22c55e"/>
+  <text x="878" y="148" font-family="Arial, sans-serif" font-size="18" fill="#ffffff" font-weight="700">5) Cargar datos</text>
+  <text x="888" y="172" font-family="Arial, sans-serif" font-size="15" fill="#dcfce7">Productos base</text>
+
+  <rect x="1040" y="110" width="120" height="90" rx="14" fill="#16a34a"/>
+  <text x="1056" y="148" font-family="Arial, sans-serif" font-size="18" fill="#ffffff" font-weight="700">6) Vender</text>
+  <text x="1062" y="172" font-family="Arial, sans-serif" font-size="15" fill="#dcfce7">Primera venta</text>
+
+  <line x1="220" y1="155" x2="250" y2="155" stroke="#334155" stroke-width="3"/>
+  <polygon points="250,155 240,150 240,160" fill="#334155"/>
+  <line x1="420" y1="155" x2="450" y2="155" stroke="#334155" stroke-width="3"/>
+  <polygon points="450,155 440,150 440,160" fill="#334155"/>
+  <line x1="620" y1="155" x2="650" y2="155" stroke="#334155" stroke-width="3"/>
+  <polygon points="650,155 640,150 640,160" fill="#334155"/>
+  <line x1="830" y1="155" x2="860" y2="155" stroke="#334155" stroke-width="3"/>
+  <polygon points="860,155 850,150 850,160" fill="#334155"/>
+  <line x1="1020" y1="155" x2="1040" y2="155" stroke="#334155" stroke-width="3"/>
+  <polygon points="1040,155 1030,150 1030,160" fill="#334155"/>
+
+  <rect x="70" y="255" width="1060" height="145" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="95" y="292" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a">
+    Resultado esperado en menos de 60 minutos:
+  </text>
+  <text x="95" y="325" font-family="Arial, sans-serif" font-size="18" fill="#334155">
+    - Empresa activa  - Usuarios y permisos definidos  - Productos cargados  - Caja lista para operar
+  </text>
+  <text x="95" y="355" font-family="Arial, sans-serif" font-size="18" fill="#334155">
+    - Reportes listos para control diario  - Flujo comercial preparado para escalamiento
+  </text>
+</svg>

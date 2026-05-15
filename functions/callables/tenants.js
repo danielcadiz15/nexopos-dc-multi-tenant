@@ -12,6 +12,10 @@ const db = admin.firestore();
 
 const DEFAULT_CATEGORY_NAMES = ['Bebidas', 'Comestibles', 'Limpieza', 'Accesorios', 'Otros'];
 const PROVEEDOR_GENERAL_NOMBRE = 'Proveedor general';
+const DEMO_SEED_DOC_ID = 'demoExpress';
+const DEMO_UNLIMITED_PHONES = new Set(['+543764200303', '+543765381540']);
+const DEMO_SHARED_ORG_ID = 'demo-shared-nexopos';
+const DEMO_SHARED_SUCURSAL_ID = 'sucursal-principal';
 
 /**
  * Crea categorías estándar, proveedor general y merge en config/empresa solo lo que falta (listas Lista 1–3, PV default).
@@ -96,6 +100,257 @@ async function seedOrgCatalogDefaults(orgId) {
   }
 
   return out;
+}
+
+function normalizeDemoPhone(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length < 10 || digits.length > 15) return '';
+  if (digits.startsWith('54')) return `+${digits}`;
+  return `+54${digits}`;
+}
+
+function isUnlimitedDemoPhone(phoneNorm) {
+  return DEMO_UNLIMITED_PHONES.has(String(phoneNorm || '').trim());
+}
+
+function toIsoDateDaysAgo(daysAgo = 0, hour = 12, minute = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() - Number(daysAgo || 0));
+  d.setHours(hour, minute, 0, 0);
+  return d.toISOString();
+}
+
+async function seedExpressDemoData(orgId, sucursalId, ownerUid) {
+  const seedRef = db.collection('companies').doc(orgId).collection('config').doc(DEMO_SEED_DOC_ID);
+  const seedSnap = await seedRef.get();
+  if (seedSnap.exists && seedSnap.data()?.seeded === true) {
+    return { seeded: false, skipped: true };
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const clients = [
+    { nombre: 'María', apellido: 'Gómez', telefono: '3764120001' },
+    { nombre: 'Carlos', apellido: 'Ríos', telefono: '3764120002' },
+    { nombre: 'Ana', apellido: 'López', telefono: '3764120003' },
+    { nombre: 'Jorge', apellido: 'Pérez', telefono: '3764120004' },
+    { nombre: 'Lucía', apellido: 'Fernández', telefono: '3764120005' }
+  ];
+  const products = [
+    { nombre: 'Yerba 1kg', codigo: '779000000001', categoria: 'Comestibles', costo: 3500, venta: 5200, stock: 80 },
+    { nombre: 'Azúcar 1kg', codigo: '779000000002', categoria: 'Comestibles', costo: 900, venta: 1450, stock: 120 },
+    { nombre: 'Arroz largo fino 1kg', codigo: '779000000003', categoria: 'Comestibles', costo: 1100, venta: 1700, stock: 75 },
+    { nombre: 'Aceite girasol 1.5L', codigo: '779000000004', categoria: 'Comestibles', costo: 2400, venta: 3600, stock: 60 },
+    { nombre: 'Lavandina 1L', codigo: '779000000005', categoria: 'Limpieza', costo: 750, venta: 1300, stock: 90 },
+    { nombre: 'Detergente 750ml', codigo: '779000000006', categoria: 'Limpieza', costo: 980, venta: 1650, stock: 88 },
+    { nombre: 'Gaseosa Cola 2.25L', codigo: '779000000007', categoria: 'Bebidas', costo: 1700, venta: 2600, stock: 95 },
+    { nombre: 'Agua mineral 2L', codigo: '779000000008', categoria: 'Bebidas', costo: 820, venta: 1400, stock: 110 }
+  ];
+
+  const clientRefs = clients.map(() => db.collection('clientes').doc());
+  const productRefs = products.map(() => db.collection('productos').doc());
+  const proveedorRef = db.collection('proveedores').doc();
+
+  const batch1 = db.batch();
+  clientRefs.forEach((ref, idx) => {
+    const c = clients[idx];
+    const clientPayload = {
+      nombre: c.nombre,
+      apellido: c.apellido,
+      nombre_completo: `${c.nombre} ${c.apellido}`,
+      telefono: c.telefono,
+      email: `${c.nombre.toLowerCase()}.${c.apellido.toLowerCase()}@demo.nexopos.local`,
+      activo: true,
+      orgId,
+      createdAt: now,
+      updatedAt: now
+    };
+    batch1.set(ref, clientPayload);
+    batch1.set(
+      db.collection('companies').doc(orgId).collection('clientes').doc(ref.id),
+      clientPayload,
+      { merge: true }
+    );
+  });
+  productRefs.forEach((ref, idx) => {
+    const p = products[idx];
+    const listas = {
+      mayorista: p.venta,
+      interior: Math.round(p.venta * 1.08),
+      posadas: Math.round(p.venta * 1.12)
+    };
+    const productPayload = {
+      nombre: p.nombre,
+      codigo: p.codigo,
+      categoria: p.categoria,
+      precio_costo: p.costo,
+      precio_venta: p.venta,
+      precio: p.venta,
+      listas_precios: listas,
+      stock: p.stock,
+      stock_actual: p.stock,
+      stock_sucursal: p.stock,
+      sucursal_id: sucursalId,
+      activo: true,
+      orgId,
+      createdAt: now,
+      updatedAt: now
+    };
+    batch1.set(ref, productPayload);
+    batch1.set(
+      db.collection('companies').doc(orgId).collection('productos').doc(ref.id),
+      productPayload,
+      { merge: true }
+    );
+  });
+  const proveedorPayload = {
+    nombre: 'Distribuidora Demo',
+    telefono: '3764120099',
+    activo: true,
+    orgId,
+    createdAt: now,
+    updatedAt: now
+  };
+  batch1.set(proveedorRef, proveedorPayload);
+  batch1.set(
+    db.collection('companies').doc(orgId).collection('proveedores').doc(proveedorRef.id),
+    proveedorPayload,
+    { merge: true }
+  );
+  await batch1.commit();
+
+  const sales = [
+    { daysAgo: 0, units: [{ idx: 0, qty: 2 }, { idx: 6, qty: 1 }], clientIdx: 0, method: 'efectivo' },
+    { daysAgo: 1, units: [{ idx: 1, qty: 5 }, { idx: 5, qty: 2 }], clientIdx: 1, method: 'tarjeta' },
+    { daysAgo: 2, units: [{ idx: 3, qty: 2 }, { idx: 7, qty: 4 }], clientIdx: 2, method: 'efectivo' },
+    { daysAgo: 3, units: [{ idx: 2, qty: 3 }, { idx: 4, qty: 2 }], clientIdx: 3, method: 'MercadoPago' },
+    { daysAgo: 4, units: [{ idx: 0, qty: 1 }, { idx: 1, qty: 4 }, { idx: 7, qty: 3 }], clientIdx: 4, method: 'efectivo' },
+    { daysAgo: 5, units: [{ idx: 6, qty: 3 }, { idx: 5, qty: 2 }], clientIdx: 2, method: 'tarjeta' }
+  ];
+
+  const batch2 = db.batch();
+  sales.forEach((sale, index) => {
+    const saleRefGlobal = db.collection('ventas').doc();
+    const saleRefCompany = db.collection('companies').doc(orgId).collection('ventas').doc(saleRefGlobal.id);
+    const detalles = sale.units.map((u) => {
+      const p = products[u.idx];
+      return {
+        producto_id: productRefs[u.idx].id,
+        nombre: p.nombre,
+        cantidad: u.qty,
+        precio_unitario: p.venta,
+        precio: p.venta,
+        costo_unitario: p.costo,
+        subtotal: p.venta * u.qty
+      };
+    });
+    const total = detalles.reduce((sum, d) => sum + d.subtotal, 0);
+    const costoTotal = detalles.reduce((sum, d) => sum + (d.costo_unitario * d.cantidad), 0);
+    const salePayload = {
+      orgId,
+      companyId: orgId,
+      sucursal_id: sucursalId,
+      sucursalId,
+      cliente_id: clientRefs[sale.clientIdx].id,
+      cliente_nombre: `${clients[sale.clientIdx].nombre} ${clients[sale.clientIdx].apellido}`,
+      estado: 'completada',
+      metodo_pago: sale.method,
+      total,
+      total_venta: total,
+      monto_total: total,
+      subtotal: total,
+      costo_total: costoTotal,
+      ganancia: total - costoTotal,
+      detalles,
+      fecha: toIsoDateDaysAgo(sale.daysAgo, 9 + (index % 5), 10),
+      fecha_venta: toIsoDateDaysAgo(sale.daysAgo, 9 + (index % 5), 10),
+      createdAt: now,
+      updatedAt: now,
+      creadoPor: ownerUid
+    };
+    batch2.set(saleRefGlobal, salePayload);
+    batch2.set(saleRefCompany, salePayload);
+  });
+
+  const compras = [
+    { daysAgo: 6, idx: 0, qty: 20 },
+    { daysAgo: 5, idx: 1, qty: 30 },
+    { daysAgo: 4, idx: 6, qty: 25 },
+    { daysAgo: 3, idx: 3, qty: 15 }
+  ];
+  compras.forEach((compra, index) => {
+    const refGlobal = db.collection('compras').doc();
+    const refCompany = db.collection('companies').doc(orgId).collection('compras').doc(refGlobal.id);
+    const p = products[compra.idx];
+    const total = p.costo * compra.qty;
+    const payload = {
+      orgId,
+      companyId: orgId,
+      proveedor_id: proveedorRef.id,
+      proveedor_nombre: 'Distribuidora Demo',
+      sucursal_id: sucursalId,
+      estado: 'completada',
+      total,
+      subtotal: total,
+      fecha: toIsoDateDaysAgo(compra.daysAgo, 8 + index, 20),
+      detalles: [
+        {
+          producto_id: productRefs[compra.idx].id,
+          nombre: p.nombre,
+          cantidad: compra.qty,
+          precio_unitario: p.costo,
+          subtotal: total
+        }
+      ],
+      createdAt: now,
+      updatedAt: now
+    };
+    batch2.set(refGlobal, payload);
+    batch2.set(refCompany, payload);
+  });
+
+  const gastos = [
+    { daysAgo: 4, categoria: 'alquiler', concepto: 'Alquiler local', monto: 85000, origen: 'externo' },
+    { daysAgo: 3, categoria: 'servicios', concepto: 'Internet y telefonía', monto: 18000, origen: 'externo' },
+    { daysAgo: 2, categoria: 'combustible', concepto: 'Reparto y compras', monto: 22000, origen: 'caja' },
+    { daysAgo: 1, categoria: 'otros', concepto: 'Limpieza y descartables', monto: 9500, origen: 'caja' }
+  ];
+  gastos.forEach((g) => {
+    const ref = db.collection('companies').doc(orgId).collection('gastos').doc();
+    const fechaIso = toIsoDateDaysAgo(g.daysAgo, 10, 30);
+    batch2.set(ref, {
+      orgId,
+      fecha: fechaIso.split('T')[0],
+      fecha_iso: fechaIso,
+      categoria: g.categoria,
+      concepto: g.concepto,
+      monto: g.monto,
+      origen_fondos: g.origen,
+      medio_pago: 'efectivo',
+      incluir_en_costos: true,
+      sucursal_id: sucursalId,
+      observaciones: 'Dato demo precargado',
+      usuario: 'demo@nexopos.local',
+      fechaCreacion: now
+    });
+  });
+  await batch2.commit();
+
+  await seedRef.set({
+    seeded: true,
+    mode: 'demo_express',
+    seededAt: now,
+    byUid: ownerUid
+  }, { merge: true });
+
+  return {
+    seeded: true,
+    clients: clients.length,
+    products: products.length,
+    sales: sales.length,
+    purchases: compras.length,
+    expenses: gastos.length
+  };
 }
 
 async function assertOwnerOrAdminMigracion(uid, orgId) {
@@ -206,6 +461,179 @@ function demoEmailHash(emailNorm) {
     .digest('hex');
 }
 
+function demoPhoneHash(phoneNorm) {
+  return crypto
+    .createHash('sha256')
+    .update('nexopos-demo-phone\n', 'utf8')
+    .update(String(phoneNorm || '').trim(), 'utf8')
+    .digest('hex');
+}
+
+function buildAdminPermissions() {
+  return {
+    productos: { ver: true, crear: true, editar: true, eliminar: true },
+    categorias: { ver: true, crear: true, editar: true, eliminar: true },
+    proveedores: { ver: true, crear: true, editar: true, eliminar: true },
+    punto_venta: { ver: true, crear: true, editar: true, eliminar: true },
+    compras: { ver: true, crear: true, editar: true, eliminar: true },
+    ventas: { ver: true, crear: true, editar: true, eliminar: true },
+    stock: { ver: true, crear: true, editar: true, eliminar: true },
+    reportes: { ver: true, crear: true, editar: true, eliminar: true },
+    promociones: { ver: true, crear: true, editar: true, eliminar: true },
+    usuarios: { ver: true, crear: true, editar: true, eliminar: true, configurar_roles: true },
+    sucursales: { ver: true, crear: true, editar: true, eliminar: true },
+    materias_primas: { ver: true, crear: true, editar: true, eliminar: true },
+    recetas: { ver: true, crear: true, editar: true, eliminar: true },
+    produccion: { ver: true, crear: true, editar: true, eliminar: true },
+    vehiculos: { ver: true, crear: true, editar: true, eliminar: true },
+    clientes: { ver: true, crear: true, editar: true, eliminar: true },
+    caja: { ver: true, crear: true, editar: true, eliminar: true },
+    gastos: { ver: true, crear: true, editar: true, eliminar: true },
+    devoluciones: { ver: true, crear: true, editar: true, eliminar: true },
+    listas_precios: { ver: true, crear: true, editar: true, eliminar: true },
+    transferencias: { ver: true, crear: true, editar: true, eliminar: true },
+    auditoria: { ver: true, crear: true, editar: true, eliminar: true },
+    configuracion: { ver: true, crear: true, editar: true, eliminar: true }
+  };
+}
+
+async function ensureDemoSharedTenantExistsAndSeeded() {
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const orgId = DEMO_SHARED_ORG_ID;
+  const orgRef = db.collection('tenants').doc(orgId);
+  const companyRef = db.collection('companies').doc(orgId);
+  const sucursalId = DEMO_SHARED_SUCURSAL_ID;
+
+  await orgRef.set({
+    nombre: 'NexoPOS Demo',
+    slug: 'nexopos-demo',
+    ownerEmail: 'demo@nexopos.local',
+    ownerPhone: '',
+    createdAt: now,
+    updatedAt: now
+  }, { merge: true });
+
+  await companyRef.set({
+    name: 'NexoPOS Demo',
+    ownerUid: 'demo-system',
+    ownerEmail: 'demo@nexopos.local',
+    createdAt: now,
+    updatedAt: now
+  }, { merge: true });
+
+  await orgRef.collection('sucursales').doc(sucursalId).set({
+    nombre: 'Sucursal Principal',
+    direccion: '',
+    tipo: 'principal',
+    activa: true,
+    createdAt: now,
+    updatedAt: now
+  }, { merge: true });
+  await companyRef.collection('sucursales').doc(sucursalId).set({
+    nombre: 'Sucursal Principal',
+    direccion: '',
+    tipo: 'principal',
+    activa: true,
+    createdAt: now,
+    updatedAt: now
+  }, { merge: true });
+  await db.collection('sucursales').doc(sucursalId).set({
+    nombre: 'Sucursal Principal',
+    direccion: '',
+    orgId,
+    tipo: 'principal',
+    activa: true,
+    createdAt: now,
+    updatedAt: now
+  }, { merge: true });
+
+  const paidUntil = admin.firestore.Timestamp.fromDate(new Date(Date.now() + (3650 * 24 * 60 * 60 * 1000)));
+  const demoLicensePayload = {
+    billingModel: 'demo_shared',
+    chosenPlan: 'premium',
+    plan: 'premium',
+    paidUntil,
+    blocked: false,
+    reason: '',
+    demo: true,
+    demoMode: 'shared',
+    demoDurationHours: 48,
+    updatedAt: now,
+    createdAt: now
+  };
+  await companyRef.collection('config').doc('license').set(demoLicensePayload, { merge: true });
+  await db.collection('licenses').doc(orgId).set(demoLicensePayload, { merge: true });
+
+  try {
+    const { presetPremiumModules } = require('../utils/modulePresets');
+    const defaultModules = { ...presetPremiumModules(), updatedAt: now };
+    await orgRef.collection('config').doc('modules').set(defaultModules, { merge: true });
+    await companyRef.collection('config').doc('modules').set(defaultModules, { merge: true });
+  } catch (e) {
+    console.warn('[demo-shared] no se pudo inicializar módulos:', e.message);
+  }
+
+  await companyRef.collection('config').doc('empresa').set({
+    razon_social: 'NexoPOS Demo',
+    nombre_fantasia: 'NexoPOS Demo',
+    slogan: 'Sistema de ejemplo con datos cargados',
+    punto_venta: '0001',
+    formato_predeterminado: 'termico',
+    mostrar_logo: false,
+    listas_precios_etiquetas: {
+      mayorista: 'Lista 1',
+      interior: 'Lista 2',
+      posadas: 'Lista 3'
+    },
+    lista_precio_punto_venta_default: 'mayorista',
+    fecha_creacion: now,
+    updatedAt: now
+  }, { merge: true });
+  await orgRef.collection('config').doc('empresa').set({
+    razon_social: 'NexoPOS Demo',
+    nombre_fantasia: 'NexoPOS Demo',
+    updatedAt: now
+  }, { merge: true });
+
+  try {
+    await seedOrgCatalogDefaults(orgId);
+    await seedExpressDemoData(orgId, sucursalId, 'demo-system');
+  } catch (e) {
+    console.warn('[demo-shared] no se pudo sembrar datos demo:', e.message);
+  }
+
+  return { orgId, sucursalId };
+}
+
+async function linkUserAsDemoAdmin(uid, ownerEmail, ownerPhone, orgId, sucursalId) {
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const permisosAdmin = buildAdminPermissions();
+
+  await db.collection('usuariosOrg').doc(uid).set({
+    uid,
+    orgId,
+    roles: ['OWNER'],
+    sucursales: [sucursalId],
+    updatedAt: now,
+    createdAt: now
+  }, { merge: true });
+
+  await db.collection('companies').doc(orgId).collection('usuarios').doc(uid).set({
+    uid,
+    email: ownerEmail || '',
+    telefono: ownerPhone || '',
+    rol: 'Administrador',
+    permisos: permisosAdmin,
+    activo: true,
+    sucursales: [sucursalId],
+    updatedAt: now,
+    createdAt: now
+  }, { merge: true });
+
+  const existingClaims = (await admin.auth().getUser(uid)).customClaims || {};
+  await admin.auth().setCustomUserClaims(uid, { ...existingClaims, companyId: orgId, role: 'admin' });
+}
+
 async function assertDemoAvailableForEmail(ownerEmailNorm) {
   const emailNorm = normalizeOwnerEmail(ownerEmailNorm);
   if (!emailNorm) {
@@ -213,12 +641,33 @@ async function assertDemoAvailableForEmail(ownerEmailNorm) {
   }
   const ref = db.collection('demoUsedEmails').doc(demoEmailHash(emailNorm));
   const snap = await ref.get();
-  if (snap.exists) {
-    throw new HttpsError(
-      'permission-denied',
-      'Este correo ya usó la demo de 48 hs. Si querés continuar, activá un plan pago.'
-    );
+  if (!snap.exists) return;
+
+  const data = snap.data() || {};
+  const orgId = String(data.orgId || '').trim();
+  if (!orgId) {
+    // Registro corrupto o legado sin org asociada: lo limpiamos para no bloquear alta válida.
+    await ref.delete().catch(() => {});
+    return;
   }
+
+  // Si ya no existe la empresa asociada a esa demo, liberar el correo automáticamente.
+  const [companySnap, tenantSnap] = await Promise.all([
+    db.collection('companies').doc(orgId).get().catch(() => null),
+    db.collection('tenants').doc(orgId).get().catch(() => null)
+  ]);
+  const companyExists = Boolean(companySnap && companySnap.exists);
+  const tenantExists = Boolean(tenantSnap && tenantSnap.exists);
+
+  if (!companyExists && !tenantExists) {
+    await ref.delete().catch(() => {});
+    return;
+  }
+
+  throw new HttpsError(
+    'permission-denied',
+    'Este correo ya usó la demo de 48 hs. Si querés continuar, activá un plan pago.'
+  );
 }
 
 async function registerDemoUsage(ownerEmailNorm, orgId, uid) {
@@ -229,6 +678,112 @@ async function registerDemoUsage(ownerEmailNorm, orgId, uid) {
     orgId,
     createdByUid: uid,
     usedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
+async function assertDemoAvailableForPhone(phoneNorm, uid = '') {
+  const normalized = String(phoneNorm || '').trim();
+  if (!normalized) {
+    throw new HttpsError('invalid-argument', 'No pudimos validar tu celular para activar la demo.');
+  }
+  if (isUnlimitedDemoPhone(normalized)) return;
+  const ref = db.collection('demoUsedPhones').doc(demoPhoneHash(normalized));
+  const snap = await ref.get();
+  if (!snap.exists) return;
+
+  const data = snap.data() || {};
+  let expiresAtMs = null;
+  const expiresAt = data.expiresAt;
+  if (expiresAt && typeof expiresAt.toMillis === 'function') {
+    expiresAtMs = expiresAt.toMillis();
+  } else if (expiresAt && typeof expiresAt._seconds === 'number') {
+    expiresAtMs = expiresAt._seconds * 1000;
+  }
+  if (expiresAtMs != null && expiresAtMs <= Date.now()) {
+    await ref.delete().catch(() => {});
+    return;
+  }
+
+  const orgId = String(data.orgId || '').trim();
+  if (!orgId) {
+    await ref.delete().catch(() => {});
+    return;
+  }
+
+  const [companySnap, tenantSnap] = await Promise.all([
+    db.collection('companies').doc(orgId).get().catch(() => null),
+    db.collection('tenants').doc(orgId).get().catch(() => null)
+  ]);
+  const companyExists = Boolean(companySnap && companySnap.exists);
+  const tenantExists = Boolean(tenantSnap && tenantSnap.exists);
+  if (!companyExists && !tenantExists) {
+    await ref.delete().catch(() => {});
+    return;
+  }
+
+  // Si la demo asociada ya venció, liberamos el número automáticamente.
+  if (companyExists) {
+    try {
+      const licenseSnap = await db
+        .collection('companies')
+        .doc(orgId)
+        .collection('config')
+        .doc('license')
+        .get();
+      const license = licenseSnap.exists ? licenseSnap.data() || {} : {};
+      const billingModel = String(license.billingModel || '').trim().toLowerCase();
+      const isDemoLicense = license.demo === true || billingModel.startsWith('demo');
+      let paidUntilMs = null;
+      const paidUntil = license.paidUntil;
+      if (paidUntil && typeof paidUntil.toMillis === 'function') {
+        paidUntilMs = paidUntil.toMillis();
+      } else if (paidUntil && typeof paidUntil._seconds === 'number') {
+        paidUntilMs = paidUntil._seconds * 1000;
+      }
+      if (isDemoLicense && paidUntilMs != null && paidUntilMs <= Date.now()) {
+        await ref.delete().catch(() => {});
+        return;
+      }
+    } catch (e) {
+      console.warn('[createTenant][demoUsedPhones] no se pudo evaluar vencimiento demo:', e.message);
+    }
+  }
+
+  // Si el dueño original ya no existe en Auth (demo huérfana), liberamos el número.
+  const createdByUid = String(data.createdByUid || '').trim();
+  if (createdByUid) {
+    try {
+      await admin.auth().getUser(createdByUid);
+    } catch (err) {
+      if (String(err?.code || '').trim() === 'auth/user-not-found') {
+        await ref.delete().catch(() => {});
+        return;
+      }
+      throw err;
+    }
+  }
+
+  if (uid && String(data.createdByUid || '').trim() === String(uid).trim()) {
+    return;
+  }
+
+  throw new HttpsError(
+    'permission-denied',
+    'Este número de celular ya usó la demo de 48 hs. Si querés continuar, activá un plan pago.'
+  );
+}
+
+async function registerDemoPhoneUsage(phoneNorm, orgId, uid) {
+  const normalized = String(phoneNorm || '').trim();
+  if (!normalized) return;
+  if (isUnlimitedDemoPhone(normalized)) return;
+  const ref = db.collection('demoUsedPhones').doc(demoPhoneHash(normalized));
+  await ref.set({
+    phoneNormalized: normalized,
+    orgId,
+    createdByUid: uid,
+    usedAt: admin.firestore.FieldValue.serverTimestamp(),
+    expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + (48 * 60 * 60 * 1000)))
   }, { merge: true });
 }
 
@@ -337,12 +892,15 @@ exports.createTenant = onCall({ secrets: [tenantCreationAdminCode, tenantBootstr
       adminLicenseCode,
       chosenPlan,
       plan,
-      creationMode
+      creationMode,
+      demoPhone
     } = request.data || {};
     const codeInput = codigoAdministrador ?? adminLicenseCode;
     const selectedPlan = normalizePlan(chosenPlan || plan || 'basic');
     const mode = creationMode != null ? String(creationMode).trim().toLowerCase() : 'standard';
-    const isDemoMode = mode === 'demo';
+    const isDemoMode = mode === 'demo' || mode === 'demo_express';
+    const isDemoExpress = mode === 'demo_express';
+    const normalizedDemoPhone = isDemoMode ? normalizeDemoPhone(demoPhone) : '';
 
     let ownerEmail = null;
     let authUser;
@@ -354,26 +912,53 @@ exports.createTenant = onCall({ secrets: [tenantCreationAdminCode, tenantBootstr
       throw new HttpsError('internal', 'No se pudo obtener el email del usuario');
     }
 
-    if (!ownerEmail) {
+    if (!ownerEmail && !isDemoMode) {
       throw new HttpsError('invalid-argument', 'Email del usuario requerido');
     }
+    if (isDemoMode && !normalizedDemoPhone) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Para activar la demo necesitamos un número de celular válido.'
+      );
+    }
 
-    if (!authUser.emailVerified) {
+    if (!isDemoMode && !authUser.emailVerified) {
       throw new HttpsError(
         'failed-precondition',
         'Tenés que verificar tu correo electrónico antes de crear una empresa. Revisá la bandeja de entrada.'
       );
     }
 
-    const ownerEmailNorm = normalizeOwnerEmail(ownerEmail);
+    const ownerEmailNorm = normalizeOwnerEmail(ownerEmail || '');
     if (isDemoMode) {
-      await assertDemoAvailableForEmail(ownerEmailNorm);
+      await assertDemoAvailableForPhone(normalizedDemoPhone, uid);
     } else {
       await assertTenantCreationCode(uid, codeInput, ownerEmailNorm);
     }
+
+    if (isDemoMode) {
+      const shared = await ensureDemoSharedTenantExistsAndSeeded();
+      await linkUserAsDemoAdmin(uid, ownerEmail || '', normalizedDemoPhone, shared.orgId, shared.sucursalId);
+      try {
+        await registerDemoPhoneUsage(normalizedDemoPhone, shared.orgId, uid);
+        if (ownerEmailNorm) {
+          await registerDemoUsage(ownerEmailNorm, shared.orgId, uid);
+        }
+      } catch (e) {
+        console.warn('No se pudo registrar uso de demo compartido:', e.message);
+      }
+      return {
+        success: true,
+        orgId: shared.orgId,
+        sucursalId: shared.sucursalId,
+        mode: isDemoExpress ? 'demo_express' : 'demo'
+      };
+    }
     
     // Si no se proporciona nombre, usar el dominio del email
-    const nombreEmpresa = nombre || ownerEmail.split('@')[1].split('.')[0].toUpperCase();
+    const nombreEmpresa = isDemoMode
+      ? (nombre || `Demo ${String(normalizedDemoPhone || '').slice(-4)}`.trim())
+      : (nombre || ownerEmail.split('@')[1].split('.')[0].toUpperCase());
     
     console.log(`🏢 [TENANT] Creando empresa para usuario: ${ownerEmail}, nombre: ${nombreEmpresa}`);
 
@@ -384,6 +969,7 @@ exports.createTenant = onCall({ secrets: [tenantCreationAdminCode, tenantBootstr
       nombre: nombreEmpresa,
       slug: slug || null,
       ownerEmail: ownerEmail,
+      ownerPhone: isDemoMode ? normalizedDemoPhone : '',
       createdAt: now,
       updatedAt: now
     });
@@ -431,31 +1017,7 @@ exports.createTenant = onCall({ secrets: [tenantCreationAdminCode, tenantBootstr
 
     // Crear registro de usuario dentro de la empresa con rol Administrador
     try {
-      const permisosAdmin = {
-        productos: { ver: true, crear: true, editar: true, eliminar: true },
-        categorias: { ver: true, crear: true, editar: true, eliminar: true },
-        proveedores: { ver: true, crear: true, editar: true, eliminar: true },
-        punto_venta: { ver: true, crear: true, editar: true, eliminar: true },
-        compras: { ver: true, crear: true, editar: true, eliminar: true },
-        ventas: { ver: true, crear: true, editar: true, eliminar: true },
-        stock: { ver: true, crear: true, editar: true, eliminar: true },
-        reportes: { ver: true, crear: true, editar: true, eliminar: true },
-        promociones: { ver: true, crear: true, editar: true, eliminar: true },
-        usuarios: { ver: true, crear: true, editar: true, eliminar: true, configurar_roles: true },
-        sucursales: { ver: true, crear: true, editar: true, eliminar: true },
-        materias_primas: { ver: true, crear: true, editar: true, eliminar: true },
-        recetas: { ver: true, crear: true, editar: true, eliminar: true },
-        produccion: { ver: true, crear: true, editar: true, eliminar: true },
-        vehiculos: { ver: true, crear: true, editar: true, eliminar: true },
-        clientes: { ver: true, crear: true, editar: true, eliminar: true },
-        caja: { ver: true, crear: true, editar: true, eliminar: true },
-        gastos: { ver: true, crear: true, editar: true, eliminar: true },
-        devoluciones: { ver: true, crear: true, editar: true, eliminar: true },
-        listas_precios: { ver: true, crear: true, editar: true, eliminar: true },
-        transferencias: { ver: true, crear: true, editar: true, eliminar: true },
-        auditoria: { ver: true, crear: true, editar: true, eliminar: true },
-        configuracion: { ver: true, crear: true, editar: true, eliminar: true }
-      };
+      const permisosAdmin = buildAdminPermissions();
       await db.collection('companies').doc(orgRef.id).collection('usuarios').doc(uid).set({
         uid,
         email: ownerEmail,
@@ -494,6 +1056,8 @@ exports.createTenant = onCall({ secrets: [tenantCreationAdminCode, tenantBootstr
           blocked: false,
           reason: '',
           demo: true,
+          demoMode: isDemoExpress ? 'express' : 'standard',
+          demoPhone: normalizedDemoPhone || '',
           demoDurationHours: 48,
           demoStartedAt: now,
           createdAt: now,
@@ -566,15 +1130,32 @@ exports.createTenant = onCall({ secrets: [tenantCreationAdminCode, tenantBootstr
       console.warn('No se pudo sembrar catálogo mínimo:', e.message);
     }
 
+    if (isDemoExpress) {
+      try {
+        const seeded = await seedExpressDemoData(orgRef.id, sucRef.id, uid);
+        console.log('[createTenant][demo_express] seed:', seeded);
+      } catch (e) {
+        console.warn('No se pudo sembrar datos demo express:', e.message);
+      }
+    }
+
     if (isDemoMode) {
       try {
-        await registerDemoUsage(ownerEmailNorm, orgRef.id, uid);
+        await registerDemoPhoneUsage(normalizedDemoPhone, orgRef.id, uid);
+        if (ownerEmailNorm) {
+          await registerDemoUsage(ownerEmailNorm, orgRef.id, uid);
+        }
       } catch (e) {
         console.warn('No se pudo registrar uso de demo:', e.message);
       }
     }
 
-    return { success: true, orgId: orgRef.id, sucursalId: sucRef.id, mode: isDemoMode ? 'demo' : 'standard' };
+    return {
+      success: true,
+      orgId: orgRef.id,
+      sucursalId: sucRef.id,
+      mode: isDemoExpress ? 'demo_express' : isDemoMode ? 'demo' : 'standard'
+    };
   } catch (error) {
     if (error instanceof HttpsError) {
       throw error;
@@ -714,10 +1295,14 @@ exports.setActiveTenant = onCall(async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Debe iniciar sesión');
     }
-    if (!request.auth.token?.email_verified) {
+    const hasVerifiedEmail = Boolean(request.auth.token?.email_verified);
+    const hasVerifiedPhone = Boolean(String(request.auth.token?.phone_number || '').trim());
+    const rawEmail = String(request.auth.token?.email || '').trim().toLowerCase();
+    const isDemoSyntheticEmail = /@nexopos\.demo\.local$/.test(rawEmail);
+    if (!hasVerifiedEmail && !hasVerifiedPhone && !isDemoSyntheticEmail) {
       throw new HttpsError(
         'failed-precondition',
-        'Tenés que verificar tu correo electrónico antes de activar una empresa.'
+        'Tenés que verificar tu correo o tu celular antes de activar una empresa.'
       );
     }
     const uid = request.auth.uid;
@@ -739,9 +1324,92 @@ exports.setActiveTenant = onCall(async (request) => {
     const existing = (await admin.auth().getUser(uid)).customClaims || {};
     await admin.auth().setCustomUserClaims(uid, { ...existing, companyId: orgId });
 
+    // En demos, asegurar seed de datos aunque la empresa se haya creado antes de este flujo.
+    try {
+      const licenseSnap = await db
+        .collection('companies')
+        .doc(orgId)
+        .collection('config')
+        .doc('license')
+        .get();
+      const license = licenseSnap.exists ? licenseSnap.data() || {} : {};
+      const billingModel = String(license.billingModel || '').trim().toLowerCase();
+      const isDemoLicense = license.demo === true || billingModel.startsWith('demo');
+      if (isDemoLicense) {
+        let sucursalId = '';
+        const companySucursales = await db
+          .collection('companies')
+          .doc(orgId)
+          .collection('sucursales')
+          .limit(1)
+          .get();
+        if (!companySucursales.empty) {
+          sucursalId = companySucursales.docs[0].id;
+        } else {
+          const tenantSucursales = await db
+            .collection('tenants')
+            .doc(orgId)
+            .collection('sucursales')
+            .limit(1)
+            .get();
+          if (!tenantSucursales.empty) {
+            sucursalId = tenantSucursales.docs[0].id;
+          }
+        }
+        if (sucursalId) {
+          await seedExpressDemoData(orgId, sucursalId, uid);
+        }
+      }
+    } catch (seedErr) {
+      console.warn('[setActiveTenant] no se pudo asegurar seed demo:', seedErr.message);
+    }
+
     return { success: true };
   } catch (error) {
     console.error('setActiveTenant error:', error);
+    throw new HttpsError('internal', error.message || 'Error interno');
+  }
+});
+
+exports.ensureDemoTenantAccess = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Debe iniciar sesión');
+    }
+    const uid = request.auth.uid;
+    const authEmail = String(request.auth.token?.email || '').trim().toLowerCase();
+    if (!/@nexopos\.demo\.local$/.test(authEmail)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Esta acción solo está disponible para cuentas demo.'
+      );
+    }
+
+    const explicitPhone = normalizeDemoPhone(request.data?.demoPhone || '');
+    const fromEmailMatch = authEmail.match(/^demo_(\d+)@nexopos\.demo\.local$/);
+    const inferredPhone = normalizeDemoPhone(fromEmailMatch?.[1] || '');
+    const demoPhone = explicitPhone || inferredPhone;
+    if (!demoPhone) {
+      throw new HttpsError('invalid-argument', 'No se pudo validar el celular demo.');
+    }
+
+    await assertDemoAvailableForPhone(demoPhone, uid);
+    const shared = await ensureDemoSharedTenantExistsAndSeeded();
+    await linkUserAsDemoAdmin(uid, authEmail, demoPhone, shared.orgId, shared.sucursalId);
+    await registerDemoPhoneUsage(demoPhone, shared.orgId, uid);
+    await registerDemoUsage(authEmail, shared.orgId, uid);
+
+    return {
+      success: true,
+      orgId: shared.orgId,
+      sucursalId: shared.sucursalId,
+      mode: 'demo_shared'
+    };
+  } catch (error) {
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    console.error('ensureDemoTenantAccess error:', error);
     throw new HttpsError('internal', error.message || 'Error interno');
   }
 });
