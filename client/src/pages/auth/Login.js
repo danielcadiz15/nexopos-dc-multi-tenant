@@ -17,12 +17,12 @@ import { FaAndroid, FaBuilding, FaHeadset, FaLock, FaShoppingCart, FaSignInAlt, 
 import { useAuth } from '../../contexts/AuthContext';
 import configuracionService from '../../services/configuracion.service';
 import tabletLoginBg from '../../assets/nexopos-tablet-login-bg.png';
+import { ACCESS_MODES, getStoredAccessMode, isAdminLikeRole, setStoredAccessMode } from '../../utils/runtimeAccessMode';
 
 // Componentes
 import Button from '../../components/common/Button';
 import PasswordInput from '../../components/common/PasswordInput';
 
-const ADMIN_WEB_URL = 'https://nexopos-dc.web.app';
 const DEFAULT_CAJA_APK_URL = 'https://nexopos-dc.web.app/app-caja.apk';
 const TEAMVIEWER_QS_ANDROID_INTENT =
   'intent://start#Intent;scheme=teamviewerqs;package=com.teamviewer.quicksupport.market;end';
@@ -72,8 +72,13 @@ const Login = () => {
   const location = useLocation();
   const { login, isAuthenticated, currentUser } = useAuth();
   const nativeRuntime = isNativeCapacitorRuntime();
-  const initialAccessMode = location.state?.accessMode ||
-    (location.state?.from?.pathname === '/cajero' || nativeRuntime ? 'cajero' : 'admin');
+  const initialAccessMode = (() => {
+    const fromState = location.state?.accessMode;
+    const stored = getStoredAccessMode(nativeRuntime ? ACCESS_MODES.CAJERO : ACCESS_MODES.ADMIN);
+    if (fromState === ACCESS_MODES.ADMIN || fromState === ACCESS_MODES.CAJERO) return fromState;
+    if (location.state?.from?.pathname === '/cajero') return ACCESS_MODES.CAJERO;
+    return stored;
+  })();
   const [accessMode, setAccessMode] = useState(initialAccessMode);
   
   // Estado del formulario
@@ -112,60 +117,27 @@ const Login = () => {
     backgroundRepeat: 'no-repeat'
   };
 
-  const redirectAdminToWeb = () => {
-    try {
-      window.location.assign(ADMIN_WEB_URL);
-    } catch {
-      window.location.href = ADMIN_WEB_URL;
-    }
-  };
-
-  const openAdminExternally = useCallback(() => {
-    if (!nativeRuntime) {
-      redirectAdminToWeb();
-      return true;
-    }
-    try {
-      const bridge = window?.NexoAndroid;
-      if (bridge && typeof bridge.openAdminInChrome === 'function') {
-        bridge.openAdminInChrome();
-        return true;
-      }
-      if (bridge && typeof bridge.openExternalUrlInChrome === 'function') {
-        bridge.openExternalUrlInChrome(ADMIN_WEB_URL);
-        return true;
-      }
-    } catch {
-      // Sin acción: mostramos mensaje abajo.
-    }
-    toast.error('No se pudo abrir el panel web en Chrome. Reiniciá la app e intentá nuevamente.');
-    return false;
-  }, [nativeRuntime]);
-
   const isAdminAuthorized = useCallback((user) => {
-    const rol = String(user?.rol || user?.role || '').toLowerCase();
-    return rol.includes('admin') || rol.includes('super');
+    return isAdminLikeRole(user);
   }, []);
 
   const redirectAfterLogin = useCallback((user) => {
     redirectHandledRef.current = true;
-    const quiereAdmin = accessMode === 'admin';
+    const quiereAdmin = accessMode === ACCESS_MODES.ADMIN;
     if (quiereAdmin) {
       if (!isAdminAuthorized(user)) {
+        setStoredAccessMode(ACCESS_MODES.CAJERO);
         toast.warning('Este usuario solo tiene acceso de cajero.');
         navigate('/cajero', { replace: true });
         return;
       }
-      if (nativeRuntime) {
-        openAdminExternally();
-        return;
-      }
-      // Forzamos panel web completo para evitar quedar en variantes embebidas.
-      redirectAdminToWeb();
+      setStoredAccessMode(ACCESS_MODES.ADMIN);
+      navigate('/', { replace: true });
       return;
     }
+    setStoredAccessMode(ACCESS_MODES.CAJERO);
     navigate('/cajero', { replace: true });
-  }, [accessMode, isAdminAuthorized, nativeRuntime, navigate, openAdminExternally]);
+  }, [accessMode, isAdminAuthorized, navigate]);
 
   const handleDescargarApk = (event) => {
     event?.preventDefault?.();
@@ -241,17 +213,15 @@ const Login = () => {
     if (redirectHandledRef.current) return;
     redirectHandledRef.current = true;
 
-    const wantsAdmin = accessMode === 'admin';
+    const wantsAdmin = accessMode === ACCESS_MODES.ADMIN;
     if (wantsAdmin && isAdminAuthorized(currentUser)) {
-      if (nativeRuntime) {
-        openAdminExternally();
-      } else {
-        redirectAdminToWeb();
-      }
+      setStoredAccessMode(ACCESS_MODES.ADMIN);
+      navigate('/', { replace: true });
       return;
     }
+    setStoredAccessMode(ACCESS_MODES.CAJERO);
     navigate('/cajero', { replace: true });
-  }, [accessMode, currentUser, isAdminAuthorized, isAuthenticated, navigate, nativeRuntime, openAdminExternally]);
+  }, [accessMode, currentUser, isAdminAuthorized, isAuthenticated, navigate]);
   
   /**
    * Actualiza el estado del formulario
@@ -359,10 +329,11 @@ const Login = () => {
             <button
               type="button"
               onClick={() => {
-                setAccessMode('admin');
+                setAccessMode(ACCESS_MODES.ADMIN);
+                setStoredAccessMode(ACCESS_MODES.ADMIN);
               }}
               className={`rounded-xl border-2 p-4 text-left transition ${
-                accessMode === 'admin'
+                accessMode === ACCESS_MODES.ADMIN
                   ? 'border-indigo-600 bg-indigo-50 text-indigo-800'
                   : 'border-gray-200 bg-white text-gray-700'
               }`}
@@ -373,9 +344,12 @@ const Login = () => {
             </button>
             <button
               type="button"
-              onClick={() => setAccessMode('cajero')}
+              onClick={() => {
+                setAccessMode(ACCESS_MODES.CAJERO);
+                setStoredAccessMode(ACCESS_MODES.CAJERO);
+              }}
               className={`rounded-xl border-2 p-4 text-left transition ${
-                accessMode === 'cajero'
+                accessMode === ACCESS_MODES.CAJERO
                   ? 'border-green-600 bg-green-50 text-green-800'
                   : 'border-gray-200 bg-white text-gray-700'
               }`}
@@ -389,7 +363,7 @@ const Login = () => {
           {urlDescargaApk && (
             <div
               className={`mb-6 rounded-xl border p-4 text-center ${
-                accessMode === 'cajero'
+                accessMode === ACCESS_MODES.CAJERO
                   ? 'border-green-300 bg-green-50'
                   : 'border-gray-200 bg-gray-50'
               }`}
@@ -480,7 +454,7 @@ const Login = () => {
                 loading={loading}
                 icon={<FaSignInAlt />}
               >
-                {accessMode === 'cajero' ? 'Ingresar al mostrador' : 'Ingresar al panel'}
+                {accessMode === ACCESS_MODES.CAJERO ? 'Ingresar al mostrador' : 'Ingresar al panel'}
               </Button>
             </div>
           </form>

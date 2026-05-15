@@ -7,8 +7,8 @@
  * @requires react, react-router-dom, ./contexts/AuthContext, ./components/*, ./pages/*
  */
 
-import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect, useRef } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -114,8 +114,9 @@ import SuperAdminRoute from './components/common/SuperAdminRoute';
 import LicenseBanner from './components/layout/LicenseBanner';
 import { useViewportHeight } from './hooks/useViewportHeight';
 import tabletLoginBg from './assets/nexopos-tablet-login-bg.png';
+import { ACCESS_MODES, getStoredAccessMode, isAdminLikeRole, setStoredAccessMode } from './utils/runtimeAccessMode';
 
-const ADMIN_WEB_URL = 'https://nexopos-dc.web.app';
+const NATIVE_PUBLIC_PATH_PREFIXES = ['/login', '/signup', '/verificar-email'];
 
 const isNativeCapacitorRuntime = () => {
   try {
@@ -136,30 +137,6 @@ const isNativeCapacitorRuntime = () => {
   }
 };
 
-const openAdminInExternalBrowser = () => {
-  try {
-    const bridge = window?.NexoAndroid;
-    if (bridge && typeof bridge.openAdminInChrome === 'function') {
-      bridge.openAdminInChrome();
-      return true;
-    }
-    if (bridge && typeof bridge.openExternalUrlInChrome === 'function') {
-      bridge.openExternalUrlInChrome(ADMIN_WEB_URL);
-      return true;
-    }
-  } catch {
-    // continuamos con fallback
-  }
-
-  try {
-    const intentUrl = 'intent://nexopos-dc.web.app/#Intent;scheme=https;package=com.android.chrome;end';
-    window.location.assign(intentUrl);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 const CajeroApp = () => (
   <div className="scrollbar-thin flex h-full min-h-0 w-full flex-col overflow-y-auto overscroll-y-contain bg-gray-50 px-2 pt-1 pb-1 sm:px-3">
     <div className="shrink-0">
@@ -172,33 +149,79 @@ const CajeroApp = () => (
 );
 
 const RootRouteGateway = () => {
+  const { currentUser } = useAuth() || {};
   const nativeRuntime = isNativeCapacitorRuntime();
   if (nativeRuntime) {
+    const mode = getStoredAccessMode(ACCESS_MODES.CAJERO);
+    if (mode === ACCESS_MODES.ADMIN && isAdminLikeRole(currentUser)) {
+      return <Dashboard />;
+    }
     return <Navigate to="/cajero" replace />;
   }
   return <Dashboard />;
 };
 
-const AdminRouteGateway = () => {
+const AdminRouteGateway = () => <AdminPanel />;
+
+const NativeRouteEnforcer = () => {
   const nativeRuntime = isNativeCapacitorRuntime();
+  const auth = useAuth() || {};
+  const { isAuthenticated, currentUser } = auth;
+  const location = useLocation();
+  const navigate = useNavigate();
+  const cleanedLegacyCacheRef = useRef(false);
+
+  useEffect(() => {
+    if (!nativeRuntime || cleanedLegacyCacheRef.current) return;
+    cleanedLegacyCacheRef.current = true;
+
+    (async () => {
+      try {
+        if (typeof navigator !== 'undefined' && navigator.serviceWorker?.getRegistrations) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((reg) => reg.unregister()));
+        }
+      } catch {
+        // ignore
+      }
+      try {
+        if (typeof window !== 'undefined' && window.caches?.keys) {
+          const keys = await window.caches.keys();
+          await Promise.all(keys.map((key) => window.caches.delete(key)));
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, [nativeRuntime]);
 
   useEffect(() => {
     if (!nativeRuntime) return;
-    const opened = openAdminInExternalBrowser();
-    if (!opened) {
-      window.location.assign(ADMIN_WEB_URL);
-    }
-  }, [nativeRuntime]);
+    const path = String(location.pathname || '/').toLowerCase();
+    const storedMode = getStoredAccessMode(ACCESS_MODES.CAJERO);
+    const adminRole = isAdminLikeRole(currentUser);
 
-  if (nativeRuntime) {
-    return (
-      <div className="flex h-full min-h-[40vh] items-center justify-center px-6 text-center text-sm text-slate-600">
-        Abriendo panel de administración en Chrome...
-      </div>
+    if (!isAuthenticated) return;
+
+    const isPublicPath = NATIVE_PUBLIC_PATH_PREFIXES.some(
+      (prefix) => path === prefix || path.startsWith(`${prefix}/`)
     );
-  }
+    if (isPublicPath) return;
 
-  return <AdminPanel />;
+    if (storedMode === ACCESS_MODES.ADMIN && adminRole) {
+      // Admin embebido completo: no restringimos módulos internos.
+      return;
+    }
+
+    if (storedMode === ACCESS_MODES.ADMIN && !adminRole) {
+      setStoredAccessMode(ACCESS_MODES.CAJERO);
+    }
+    if (!(path === '/cajero' || path.startsWith('/cajero/'))) {
+      navigate('/cajero', { replace: true });
+    }
+  }, [location.pathname, nativeRuntime, navigate, isAuthenticated, currentUser]);
+
+  return null;
 };
 
 const AppContent = () => {
@@ -228,6 +251,7 @@ const AppContent = () => {
     <div className="nexo-viewport-root">
     <Router>
       <MercadoPagoReturnHandler />
+      <NativeRouteEnforcer />
       <div className="nexo-route-outlet flex min-h-0 flex-1 flex-col overflow-hidden">
       <Routes>
         {/* Rutas públicas */}

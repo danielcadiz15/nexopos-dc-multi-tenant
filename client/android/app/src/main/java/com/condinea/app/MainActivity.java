@@ -38,23 +38,27 @@ import java.util.Set;
 public class MainActivity extends BridgeActivity {
     private static final String ADMIN_WEB_URL = "https://nexopos-dc.web.app";
     private static final long TEMP_UNLOCK_MS = 5L * 60L * 1000L;
+    private static final long ROUTE_GUARD_INTERVAL_MS = 700L;
     private static final Set<String> ALLOWED_HOSTS = new HashSet<>(Arrays.asList(
         "nexopos-dc.web.app",
         "www.nexopos-dc.web.app"
     ));
-    private static final Set<String> ALLOWED_WEBVIEW_PATH_PREFIXES = new HashSet<>(Arrays.asList(
-        "/login",
-        "/signup",
-        "/verificar-email",
-        "/cajero"
-    ));
-
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int hiddenTapCount = 0;
     private long hiddenTapFirstMs = 0L;
     private boolean technicalUnlocked = false;
     private long allowExitUntilMs = 0L;
     private boolean jsBridgeAttached = false;
+    private final Runnable routeGuardRunnable = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                enforceAllowedDomain();
+            } catch (Exception ignored) {
+            }
+            handler.postDelayed(this, ROUTE_GUARD_INTERVAL_MS);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,6 +77,8 @@ public class MainActivity extends BridgeActivity {
         applyImmersiveMode();
         handler.postDelayed(this::applyImmersiveMode, 220);
         handler.postDelayed(this::enforceAllowedDomain, 260);
+        handler.removeCallbacks(routeGuardRunnable);
+        handler.post(routeGuardRunnable);
         if (KioskPrefs.isKioskEnabled(this)) {
             applyKioskPoliciesIfEnabled();
         }
@@ -81,11 +87,13 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPause() {
         super.onPause();
+        handler.removeCallbacks(routeGuardRunnable);
     }
 
     @Override
     public void onStop() {
         super.onStop();
+        handler.removeCallbacks(routeGuardRunnable);
     }
 
     @Override
@@ -284,36 +292,13 @@ public class MainActivity extends BridgeActivity {
         try {
             uri = Uri.parse(current);
         } catch (Exception ignored) {
-            getBridge().getWebView().loadUrl("https://nexopos-dc.web.app/cajero");
+            getBridge().getWebView().loadUrl("https://nexopos-dc.web.app/");
             return;
         }
         String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
         if (!ALLOWED_HOSTS.contains(host)) {
-            getBridge().getWebView().loadUrl("https://nexopos-dc.web.app/cajero");
+            getBridge().getWebView().loadUrl("https://nexopos-dc.web.app/");
             return;
-        }
-
-        String path = uri.getPath();
-        String normalizedPath = path == null || path.isEmpty() ? "/" : path;
-        String lowerPath = normalizedPath.toLowerCase(Locale.ROOT);
-
-        // Admin nunca debe renderizarse embebido en la tablet.
-        if (lowerPath.startsWith("/admin")) {
-            openAdminInChrome();
-            getBridge().getWebView().loadUrl("https://nexopos-dc.web.app/cajero");
-            return;
-        }
-
-        // Cualquier ruta fuera de login/signup/verificación/cajero vuelve a cajero.
-        boolean allowedPath = false;
-        for (String prefix : ALLOWED_WEBVIEW_PATH_PREFIXES) {
-            if (lowerPath.equals(prefix) || lowerPath.startsWith(prefix + "/")) {
-                allowedPath = true;
-                break;
-            }
-        }
-        if (!allowedPath) {
-            getBridge().getWebView().loadUrl("https://nexopos-dc.web.app/cajero");
         }
     }
 
